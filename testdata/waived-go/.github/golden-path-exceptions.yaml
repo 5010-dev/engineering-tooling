@@ -1,0 +1,20 @@
+schemaVersion: golden-path-exceptions/v1
+exceptions:
+  - id: GPE-2026-001
+    rules:
+      - DT-CMD-001
+    scope:
+      profiles:
+        - go
+      paths:
+        - justfile
+    reason: The command façade is being introduced in a separately reviewed change.
+    owner: Platform Dev
+    riskClass: standard
+    approval:
+      authorities:
+        - role: Platform maintainer
+          reference: ENG-182
+          approvedAt: "2026-07-30"
+    expiresAt: "2026-08-31"
+    trackingIssue: ENG-182

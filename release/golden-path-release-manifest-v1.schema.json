@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:5010-dev:golden-path:schema:release-manifest:v1",
+  "title": "Golden Path checker release manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "releaseVersion",
+    "standardVersion",
+    "contractVersion",
+    "schemaVersions",
+    "source",
+    "catalogDigest",
+    "compatibilityManifest",
+    "standardSnapshotManifest",
+    "assets",
+    "build",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "golden-path-release-manifest/v1"
+    },
+    "releaseVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "standardVersion": {
+      "type": "string",
+      "pattern": "^[0-9]{4}\\.(0[1-9]|1[0-2])(?:\\.[1-9][0-9]*)?$"
+    },
+    "contractVersion": {
+      "const": "golden-path/v1"
+    },
+    "schemaVersions": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 3
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "tag"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "format": "uri"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"
+        }
+      }
+    },
+    "catalogDigest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "compatibilityManifest": {
+      "const": "compatibility-manifest.json"
+    },
+    "standardSnapshotManifest": {
+      "const": "standard-snapshot-manifest.json"
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "os",
+          "architecture",
+          "sha256",
+          "size"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^golden-path_[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?_(darwin|linux)_(amd64|arm64)\\.tar\\.gz$"
+          },
+          "os": {
+            "enum": [
+              "darwin",
+              "linux"
+            ]
+          },
+          "architecture": {
+            "enum": [
+              "amd64",
+              "arm64"
+            ]
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "toolchain",
+        "commands"
+      ],
+      "properties": {
+        "toolchain": {
+          "type": "string",
+          "pattern": "^go[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "commands": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string",
+            "minLength": 3
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "workflow",
+        "subject"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 3
+        },
+        "workflow": {
+          "type": "string",
+          "minLength": 3
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 3
+        }
+      }
+    }
+  }
+}

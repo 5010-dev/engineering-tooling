@@ -1,0 +1,7 @@
+min_version = "2026.7.17"
+
+[tools]
+go = "1.26.5"
+
+[settings]
+lockfile = true
