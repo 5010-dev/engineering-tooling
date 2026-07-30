@@ -4,7 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"io"
+	"os"
 	"testing"
 	"time"
 )
@@ -55,6 +59,52 @@ func TestDeterministicArchive(t *testing.T) {
 	}
 	if _, err := tarReader.Next(); err != io.EOF {
 		t.Fatalf("trailing tar entry or error: %v", err)
+	}
+}
+
+func TestDeterministicSBOMBindsArchiveDigest(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G304 -- os.Executable returns the current test binary path.
+	binary, err := os.ReadFile(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := []byte("release-archive")
+	sum := sha256.Sum256(archive)
+	digest := hex.EncodeToString(sum[:])
+	first, err := deterministicSBOM(
+		binary,
+		"golden-path_0.1.0_linux_amd64.tar.gz",
+		digest,
+		target{os: "linux", architecture: "amd64"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := deterministicSBOM(
+		binary,
+		"golden-path_0.1.0_linux_amd64.tar.gz",
+		digest,
+		target{os: "linux", architecture: "amd64"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("identical SBOM inputs produced different bytes")
+	}
+	var document cycloneDXBOM
+	if err := json.Unmarshal(first, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.BOMFormat != "CycloneDX" ||
+		document.SpecVersion != "1.6" ||
+		len(document.Metadata.Component.Hashes) != 1 ||
+		document.Metadata.Component.Hashes[0].Content != digest {
+		t.Fatalf("SBOM does not bind archive digest: %+v", document.Metadata.Component)
 	}
 }
 

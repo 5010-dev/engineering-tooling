@@ -18,7 +18,105 @@
       ],
       "snapshot": "standards/snapshots/2026.07/manifest.json",
       "sourceCommit": "a47aac134196460edf81131defc9b420745abe73",
-      "catalogDigest": "sha256:c2ec366495c5f2aa124a886152aadd1f4f0d1b7dcb34beb674c9dfa0db4b86ac"
+      "catalogDigest": "sha256:c2ec366495c5f2aa124a886152aadd1f4f0d1b7dcb34beb674c9dfa0db4b86ac",
+      "snapshotAggregateDigest": "sha256:e62a016975a65b0e085c999891032400ea6e8b0dd8ef25f64cef978191319e52"
+    }
+  ],
+  "runtimeSelections": [
+    {
+      "profile": "node-typescript",
+      "tool": "node",
+      "versions": [
+        {
+          "version": "24.18.1",
+          "disposition": "preferred"
+        },
+        {
+          "version": "22.22.0",
+          "disposition": "supported"
+        }
+      ]
+    },
+    {
+      "profile": "python",
+      "tool": "python",
+      "versions": [
+        {
+          "version": "3.14.6",
+          "disposition": "preferred"
+        },
+        {
+          "version": "3.13.14",
+          "disposition": "supported"
+        },
+        {
+          "version": "3.12.13",
+          "disposition": "supported"
+        },
+        {
+          "version": "3.11.15",
+          "disposition": "supported"
+        },
+        {
+          "version": "3.10.20",
+          "disposition": "compatibility-only",
+          "supportEndsAt": "2026-10-31"
+        }
+      ]
+    },
+    {
+      "profile": "go",
+      "tool": "go",
+      "versions": [
+        {
+          "version": "1.26.5",
+          "disposition": "preferred"
+        },
+        {
+          "version": "1.25.12",
+          "disposition": "supported"
+        }
+      ]
+    },
+    {
+      "profile": "rust",
+      "tool": "rust",
+      "versions": [
+        {
+          "version": "1.97.1",
+          "disposition": "preferred"
+        },
+        {
+          "version": "1.96.1",
+          "disposition": "supported",
+          "supportEndsAt": "2026-10-07"
+        },
+        {
+          "version": "1.95.0",
+          "disposition": "supported",
+          "supportEndsAt": "2026-10-07"
+        }
+      ]
+    },
+    {
+      "profile": "zig",
+      "tool": "zig",
+      "versions": [
+        {
+          "version": "0.16.0",
+          "disposition": "preferred"
+        }
+      ]
+    },
+    {
+      "profile": "zig-toolchain",
+      "tool": "zig",
+      "versions": [
+        {
+          "version": "0.16.0",
+          "disposition": "preferred"
+        }
+      ]
     }
   ],
   "supportedTargets": [

@@ -3,13 +3,16 @@
 `golden-path` uses SemVer independently of the Golden Path standard CalVer.
 All `0.x` releases are prerelease-quality and report-only.
 
-A release workflow builds the declared target matrix from a clean source
-checkout, tests with the race detector, generates per-asset SHA-256 checksums,
-attests build provenance, and publishes an immutable GitHub prerelease.
+A release workflow accepts only a tag whose peeled commit is contained in
+validated `main`, builds the declared target matrix from that exact source,
+executes every artifact on a matching native runner, generates per-asset
+SHA-256 checksums and CycloneDX SBOMs, attests build provenance, and publishes
+an immutable GitHub prerelease.
 
 Each release must contain:
 
 - `golden-path_<version>_<os>_<architecture>.tar.gz`
+- `golden-path_<version>_<os>_<architecture>.cdx.json`
 - `checksums.txt`
 - `compatibility-manifest.json`
 - `golden-path-checker-compatibility-v1.schema.json`
@@ -22,3 +25,8 @@ Each release must contain:
 Consumers select an exact SemVer asset and verify its checksum before
 execution. Mutable tags, `latest`, and network-to-interpreter bootstrap are not
 supported.
+
+Build and assembly jobs hold only `contents: read`. The final job receives
+`contents`, `attestations`, and `id-token` write permissions after downloading
+the already assembled bundle, and publishes it with the exact `gh` version
+recorded in `mise.lock`.

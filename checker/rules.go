@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 type ruleEvaluator func(root string, metadata Metadata, rule Rule, exceptionsPresent bool) Finding
@@ -38,7 +40,14 @@ var evaluators = map[string]ruleEvaluator{
 	"DT-RELEASE-001": evaluateReleaseVersion,
 }
 
-func evaluateRule(root string, metadata Metadata, rule Rule, exceptionsPresent bool, evaluatedAt time.Time) Finding {
+func evaluateRule(
+	root string,
+	metadata Metadata,
+	rule Rule,
+	exceptionsPresent bool,
+	evaluatedAt time.Time,
+	compatibility CompatibilityManifest,
+) Finding {
 	if rule.RetiredIn != nil {
 		return baseFinding(rule, "skip", ".", "Rule is retired in this standard snapshot.")
 	}
@@ -52,7 +61,7 @@ func evaluateRule(root string, metadata Metadata, rule Rule, exceptionsPresent b
 		return baseFinding(rule, "skip", ".", "Rule requires hybrid or manual evidence and was not asserted by the structural checker.")
 	}
 	if rule.ID == "DT-RUNTIME-001" {
-		return evaluateRuntimeDisposition(root, metadata, rule, evaluatedAt)
+		return evaluateRuntimeDisposition(root, metadata, rule, evaluatedAt, compatibility)
 	}
 	evaluator, exists := evaluators[rule.ID]
 	if !exists {
@@ -87,7 +96,7 @@ func evaluateCommands(root string, _ Metadata, rule Rule, _ bool) Finding {
 	if err != nil {
 		return inputError(rule, "justfile")
 	}
-	recipes, err := collectJustRecipes(root, name, data, map[string]bool{}, 0)
+	recipes, err := collectJustRecipes(root, name, data, &justTraversal{seen: map[string]bool{}}, 0)
 	if err != nil {
 		return inputError(rule, name)
 	}
@@ -103,7 +112,7 @@ func evaluateCommands(root string, _ Metadata, rule Rule, _ bool) Finding {
 	return baseFinding(rule, "pass", name, "The root Just façade exposes init, check, and ci.")
 }
 
-var justRecipePattern = regexp.MustCompile(`(?m)^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+[^:=\n]+)?\s*:`)
+var justRecipePattern = regexp.MustCompile(`(?m)^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+[^:\n]*)?\s*:(?:[ \t]|$)`)
 var justImportPattern = regexp.MustCompile(`(?m)^\s*import(\?)?\s+["']([^"']+)["']\s*$`)
 
 func parseJustRecipes(value string) map[string]bool {
@@ -114,18 +123,38 @@ func parseJustRecipes(value string) map[string]bool {
 	return result
 }
 
-func collectJustRecipes(root, name string, data []byte, seen map[string]bool, depth int) (map[string]bool, error) {
-	if depth > 32 {
+const (
+	maxJustImportDepth = 32
+	maxJustImportFiles = 256
+	maxJustImportBytes = 16 << 20
+)
+
+type justTraversal struct {
+	seen  map[string]bool
+	files int
+	bytes int
+}
+
+func collectJustRecipes(root, name string, data []byte, state *justTraversal, depth int) (map[string]bool, error) {
+	if depth > maxJustImportDepth {
 		return nil, fmt.Errorf("just import depth exceeds limit")
 	}
 	name = path.Clean(filepath.ToSlash(name))
 	if name == ".." || strings.HasPrefix(name, "../") {
 		return nil, fmt.Errorf("just import escapes repository root")
 	}
-	if seen[name] {
+	if state.seen[name] {
 		return map[string]bool{}, nil
 	}
-	seen[name] = true
+	state.seen[name] = true
+	state.files++
+	state.bytes += len(data)
+	if state.files > maxJustImportFiles {
+		return nil, fmt.Errorf("just import file count exceeds limit")
+	}
+	if state.bytes > maxJustImportBytes {
+		return nil, fmt.Errorf("just import bytes exceed limit")
+	}
 	result := parseJustRecipes(string(data))
 	for _, match := range justImportPattern.FindAllStringSubmatch(string(data), -1) {
 		importName := path.Clean(path.Join(path.Dir(name), match[2]))
@@ -136,7 +165,7 @@ func collectJustRecipes(root, name string, data []byte, seen map[string]bool, de
 		if err != nil {
 			return nil, err
 		}
-		importedRecipes, err := collectJustRecipes(root, importName, imported, seen, depth+1)
+		importedRecipes, err := collectJustRecipes(root, importName, imported, state, depth+1)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +179,11 @@ func collectJustRecipes(root, name string, data []byte, seen map[string]bool, de
 func evaluateExactSelectors(root string, metadata Metadata, rule Rule, _ bool) Finding {
 	var selectors []string
 	if data, err := readRepositoryFile(root, "mise.toml"); err == nil {
-		for name, value := range parseMiseTools(string(data)) {
+		config, parseErr := parseMiseConfig(data)
+		if parseErr != nil {
+			return inputError(rule, "mise.toml")
+		}
+		for name, value := range config.Tools {
 			selectors = append(selectors, name+"="+value)
 			if !isExactToolVersion(value) {
 				return baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise tool "+name+" does not use an exact version.")
@@ -172,7 +205,10 @@ func evaluateExactSelectors(root string, metadata Metadata, rule Rule, _ bool) F
 		}
 	}
 	if data, err := readRepositoryFile(root, "rust-toolchain.toml"); err == nil {
-		value := tomlString(string(data), "channel")
+		value, parseErr := rustToolchainVersion(data)
+		if parseErr != nil {
+			return inputError(rule, "rust-toolchain.toml")
+		}
 		selectors = append(selectors, "rust="+value)
 		if !exactPatchVersion(value) {
 			return baseFinding(rule, deviationStatus(rule), "rust-toolchain.toml", "Rust is not pinned to an exact release.")
@@ -187,27 +223,44 @@ func evaluateExactSelectors(root string, metadata Metadata, rule Rule, _ bool) F
 }
 
 func evaluateMiseLock(root string, _ Metadata, rule Rule, _ bool) Finding {
-	_, err := readRepositoryFile(root, "mise.toml")
+	data, err := readRepositoryFile(root, "mise.toml")
 	if errors.Is(err, errNotFound) {
 		return baseFinding(rule, "skip", "mise.toml", "Mise does not manage repository tools.")
 	}
 	if err != nil {
 		return inputError(rule, "mise.toml")
 	}
-	data, err := readRepositoryFile(root, "mise.toml")
+	config, err := parseMiseConfig(data)
 	if err != nil {
 		return inputError(rule, "mise.toml")
 	}
-	minVersion := tomlString(string(data), "min_version")
-	if !exactPatchVersion(minVersion) {
+	if !exactPatchVersion(config.MinVersion) {
 		return baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise configuration does not declare an exact minimum mise version.")
 	}
-	if _, err := readRepositoryFile(root, "mise.lock"); errors.Is(err, errNotFound) {
+	lockData, err := readRepositoryFile(root, "mise.lock")
+	if errors.Is(err, errNotFound) {
 		return baseFinding(rule, deviationStatus(rule), "mise.lock", "Mise manages tools but mise.lock is missing.")
 	} else if err != nil {
 		return inputError(rule, "mise.lock")
 	}
-	return baseFinding(rule, "pass", "mise.lock", "Mise configuration and lock are committed with an exact minimum version.")
+	lock, err := parseMiseLock(lockData)
+	if err != nil {
+		return inputError(rule, "mise.lock")
+	}
+	for tool, version := range config.Tools {
+		lockedVersions := lock.Tools[tool]
+		if !slices.Contains(lockedVersions, strings.TrimPrefix(version, "v")) {
+			finding := baseFinding(
+				rule,
+				deviationStatus(rule),
+				"mise.lock",
+				"Mise lock does not resolve configured tool "+tool+" at exact version "+version+".",
+			)
+			finding.Secondary = tool
+			return finding
+		}
+	}
+	return baseFinding(rule, "pass", "mise.lock", "Mise configuration and lock resolve every configured tool at its exact version.")
 }
 
 func evaluateDependencyRecords(root string, metadata Metadata, rule Rule, _ bool) Finding {
@@ -247,7 +300,7 @@ func evaluateDirectDependencies(root string, _ Metadata, rule Rule, _ bool) Find
 	if data, err := readRepositoryFile(root, "package.json"); err == nil {
 		var manifest map[string]any
 		if json.Unmarshal(data, &manifest) != nil {
-			return baseFinding(rule, "error", "package.json", "package.json could not be decoded for direct dependency validation.")
+			return inputError(rule, "package.json")
 		}
 		for _, section := range []string{"dependencies", "devDependencies", "optionalDependencies", "peerDependencies"} {
 			dependencies, _ := manifest[section].(map[string]any)
@@ -316,11 +369,25 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 				return finding
 			}
 		}
+		for _, match := range imagePattern.FindAllStringSubmatch(string(data), -1) {
+			reference := strings.Trim(match[1], `"'`)
+			remoteCount++
+			if !immutableImageReference(reference) {
+				finding := baseFinding(rule, deviationStatus(rule), name, "Container image reference is not pinned by SHA-256 digest.")
+				finding.Secondary = reference
+				return finding
+			}
+		}
 	}
 	if remoteCount == 0 {
 		return baseFinding(rule, "skip", ".github/workflows", "No remote executable workflow reference was detected.")
 	}
-	return baseFinding(rule, "pass", ".github/workflows", "Remote workflow and action references are immutable.")
+	return baseFinding(
+		rule,
+		"skip",
+		".github/workflows",
+		"Detected workflow action and container references are immutable; archive, binary, VCS, generated-source, and script correlation remains outside checker 0.x.",
+	)
 }
 
 func evaluateAssetVersion(_ string, metadata Metadata, rule Rule, _ bool) Finding {
@@ -366,58 +433,85 @@ func evaluateWorkflowTemplates(root string, _ Metadata, rule Rule, _ bool) Findi
 	return baseFinding(rule, "skip", "workflow-templates", "Workflow templates have matching files and thin caller markers; full GitHub workflow semantics require the repository quality gate.")
 }
 
-func evaluateRuntimeDisposition(root string, metadata Metadata, rule Rule, evaluatedAt time.Time) Finding {
-	symbolicDisposition := false
+func evaluateRuntimeDisposition(
+	root string,
+	metadata Metadata,
+	rule Rule,
+	evaluatedAt time.Time,
+	compatibility CompatibilityManifest,
+) Finding {
+	selections := make(map[string]RuntimeSelection, len(compatibility.RuntimeSelections))
+	for _, selection := range compatibility.RuntimeSelections {
+		selections[selection.Profile] = selection
+	}
 	for _, profile := range metadata.Profiles {
+		selection, managed := selections[profile]
+		if !managed {
+			continue
+		}
+		var version, findingPath string
 		switch profile {
 		case "node-typescript":
-			version, finding := miseVersion(root, "node", rule)
+			selected, finding := miseVersion(root, "node", rule)
 			if finding != nil {
 				return *finding
 			}
-			major := firstVersionPart(version)
-			if major != 22 && major != 24 {
-				return baseFinding(rule, deviationStatus(rule), "mise.toml", "Selected Node.js runtime is blocked by runtime-support/v1.")
-			}
+			version, findingPath = selected, "mise.toml"
 		case "python":
 			data, err := readRepositoryFile(root, ".python-version")
 			if err != nil {
 				return missingOrInput(rule, ".python-version", err, "Python runtime selector is missing.")
 			}
-			parts := versionParts(strings.TrimSpace(string(data)))
-			if len(parts) != 3 || parts[0] != 3 || parts[1] < 10 || parts[1] > 14 {
-				return baseFinding(rule, deviationStatus(rule), ".python-version", "Selected Python runtime is not supported by runtime-support/v1.")
-			}
-			if parts[1] == 10 {
-				if evaluatedAt.UTC().Format("2006-01-02") > "2026-10-31" {
-					return baseFinding(rule, deviationStatus(rule), ".python-version", "Selected Python compatibility-only runtime is past its snapshot support deadline.")
-				}
-			}
+			version, findingPath = strings.TrimSpace(string(data)), ".python-version"
 		case "go":
-			version, finding := miseVersion(root, "go", rule)
+			selected, finding := miseVersion(root, "go", rule)
 			if finding != nil {
 				return *finding
 			}
-			parts := versionParts(version)
-			if len(parts) != 3 || parts[0] != 1 || parts[1] < 25 || parts[1] > 26 {
-				return baseFinding(rule, deviationStatus(rule), "mise.toml", "Selected Go runtime is blocked by runtime-support/v1.")
-			}
+			version, findingPath = selected, "mise.toml"
 		case "rust":
-			symbolicDisposition = true
+			data, err := readRepositoryFile(root, "rust-toolchain.toml")
+			if err != nil {
+				return missingOrInput(rule, "rust-toolchain.toml", err, "Rust runtime selector is missing.")
+			}
+			selected, parseErr := rustToolchainVersion(data)
+			if parseErr != nil {
+				return inputError(rule, "rust-toolchain.toml")
+			}
+			version, findingPath = selected, "rust-toolchain.toml"
 		case "zig", "zig-toolchain":
-			version, finding := miseVersion(root, "zig", rule)
+			selected, finding := miseVersion(root, "zig", rule)
 			if finding != nil {
 				return *finding
 			}
-			if version != "0.16.0" {
-				return baseFinding(rule, deviationStatus(rule), "mise.toml", "Selected Zig runtime is not the organization-approved exact tagged baseline.")
+			version, findingPath = selected, "mise.toml"
+		}
+		var matched *RuntimeSelectionVersion
+		for index := range selection.Versions {
+			if selection.Versions[index].Version == version {
+				matched = &selection.Versions[index]
+				break
 			}
 		}
+		if matched == nil || matched.Disposition == "blocked" {
+			return baseFinding(
+				rule,
+				deviationStatus(rule),
+				findingPath,
+				"Selected "+selection.Tool+" runtime is not an allowed exact release in the checker compatibility manifest.",
+			)
+		}
+		if matched.SupportEndsAt != "" &&
+			evaluatedAt.UTC().Format("2006-01-02") > matched.SupportEndsAt {
+			return baseFinding(
+				rule,
+				deviationStatus(rule),
+				findingPath,
+				"Selected "+selection.Tool+" runtime is past its compatibility support deadline.",
+			)
+		}
 	}
-	if symbolicDisposition {
-		return baseFinding(rule, "skip", ".", "The bundled runtime catalog uses a coordinated symbolic Rust selector; exact disposition mapping is not yet present in the 0.x compatibility manifest.")
-	}
-	return baseFinding(rule, "pass", ".", "Selected language runtime lines have an allowed organization disposition.")
+	return baseFinding(rule, "pass", ".", "Selected language runtimes match exact allowed releases in the checker compatibility manifest.")
 }
 
 func evaluateNodeProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
@@ -432,7 +526,7 @@ func evaluateNodeProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
 		PackageManager string `json:"packageManager"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return baseFinding(rule, "error", "package.json", "package.json could not be decoded.")
+		return inputError(rule, "package.json")
 	}
 	if !pnpmExactPattern.MatchString(manifest.PackageManager) {
 		return baseFinding(rule, deviationStatus(rule), "package.json", "packageManager must pin an exact pnpm version.")
@@ -454,7 +548,11 @@ func evaluatePythonProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
 		return baseFinding(rule, deviationStatus(rule), ".python-version", "Python must be pinned to an exact patch version.")
 	}
 	if miseData, err := readRepositoryFile(root, "mise.toml"); err == nil {
-		if _, exists := parseMiseTools(string(miseData))["python"]; exists {
+		config, parseErr := parseMiseConfig(miseData)
+		if parseErr != nil {
+			return inputError(rule, "mise.toml")
+		}
+		if _, exists := config.Tools["python"]; exists {
 			return baseFinding(rule, deviationStatus(rule), "mise.toml", "Uv, not mise, must own the Python runtime.")
 		}
 	}
@@ -508,12 +606,19 @@ func evaluateRustProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
 	if err != nil {
 		return missingOrInput(rule, "rust-toolchain.toml", err, "Rust profile requires rust-toolchain.toml.")
 	}
-	channel := tomlString(string(data), "channel")
+	channel, parseErr := rustToolchainVersion(data)
+	if parseErr != nil {
+		return inputError(rule, "rust-toolchain.toml")
+	}
 	if !exactPatchVersion(channel) {
 		return baseFinding(rule, deviationStatus(rule), "rust-toolchain.toml", "Rust toolchain channel must be an exact release.")
 	}
 	if mise, err := readRepositoryFile(root, "mise.toml"); err == nil {
-		if _, exists := parseMiseTools(string(mise))["rust"]; exists {
+		config, parseErr := parseMiseConfig(mise)
+		if parseErr != nil {
+			return inputError(rule, "mise.toml")
+		}
+		if _, exists := config.Tools["rust"]; exists {
 			return baseFinding(rule, deviationStatus(rule), "mise.toml", "Rustup must be the sole Rust toolchain owner.")
 		}
 	}
@@ -539,7 +644,9 @@ func evaluateReleaseVersion(_ string, metadata Metadata, rule Rule, _ bool) Find
 }
 
 func inputError(rule Rule, name string) Finding {
-	return baseFinding(rule, "error", name, "A bounded repository input could not be read safely.")
+	finding := baseFinding(rule, "error", name, "A bounded repository input could not be read or decoded safely.")
+	finding.Extensions = map[string]any{"errorKind": "configuration"}
+	return finding
 }
 
 func missingOrInput(rule Rule, name string, err error, missingMessage string) Finding {
@@ -560,35 +667,58 @@ func firstExisting(root string, names ...string) (string, []byte, error) {
 	return "", nil, errNotFound
 }
 
-func parseMiseTools(value string) map[string]string {
-	result := map[string]string{}
-	inTools := false
-	for _, rawLine := range strings.Split(value, "\n") {
-		line := strings.TrimSpace(strings.SplitN(rawLine, "#", 2)[0])
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			inTools = line == "[tools]"
-			continue
-		}
-		if !inTools || !strings.Contains(line, "=") {
-			continue
-		}
-		parts := strings.SplitN(line, "=", 2)
-		key := strings.Trim(strings.TrimSpace(parts[0]), `"'`)
-		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
-		if key != "" && value != "" {
-			result[key] = value
-		}
-	}
-	return result
+type miseConfig struct {
+	MinVersion string            `toml:"min_version"`
+	Tools      map[string]string `toml:"tools"`
 }
 
-func tomlString(value, key string) string {
-	pattern := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `\s*=\s*["']([^"']+)["']\s*(?:#.*)?$`)
-	match := pattern.FindStringSubmatch(value)
-	if len(match) == 2 {
-		return match[1]
+type miseLock struct {
+	Tools map[string][]struct {
+		Version string `toml:"version"`
+	} `toml:"tools"`
+}
+
+func parseMiseConfig(data []byte) (miseConfig, error) {
+	var config miseConfig
+	if err := toml.Unmarshal(data, &config); err != nil {
+		return miseConfig{}, err
 	}
-	return ""
+	if config.Tools == nil {
+		config.Tools = map[string]string{}
+	}
+	return config, nil
+}
+
+func parseMiseLock(data []byte) (struct{ Tools map[string][]string }, error) {
+	var document miseLock
+	if err := toml.Unmarshal(data, &document); err != nil {
+		return struct{ Tools map[string][]string }{}, err
+	}
+	result := struct{ Tools map[string][]string }{Tools: map[string][]string{}}
+	for tool, entries := range document.Tools {
+		for _, entry := range entries {
+			if !isExactToolVersion(entry.Version) {
+				return struct{ Tools map[string][]string }{}, fmt.Errorf("mise lock tool %q has invalid version", tool)
+			}
+			result.Tools[tool] = append(result.Tools[tool], strings.TrimPrefix(entry.Version, "v"))
+		}
+	}
+	if len(result.Tools) == 0 {
+		return struct{ Tools map[string][]string }{}, fmt.Errorf("mise lock contains no tool resolutions")
+	}
+	return result, nil
+}
+
+func rustToolchainVersion(data []byte) (string, error) {
+	var document struct {
+		Toolchain struct {
+			Channel string `toml:"channel"`
+		} `toml:"toolchain"`
+	}
+	if err := toml.Unmarshal(data, &document); err != nil {
+		return "", err
+	}
+	return document.Toolchain.Channel, nil
 }
 
 func miseVersion(root, tool string, rule Rule) (string, *Finding) {
@@ -597,7 +727,12 @@ func miseVersion(root, tool string, rule Rule) (string, *Finding) {
 		finding := missingOrInput(rule, "mise.toml", err, "Mise configuration is required for "+tool+".")
 		return "", &finding
 	}
-	version := parseMiseTools(string(data))[tool]
+	config, err := parseMiseConfig(data)
+	if err != nil {
+		finding := inputError(rule, "mise.toml")
+		return "", &finding
+	}
+	version := config.Tools[tool]
 	if !isExactToolVersion(version) {
 		finding := baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise must pin "+tool+" to an exact release.")
 		return "", &finding
@@ -671,14 +806,6 @@ func versionParts(value string) []int {
 	return result
 }
 
-func firstVersionPart(value string) int {
-	parts := versionParts(value)
-	if len(parts) == 0 {
-		return -1
-	}
-	return parts[0]
-}
-
 func isDirectReference(value string) bool {
 	lower := strings.ToLower(value)
 	return strings.HasPrefix(lower, "git+") ||
@@ -705,12 +832,17 @@ func immutableActionReference(reference string) bool {
 	return fullCommitOnlyPattern.MatchString(reference[at+1:])
 }
 
+func immutableImageReference(reference string) bool {
+	return digestPattern.MatchString(reference)
+}
+
 var (
 	floatingPattern       = regexp.MustCompile(`(?i)(?:^|[-./])(?:latest|stable|master|main|nightly)(?:$|[-./])`)
 	fullCommitPattern     = regexp.MustCompile(`(?i)[a-f0-9]{40}`)
 	fullCommitOnlyPattern = regexp.MustCompile(`(?i)^[a-f0-9]{40}$`)
 	digestPattern         = regexp.MustCompile(`(?i)@sha256:[a-f0-9]{64}$`)
 	usesPattern           = regexp.MustCompile(`(?m)^\s*uses:\s*([^\s#]+)`)
+	imagePattern          = regexp.MustCompile(`(?m)^\s*image:\s*([^\s#]+)`)
 	pnpmExactPattern      = regexp.MustCompile(`^pnpm@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
 	calverPattern         = regexp.MustCompile(`^[0-9]{4}\.(0[1-9]|1[0-2])(?:\.[1-9][0-9]*)?$`)
 	semverPattern         = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)

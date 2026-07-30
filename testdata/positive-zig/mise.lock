@@ -1,1 +1,3 @@
-{}
+[[tools.zig]]
+version = "0.16.0"
+backend = "core:zig"

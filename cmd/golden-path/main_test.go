@@ -69,3 +69,66 @@ func TestRunWritesExplicitExternalOutput(t *testing.T) {
 		t.Fatal("stdout does not contain text output")
 	}
 }
+
+func TestRunRejectsSymlinkedParentResolvingIntoRepository(t *testing.T) {
+	source := filepath.Join("..", "..", "testdata", "positive-go")
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(source)); err != nil {
+		t.Fatal(err)
+	}
+	insideDirectory := filepath.Join(root, "evidence")
+	if err := os.Mkdir(insideDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	alias := filepath.Join(outside, "alias")
+	if err := os.Symlink(insideDirectory, alias); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(alias, "result.json")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check",
+		"--root", root,
+		"--evaluated-at", "2026-07-31T00:00:00Z",
+		"--json-output", output,
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+	if _, err := os.Stat(filepath.Join(insideDirectory, "result.json")); !os.IsNotExist(err) {
+		t.Fatal("checker wrote through a symlinked parent into the repository")
+	}
+}
+
+func TestRunWritesGitHubSummaryAndAnnotations(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "waived-go")
+	outputDirectory := t.TempDir()
+	jsonOutput := filepath.Join(outputDirectory, "result.json")
+	summaryOutput := filepath.Join(outputDirectory, "summary.md")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check",
+		"--root", root,
+		"--evaluated-at", "2026-07-31T00:00:00Z",
+		"--json-output", jsonOutput,
+		"--github-summary-output", summaryOutput,
+		"--github-annotations",
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+	}
+	// #nosec G304 -- summaryOutput is inside a test-owned temporary directory.
+	summary, err := os.ReadFile(summaryOutput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"# Golden Path conformance", "Matched exceptions", "2026-08-31", "Remediation"} {
+		if !strings.Contains(string(summary), expected) {
+			t.Errorf("summary does not contain %q", expected)
+		}
+	}
+	if !strings.Contains(stderr.String(), "::warning") {
+		t.Fatal("waived finding did not produce a warning annotation")
+	}
+}

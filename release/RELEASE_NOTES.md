@@ -15,16 +15,18 @@ Initial report-only prerelease.
 - Offline and read-only repository structural checker
 - Stable text and JSON output with exit codes `0` through `3`
 - Immutable standard snapshot bound to source commit and SHA-256 digests
+- Exact patch-level runtime compatibility mapping for Node.js, Python, Go,
+  Rust, and Zig
 - Positive, negative, exception, and malformed contract fixtures
-- Darwin and Linux release targets for AMD64 and ARM64
+- Native-validated Darwin and Linux release targets for AMD64 and ARM64
+- Digest-bound CycloneDX 1.6 SBOM for every release archive
+- Bounded GitHub step summary and workflow annotations
 
 ## Limitations
 
 Hybrid, manual, non-applicable, and only partially evaluated rules are emitted
-as explicit `skip` findings. The `2026.07` runtime catalog uses a symbolic Rust
-selector, so exact Rust disposition remains skipped until a coordinated exact
-mapping is bundled. This release does not establish merge protection and must
-not be represented as `policy-required` or `platform-enforced`.
+as explicit `skip` findings. This release does not establish merge protection
+and must not be represented as `policy-required` or `platform-enforced`.
 
 ## Rollback
 
