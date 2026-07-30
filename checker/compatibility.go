@@ -21,6 +21,9 @@ func loadCompatibility() (CompatibilityManifest, error) {
 		!slices.Equal(manifest.Enforcement, []string{"report-only"}) {
 		return CompatibilityManifest{}, fmt.Errorf("bundled checker compatibility identity mismatch")
 	}
+	if manifest.ExceptionExpiryWarningDays < 1 || manifest.ExceptionExpiryWarningDays > 365 {
+		return CompatibilityManifest{}, fmt.Errorf("bundled exception expiry warning window is invalid")
+	}
 	if len(manifest.Standards) != 1 {
 		return CompatibilityManifest{}, fmt.Errorf("bundled compatibility manifest must select one standard")
 	}

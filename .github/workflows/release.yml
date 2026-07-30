@@ -60,23 +60,15 @@ jobs:
           - runner: ubuntu-24.04
             target: linux/amd64
             artifact: target-linux-amd64
-            archive: golden-path_0.1.0_linux_amd64.tar.gz
-            sbom: golden-path_0.1.0_linux_amd64.cdx.json
           - runner: ubuntu-24.04-arm
             target: linux/arm64
             artifact: target-linux-arm64
-            archive: golden-path_0.1.0_linux_arm64.tar.gz
-            sbom: golden-path_0.1.0_linux_arm64.cdx.json
           - runner: macos-26-intel
             target: darwin/amd64
             artifact: target-darwin-amd64
-            archive: golden-path_0.1.0_darwin_amd64.tar.gz
-            sbom: golden-path_0.1.0_darwin_amd64.cdx.json
           - runner: macos-26
             target: darwin/arm64
             artifact: target-darwin-arm64
-            archive: golden-path_0.1.0_darwin_arm64.tar.gz
-            sbom: golden-path_0.1.0_darwin_arm64.cdx.json
     steps:
       - name: Check out verified source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -92,15 +84,17 @@ jobs:
       - name: Build and execute native release target
         env:
           TARGET: ${{ matrix.target }}
-          ARCHIVE: ${{ matrix.archive }}
         run: |
           set -euo pipefail
+          version="$(go run -mod=readonly ./cmd/golden-path --version)"
+          version="${version#golden-path }"
+          archive="golden-path_${version}_${TARGET/\//_}.tar.gz"
           go run -mod=readonly ./cmd/release-package \
             --source . \
             --dist "$RUNNER_TEMP/dist" \
             --target "$TARGET"
           mkdir "$RUNNER_TEMP/unpacked"
-          tar -xzf "$RUNNER_TEMP/dist/$ARCHIVE" -C "$RUNNER_TEMP/unpacked"
+          tar -xzf "$RUNNER_TEMP/dist/$archive" -C "$RUNNER_TEMP/unpacked"
           "$RUNNER_TEMP/unpacked/golden-path/golden-path" --version
           "$RUNNER_TEMP/unpacked/golden-path/golden-path" check \
             --root testdata/positive-go \
@@ -112,8 +106,8 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: |
-            ${{ runner.temp }}/dist/${{ matrix.archive }}
-            ${{ runner.temp }}/dist/${{ matrix.sbom }}
+            ${{ runner.temp }}/dist/golden-path_*.tar.gz
+            ${{ runner.temp }}/dist/golden-path_*.cdx.json
           if-no-files-found: error
 
   assemble:
@@ -221,7 +215,7 @@ jobs:
           test -x publisher/bin/gh
 
       - name: Attest release subjects
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: bundle/dist/*
 

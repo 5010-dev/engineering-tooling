@@ -2,6 +2,7 @@ package checker
 
 import (
 	"errors"
+	"fmt"
 	"path"
 	"slices"
 	"sort"
@@ -63,6 +64,9 @@ func Check(options Options) Result {
 	if metadata.StandardVersion != StandardVersion || metadata.ContractVersion != ContractVersion {
 		return configurationResult(result, "DT-META-001", ".github/golden-path.yaml", "The selected standard or contract version is unsupported by this checker.")
 	}
+	if findingPath, message := validateProfileDeclarations(options.Root, metadata); message != "" {
+		return configurationResult(result, "DT-META-001", findingPath, message)
+	}
 
 	exceptions, exceptionsPresent, err := loadExceptions(options.Root)
 	if err != nil {
@@ -72,6 +76,7 @@ func Check(options Options) Result {
 		return configurationResult(result, "DT-EXC-001", ".github/golden-path-exceptions.yaml", issue)
 	}
 
+	approachingExceptions := map[string]string{}
 	for _, rule := range catalog.Rules {
 		finding := evaluateRule(options.Root, metadata, rule, exceptionsPresent, options.EvaluatedAt, compatibility)
 		if finding.Status == "fail" {
@@ -86,11 +91,16 @@ func Check(options Options) Result {
 						finding.Extensions = map[string]any{}
 					}
 					finding.Extensions["exceptionExpiresAt"] = exception.ExpiresAt
+					if exceptionApproachesExpiry(exception.ExpiresAt, options.EvaluatedAt, compatibility.ExceptionExpiryWarningDays) {
+						finding.Extensions["exceptionApproachingExpiry"] = true
+						approachingExceptions[exception.ID] = exception.ExpiresAt
+					}
 				}
 			}
 		}
 		result.Findings = append(result.Findings, finding)
 	}
+	applyExceptionExpiryWarning(result.Findings, approachingExceptions, compatibility.ExceptionExpiryWarningDays)
 
 	sort.Slice(result.Findings, func(left, right int) bool {
 		a, b := result.Findings[left], result.Findings[right]
@@ -238,6 +248,8 @@ func validateExceptionSemantics(exceptions ExceptionsFile, catalog Catalog, eval
 }
 
 func matchingException(exceptions []Exception, metadata Metadata, finding Finding, rule Rule, evaluatedAt time.Time) (*Exception, bool) {
+	var validMatch, expiredMatch *Exception
+	var validExpiry, expiredExpiry time.Time
 	for index := range exceptions {
 		exception := &exceptions[index]
 		if !slices.Contains(exception.Rules, rule.ID) || !exceptionScopeMatches(exception.Scope, metadata, finding.Path) {
@@ -245,9 +257,73 @@ func matchingException(exceptions []Exception, metadata Metadata, finding Findin
 		}
 		expiry, _ := time.Parse("2006-01-02", exception.ExpiresAt)
 		expired := evaluatedAt.UTC().Format("2006-01-02") > expiry.Format("2006-01-02")
-		return exception, expired
+		if expired {
+			if preferredException(exception, expiry, expiredMatch, expiredExpiry) {
+				expiredMatch, expiredExpiry = exception, expiry
+			}
+			continue
+		}
+		if preferredException(exception, expiry, validMatch, validExpiry) {
+			validMatch, validExpiry = exception, expiry
+		}
+	}
+	if validMatch != nil {
+		return validMatch, false
+	}
+	if expiredMatch != nil {
+		return expiredMatch, true
 	}
 	return nil, false
+}
+
+func preferredException(candidate *Exception, candidateExpiry time.Time, current *Exception, currentExpiry time.Time) bool {
+	return current == nil ||
+		candidateExpiry.After(currentExpiry) ||
+		candidateExpiry.Equal(currentExpiry) && candidate.ID < current.ID
+}
+
+func exceptionApproachesExpiry(expiresAt string, evaluatedAt time.Time, warningDays int) bool {
+	expiry, err := time.Parse("2006-01-02", expiresAt)
+	if err != nil {
+		return false
+	}
+	evaluatedAt = evaluatedAt.UTC()
+	evaluationDate := time.Date(evaluatedAt.Year(), evaluatedAt.Month(), evaluatedAt.Day(), 0, 0, 0, 0, time.UTC)
+	days := int(expiry.Sub(evaluationDate).Hours() / 24)
+	return days >= 0 && days <= warningDays
+}
+
+func applyExceptionExpiryWarning(findings []Finding, exceptions map[string]string, warningDays int) {
+	if len(exceptions) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(exceptions))
+	for id := range exceptions {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	details := make([]string, 0, len(ids))
+	for _, id := range ids {
+		details = append(details, id+" expires "+exceptions[id])
+	}
+	for index := range findings {
+		if findings[index].RuleID != "DT-EXC-001" {
+			continue
+		}
+		findings[index].Status = "warn"
+		findings[index].Severity = "warning"
+		findings[index].Message = fmt.Sprintf(
+			"Matched exceptions are within the checker release's %d-day expiry warning window: %s.",
+			warningDays,
+			strings.Join(details, "; "),
+		)
+		if findings[index].Extensions == nil {
+			findings[index].Extensions = map[string]any{}
+		}
+		findings[index].Extensions["exceptionExpiryWarningDays"] = warningDays
+		findings[index].Extensions["approachingExceptionIds"] = ids
+		return
+	}
 }
 
 func exceptionScopeMatches(scope ExceptionScope, metadata Metadata, findingPath string) bool {

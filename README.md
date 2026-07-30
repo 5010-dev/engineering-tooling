@@ -44,9 +44,18 @@ rules are explicit `skip` findings. The checker never converts missing evidence
 into a pass.
 
 The compatibility manifest maps the `2026.07` runtime lines to exact Node.js,
-Python, Go, Rust, and Zig patch releases. A selected patch that is absent from
-that immutable mapping fails instead of inheriting a broader major or minor
-allowance.
+Python, Go, Rust, and Zig patch releases. Mise selectors may use an exact
+release or a major/minor selector that a committed `mise.lock` resolves to one
+exact release. The resolved patch must still appear in the immutable runtime
+mapping; the checker never infers runtime support from a broad selector.
+
+The same versioned manifest defines the checker release's 30-day
+exception-expiry warning window. Golden Path `0.1.0` intentionally does not
+admit Zig's previous-tagged-stable compatibility-only tier: the normative
+standard requires a bounded reason, owner, and review date, while the v1
+repository metadata contract does not yet define that evidence. Until a future
+contract represents it, the previous Zig stable fails as unsupported rather
+than passing without the required evidence.
 
 ## Repository layout
 

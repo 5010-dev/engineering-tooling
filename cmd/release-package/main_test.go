@@ -106,6 +106,33 @@ func TestDeterministicSBOMBindsArchiveDigest(t *testing.T) {
 		document.Metadata.Component.Hashes[0].Content != digest {
 		t.Fatalf("SBOM does not bind archive digest: %+v", document.Metadata.Component)
 	}
+	if len(document.Components) == 0 {
+		t.Fatal("SBOM does not include Go module components")
+	}
+	hasModuleHashProperty := false
+	for _, component := range document.Components {
+		if component.PURL == "" {
+			t.Errorf("component %q does not include a package URL", component.Name)
+		}
+		if len(component.Hashes) != 0 {
+			t.Errorf("component %q presents a Go directory hash as an artifact hash", component.Name)
+		}
+		for _, property := range component.Properties {
+			if property.Name == "5010-dev:go:module-h1" {
+				hasModuleHashProperty = true
+			}
+		}
+	}
+	if !hasModuleHashProperty {
+		t.Fatal("SBOM does not preserve any Go module h1 integrity value")
+	}
+}
+
+func TestGoModulePURL(t *testing.T) {
+	got := goModulePURL("github.com/example/module", "v1.2.3")
+	if got != "pkg:golang/github.com/example/module@v1.2.3" {
+		t.Fatalf("PURL = %q", got)
+	}
 }
 
 func TestBuildEnvironmentReplacesTargetSelectors(t *testing.T) {
