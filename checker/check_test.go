@@ -623,6 +623,37 @@ func TestUnderDeclaredNativeProfileIsConfigurationError(t *testing.T) {
 	}
 }
 
+func TestNotApplicableRepositoryMayRetainNativeProfileMarkers(t *testing.T) {
+	root := copyFixture(t, "not-applicable")
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := rootFS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := rootFS.WriteFile("go.mod", []byte("module example.com/generated-mirror\n\ngo 1.26\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if result.ExitCode != 0 || !result.Complete {
+		t.Fatalf("not-applicable repository with native marker = exit %d complete %t, want exit 0 complete true", result.ExitCode, result.Complete)
+	}
+	for ruleID, want := range map[string]string{
+		"DT-META-001": "pass",
+		"DT-META-002": "skip",
+		"DT-CMD-001":  "skip",
+		"DT-GO-001":   "skip",
+	} {
+		if got := findingStatus(result, ruleID); got != want {
+			t.Errorf("%s status = %q, want %q", ruleID, got, want)
+		}
+	}
+}
+
 func TestGoDirectiveMayBeLowerThanSelectedToolchain(t *testing.T) {
 	root := copyFixture(t, "positive-go")
 	rootFS, err := os.OpenRoot(root)
