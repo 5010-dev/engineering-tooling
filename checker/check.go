@@ -64,8 +64,10 @@ func Check(options Options) Result {
 	if metadata.StandardVersion != StandardVersion || metadata.ContractVersion != ContractVersion {
 		return configurationResult(result, "DT-META-001", ".github/golden-path.yaml", "The selected standard or contract version is unsupported by this checker.")
 	}
-	if findingPath, message := validateProfileDeclarations(options.Root, metadata); message != "" {
-		return configurationResult(result, "DT-META-001", findingPath, message)
+	if metadata.Applicability.Status != "not-applicable" {
+		if findingPath, message := validateProfileDeclarations(options.Root, metadata); message != "" {
+			return configurationResult(result, "DT-META-001", findingPath, message)
+		}
 	}
 
 	exceptions, exceptionsPresent, err := loadExceptions(options.Root)
