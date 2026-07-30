@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,6 +53,7 @@ type cycloneComponent struct {
 	BOMRef     string            `json:"bom-ref"`
 	Name       string            `json:"name"`
 	Version    string            `json:"version,omitempty"`
+	PURL       string            `json:"purl,omitempty"`
 	Hashes     []cycloneHash     `json:"hashes,omitempty"`
 	Properties []cycloneProperty `json:"properties,omitempty"`
 }
@@ -265,9 +267,13 @@ func deterministicSBOM(
 			BOMRef:  reference,
 			Name:    module.Path,
 			Version: module.Version,
+			PURL:    goModulePURL(module.Path, module.Version),
 		}
-		if hash, ok := goModuleHash(module.Sum); ok {
-			component.Hashes = []cycloneHash{{Algorithm: "SHA-256", Content: hash}}
+		if validGoModuleHash(module.Sum) {
+			component.Properties = []cycloneProperty{{
+				Name:  "5010-dev:go:module-h1",
+				Value: module.Sum,
+			}}
 		}
 		components = append(components, component)
 		dependencyRefs = append(dependencyRefs, reference)
@@ -302,15 +308,20 @@ func deterministicSBOM(
 	return append(data, '\n'), nil
 }
 
-func goModuleHash(value string) (string, bool) {
+func validGoModuleHash(value string) bool {
 	if !strings.HasPrefix(value, "h1:") {
-		return "", false
+		return false
 	}
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, "h1:"))
-	if err != nil || len(raw) != sha256.Size {
-		return "", false
+	return err == nil && len(raw) == sha256.Size
+}
+
+func goModulePURL(modulePath, version string) string {
+	segments := strings.Split(modulePath, "/")
+	for index := range segments {
+		segments[index] = url.PathEscape(segments[index])
 	}
-	return hex.EncodeToString(raw), true
+	return "pkg:golang/" + strings.Join(segments, "/") + "@" + url.PathEscape(version)
 }
 
 func buildEnvironment(environment []string, releaseTarget target) []string {

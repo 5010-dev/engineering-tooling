@@ -9,6 +9,7 @@
     "checkerVersion",
     "lifecycle",
     "enforcement",
+    "exceptionExpiryWarningDays",
     "standards",
     "runtimeSelections",
     "supportedTargets"
@@ -40,6 +41,11 @@
           "platform-enforced"
         ]
       }
+    },
+    "exceptionExpiryWarningDays": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 365
     },
     "standards": {
       "type": "array",

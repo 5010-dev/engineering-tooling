@@ -36,7 +36,6 @@ var evaluators = map[string]ruleEvaluator{
 	"DT-GO-001":      evaluateGoAuthority,
 	"DT-GO-002":      evaluateGoDependencies,
 	"DT-RUST-001":    evaluateRustProfile,
-	"DT-ZIG-001":     evaluateZigProfile,
 	"DT-RELEASE-001": evaluateReleaseVersion,
 }
 
@@ -63,11 +62,42 @@ func evaluateRule(
 	if rule.ID == "DT-RUNTIME-001" {
 		return evaluateRuntimeDisposition(root, metadata, rule, evaluatedAt, compatibility)
 	}
+	if rule.ID == "DT-ZIG-001" {
+		return evaluateZigProfile(root, metadata, rule, compatibility)
+	}
 	evaluator, exists := evaluators[rule.ID]
 	if !exists {
 		return baseFinding(rule, "error", ".", "The checker release has no evaluator for an applicable automated rule.")
 	}
 	return evaluator(root, metadata, rule, exceptionsPresent)
+}
+
+type nativeProfileMarker struct {
+	paths    []string
+	profiles []string
+}
+
+func validateProfileDeclarations(root string, metadata Metadata) (string, string) {
+	markers := []nativeProfileMarker{
+		{paths: []string{"package.json"}, profiles: []string{"node-typescript"}},
+		{paths: []string{"pyproject.toml"}, profiles: []string{"python"}},
+		{paths: []string{"go.mod", "go.work"}, profiles: []string{"go"}},
+		{paths: []string{"Cargo.toml"}, profiles: []string{"rust"}},
+		{paths: []string{"build.zig", "build.zig.zon"}, profiles: []string{"zig", "zig-toolchain"}},
+	}
+	for _, marker := range markers {
+		name, _, err := firstExisting(root, marker.paths...)
+		if errors.Is(err, errNotFound) {
+			continue
+		}
+		if err != nil {
+			return marker.paths[0], "A native profile marker could not be read safely."
+		}
+		if !intersects(marker.profiles, metadata.Profiles) {
+			return name, "Native marker " + name + " requires one of the declared profiles: " + strings.Join(marker.profiles, ", ") + "."
+		}
+	}
+	return "", ""
 }
 
 func ruleApplies(metadata Metadata, rule Rule) bool {
@@ -113,7 +143,7 @@ func evaluateCommands(root string, _ Metadata, rule Rule, _ bool) Finding {
 }
 
 var justRecipePattern = regexp.MustCompile(`(?m)^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+[^:\n]*)?\s*:(?:[ \t]|$)`)
-var justImportPattern = regexp.MustCompile(`(?m)^\s*import(\?)?\s+["']([^"']+)["']\s*$`)
+var justImportPattern = regexp.MustCompile(`(?m)^\s*import(\?)?\s+["']([^"']+)["']\s*(?:#.*)?$`)
 
 func parseJustRecipes(value string) map[string]bool {
 	result := map[string]bool{}
@@ -183,10 +213,25 @@ func evaluateExactSelectors(root string, metadata Metadata, rule Rule, _ bool) F
 		if parseErr != nil {
 			return inputError(rule, "mise.toml")
 		}
-		for name, value := range config.Tools {
-			selectors = append(selectors, name+"="+value)
-			if !isExactToolVersion(value) {
-				return baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise tool "+name+" does not use an exact version.")
+		if len(config.Tools) > 0 {
+			lockData, lockErr := readRepositoryFile(root, "mise.lock")
+			if errors.Is(lockErr, errNotFound) {
+				return baseFinding(rule, deviationStatus(rule), "mise.lock", "Mise tool selectors cannot resolve exact versions because mise.lock is missing.")
+			}
+			if lockErr != nil {
+				return inputError(rule, "mise.lock")
+			}
+			lock, lockErr := parseMiseLock(lockData)
+			if lockErr != nil {
+				return inputError(rule, "mise.lock")
+			}
+			names := sortedMapKeys(config.Tools)
+			for _, name := range names {
+				value := config.Tools[name]
+				selectors = append(selectors, name+"="+value)
+				if _, resolveErr := resolveMiseToolVersion(config, lock.Tools, name); resolveErr != nil {
+					return baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise tool "+name+" does not resolve through mise.lock to one exact version.")
+				}
 			}
 		}
 	} else if !errors.Is(err, errNotFound) {
@@ -219,7 +264,7 @@ func evaluateExactSelectors(root string, metadata Metadata, rule Rule, _ bool) F
 	if len(selectors) == 0 {
 		return baseFinding(rule, "skip", ".", "No runtime or repository tool selector was detected.")
 	}
-	return baseFinding(rule, "pass", ".", "Detected runtime and repository tool selectors are exact.")
+	return baseFinding(rule, "pass", ".", "Detected runtime and repository tool selectors resolve to exact versions.")
 }
 
 func evaluateMiseLock(root string, _ Metadata, rule Rule, _ bool) Finding {
@@ -234,8 +279,11 @@ func evaluateMiseLock(root string, _ Metadata, rule Rule, _ bool) Finding {
 	if err != nil {
 		return inputError(rule, "mise.toml")
 	}
-	if !exactPatchVersion(config.MinVersion) {
-		return baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise configuration does not declare an exact minimum mise version.")
+	if len(config.Tools) == 0 {
+		return baseFinding(rule, "skip", "mise.toml", "Mise configuration does not manage repository tools.")
+	}
+	if !minimumMiseVersion(config.MinVersion) {
+		return baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise configuration does not declare a bounded minimum mise version.")
 	}
 	lockData, err := readRepositoryFile(root, "mise.lock")
 	if errors.Is(err, errNotFound) {
@@ -247,20 +295,19 @@ func evaluateMiseLock(root string, _ Metadata, rule Rule, _ bool) Finding {
 	if err != nil {
 		return inputError(rule, "mise.lock")
 	}
-	for tool, version := range config.Tools {
-		lockedVersions := lock.Tools[tool]
-		if !slices.Contains(lockedVersions, strings.TrimPrefix(version, "v")) {
+	for _, tool := range sortedMapKeys(config.Tools) {
+		if _, resolveErr := resolveMiseToolVersion(config, lock.Tools, tool); resolveErr != nil {
 			finding := baseFinding(
 				rule,
 				deviationStatus(rule),
 				"mise.lock",
-				"Mise lock does not resolve configured tool "+tool+" at exact version "+version+".",
+				"Mise lock does not resolve configured tool "+tool+" to one exact version allowed by its selector.",
 			)
 			finding.Secondary = tool
 			return finding
 		}
 	}
-	return baseFinding(rule, "pass", "mise.lock", "Mise configuration and lock resolve every configured tool at its exact version.")
+	return baseFinding(rule, "pass", "mise.lock", "Mise configuration and lock resolve every configured tool to one exact version.")
 }
 
 func evaluateDependencyRecords(root string, metadata Metadata, rule Rule, _ bool) Finding {
@@ -327,13 +374,17 @@ func evaluateDirectDependencies(root string, _ Metadata, rule Rule, _ bool) Find
 		if err != nil {
 			return inputError(rule, name)
 		}
-		for _, line := range strings.Split(string(data), "\n") {
-			lower := strings.ToLower(line)
-			if strings.Contains(lower, "git =") || strings.Contains(lower, "url =") {
-				detected = true
-				if !fullCommitPattern.MatchString(line) && !strings.Contains(lower, "sha256") && !strings.Contains(lower, "sha512") {
-					return baseFinding(rule, deviationStatus(rule), name, "A direct dependency does not declare an immutable commit or integrity digest.")
-				}
+		var document map[string]any
+		if parseErr := toml.Unmarshal(data, &document); parseErr != nil {
+			return inputError(rule, name)
+		}
+		references := collectTOMLDirectReferences(document)
+		for _, reference := range references {
+			detected = true
+			if !reference.immutable {
+				finding := baseFinding(rule, deviationStatus(rule), name, "A direct dependency does not declare an immutable commit or integrity digest.")
+				finding.Secondary = reference.path
+				return finding
 			}
 		}
 	}
@@ -577,8 +628,7 @@ func evaluateGoAuthority(root string, _ Metadata, rule Rule, _ bool) Finding {
 	if len(parts) != 3 || len(goLine) < 2 {
 		return baseFinding(rule, deviationStatus(rule), "go.mod", "Go runtime declarations are incomplete.")
 	}
-	expectedMinor := strconv.Itoa(parts[0]) + "." + strconv.Itoa(parts[1])
-	if goLine[1] != expectedMinor && goLine[1] != miseGo {
+	if compareNumericVersions(goLine[1], miseGo) > 0 {
 		return baseFinding(rule, deviationStatus(rule), "go.mod", "The Go directive contradicts the mise-selected runtime.")
 	}
 	if len(toolchainLine) == 2 && toolchainLine[1] != miseGo {
@@ -625,15 +675,27 @@ func evaluateRustProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
 	return baseFinding(rule, "pass", "rust-toolchain.toml", "Rustup owns an exact Rust toolchain release.")
 }
 
-func evaluateZigProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
+func evaluateZigProfile(root string, metadata Metadata, rule Rule, compatibility CompatibilityManifest) Finding {
 	version, finding := miseVersion(root, "zig", rule)
 	if finding != nil {
 		return *finding
 	}
-	if version != "0.16.0" {
-		return baseFinding(rule, deviationStatus(rule), "mise.toml", "Zig must use an exact tagged stable release.")
+	profile := "zig"
+	if slices.Contains(metadata.Profiles, "zig-toolchain") {
+		profile = "zig-toolchain"
 	}
-	return baseFinding(rule, "pass", "mise.toml", "Zig is conditionally declared and pinned to an exact tagged release.")
+	for _, selection := range compatibility.RuntimeSelections {
+		if selection.Profile != profile {
+			continue
+		}
+		for _, candidate := range selection.Versions {
+			if candidate.Version == version &&
+				(candidate.Disposition == "preferred" || candidate.Disposition == "supported") {
+				return baseFinding(rule, "pass", "mise.toml", "Zig is conditionally declared and resolves to an approved exact tagged release.")
+			}
+		}
+	}
+	return baseFinding(rule, deviationStatus(rule), "mise.toml", "Zig must resolve to a preferred or supported exact tagged release in the checker compatibility manifest.")
 }
 
 func evaluateReleaseVersion(_ string, metadata Metadata, rule Rule, _ bool) Finding {
@@ -709,6 +771,64 @@ func parseMiseLock(data []byte) (struct{ Tools map[string][]string }, error) {
 	return result, nil
 }
 
+func resolveMiseToolVersion(config miseConfig, locked map[string][]string, tool string) (string, error) {
+	selector := strings.TrimPrefix(strings.TrimSpace(config.Tools[tool]), "v")
+	if !reviewableMiseSelector(selector) {
+		return "", fmt.Errorf("mise tool %q has an unsupported selector", tool)
+	}
+	matches := map[string]struct{}{}
+	for _, version := range locked[tool] {
+		if miseSelectorMatches(selector, version) {
+			matches[version] = struct{}{}
+		}
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("mise tool %q resolves to %d exact versions", tool, len(matches))
+	}
+	for version := range matches {
+		return version, nil
+	}
+	return "", fmt.Errorf("mise tool %q has no exact resolution", tool)
+}
+
+func reviewableMiseSelector(value string) bool {
+	return isExactToolVersion(value) ||
+		numericMiseSelectorPattern.MatchString(value)
+}
+
+func minimumMiseVersion(value string) bool {
+	return minimumMiseVersionPattern.MatchString(strings.TrimSpace(value))
+}
+
+func miseSelectorMatches(selector, version string) bool {
+	selector = strings.TrimPrefix(strings.TrimSpace(selector), "v")
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if isExactToolVersion(selector) {
+		return selector == version
+	}
+	selectorParts := strings.Split(selector, ".")
+	versionParts := strings.SplitN(version, "-", 2)
+	exactParts := strings.Split(versionParts[0], ".")
+	if len(selectorParts) >= len(exactParts) {
+		return false
+	}
+	for index := range selectorParts {
+		if selectorParts[index] != exactParts[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedMapKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
 func rustToolchainVersion(data []byte) (string, error) {
 	var document struct {
 		Toolchain struct {
@@ -732,12 +852,22 @@ func miseVersion(root, tool string, rule Rule) (string, *Finding) {
 		finding := inputError(rule, "mise.toml")
 		return "", &finding
 	}
-	version := config.Tools[tool]
-	if !isExactToolVersion(version) {
-		finding := baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise must pin "+tool+" to an exact release.")
+	lockData, err := readRepositoryFile(root, "mise.lock")
+	if err != nil {
+		finding := missingOrInput(rule, "mise.lock", err, "Mise lock is required to resolve "+tool+" to an exact release.")
 		return "", &finding
 	}
-	return strings.TrimPrefix(version, "v"), nil
+	lock, err := parseMiseLock(lockData)
+	if err != nil {
+		finding := inputError(rule, "mise.lock")
+		return "", &finding
+	}
+	version, err := resolveMiseToolVersion(config, lock.Tools, tool)
+	if err != nil {
+		finding := baseFinding(rule, deviationStatus(rule), "mise.toml", "Mise must resolve "+tool+" through mise.lock to one exact release.")
+		return "", &finding
+	}
+	return version, nil
 }
 
 func repositoryFiles(root, directory string, limit int, extensions ...string) ([]string, error) {
@@ -806,19 +936,127 @@ func versionParts(value string) []int {
 	return result
 }
 
+func compareNumericVersions(left, right string) int {
+	leftParts := versionParts(left)
+	rightParts := versionParts(right)
+	limit := max(len(leftParts), len(rightParts))
+	for index := range limit {
+		var leftPart, rightPart int
+		if index < len(leftParts) {
+			leftPart = leftParts[index]
+		}
+		if index < len(rightParts) {
+			rightPart = rightParts[index]
+		}
+		switch {
+		case leftPart < rightPart:
+			return -1
+		case leftPart > rightPart:
+			return 1
+		}
+	}
+	return 0
+}
+
 func isDirectReference(value string) bool {
 	lower := strings.ToLower(value)
 	return strings.HasPrefix(lower, "git+") ||
 		strings.HasPrefix(lower, "github:") ||
 		strings.HasPrefix(lower, "http://") ||
-		strings.HasPrefix(lower, "https://")
+		strings.HasPrefix(lower, "https://") ||
+		strings.Contains(lower, " @ git+") ||
+		strings.Contains(lower, " @ http://") ||
+		strings.Contains(lower, " @ https://")
 }
 
 func directReferenceIsImmutable(value string) bool {
 	lower := strings.ToLower(value)
 	return fullCommitPattern.MatchString(value) ||
 		strings.Contains(lower, "sha256:") ||
-		strings.Contains(lower, "sha512-")
+		strings.Contains(lower, "sha256=") ||
+		strings.Contains(lower, "sha512-") ||
+		strings.Contains(lower, "sha512:") ||
+		strings.Contains(lower, "sha512=")
+}
+
+type tomlDirectReference struct {
+	path      string
+	immutable bool
+}
+
+func collectTOMLDirectReferences(document map[string]any) []tomlDirectReference {
+	var references []tomlDirectReference
+	scanTOMLDirectReferences(document, nil, false, &references)
+	return references
+}
+
+func scanTOMLDirectReferences(value any, keys []string, dependencyContext bool, references *[]tomlDirectReference) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if dependencyContext {
+			if reference, exists := directReferenceFromTOMLTable(typed); exists {
+				*references = append(*references, tomlDirectReference{
+					path:      strings.Join(keys, "."),
+					immutable: reference,
+				})
+				return
+			}
+		}
+		names := make([]string, 0, len(typed))
+		for name := range typed {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			lower := strings.ToLower(name)
+			nextContext := dependencyContext ||
+				strings.Contains(lower, "dependencies") ||
+				lower == "sources" && strings.Contains(strings.ToLower(strings.Join(keys, ".")), "tool.uv")
+			scanTOMLDirectReferences(typed[name], append(keys, name), nextContext, references)
+		}
+	case []any:
+		for index, item := range typed {
+			scanTOMLDirectReferences(item, append(keys, strconv.Itoa(index)), dependencyContext, references)
+		}
+	case string:
+		if dependencyContext && isDirectReference(typed) {
+			*references = append(*references, tomlDirectReference{
+				path:      strings.Join(keys, "."),
+				immutable: directReferenceIsImmutable(typed),
+			})
+		}
+	}
+}
+
+func directReferenceFromTOMLTable(table map[string]any) (bool, bool) {
+	var reference string
+	for _, name := range []string{"git", "url"} {
+		if value, ok := table[name].(string); ok {
+			reference = value
+			break
+		}
+	}
+	if reference == "" {
+		return false, false
+	}
+	if directReferenceIsImmutable(reference) {
+		return true, true
+	}
+	for _, name := range []string{"rev", "revision", "commit"} {
+		if value, ok := table[name].(string); ok && fullCommitOnlyPattern.MatchString(value) {
+			return true, true
+		}
+	}
+	for _, name := range []string{"sha256", "sha512", "checksum", "integrity", "hash"} {
+		if value, ok := table[name].(string); ok {
+			if directReferenceIsImmutable(value) ||
+				name == "sha256" && sha256ValuePattern.MatchString(value) ||
+				name == "sha512" && sha512ValuePattern.MatchString(value) {
+				return true, true
+			}
+		}
+	}
+	return false, true
 }
 
 func immutableActionReference(reference string) bool {
@@ -837,13 +1075,21 @@ func immutableImageReference(reference string) bool {
 }
 
 var (
-	floatingPattern       = regexp.MustCompile(`(?i)(?:^|[-./])(?:latest|stable|master|main|nightly)(?:$|[-./])`)
-	fullCommitPattern     = regexp.MustCompile(`(?i)[a-f0-9]{40}`)
-	fullCommitOnlyPattern = regexp.MustCompile(`(?i)^[a-f0-9]{40}$`)
-	digestPattern         = regexp.MustCompile(`(?i)@sha256:[a-f0-9]{64}$`)
-	usesPattern           = regexp.MustCompile(`(?m)^\s*uses:\s*([^\s#]+)`)
-	imagePattern          = regexp.MustCompile(`(?m)^\s*image:\s*([^\s#]+)`)
-	pnpmExactPattern      = regexp.MustCompile(`^pnpm@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
-	calverPattern         = regexp.MustCompile(`^[0-9]{4}\.(0[1-9]|1[0-2])(?:\.[1-9][0-9]*)?$`)
-	semverPattern         = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
+	floatingPattern            = regexp.MustCompile(`(?i)(?:^|[-./])(?:latest|stable|master|main|nightly)(?:$|[-./])`)
+	fullCommitPattern          = regexp.MustCompile(`(?i)[a-f0-9]{40}`)
+	fullCommitOnlyPattern      = regexp.MustCompile(`(?i)^[a-f0-9]{40}$`)
+	digestPattern              = regexp.MustCompile(`(?i)@sha256:[a-f0-9]{64}$`)
+	sha256ValuePattern         = regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
+	sha512ValuePattern         = regexp.MustCompile(`(?i)^[a-f0-9]{128}$`)
+	numericMiseSelectorPattern = regexp.MustCompile(
+		`^[0-9]+(?:\.[0-9]+)?$`,
+	)
+	minimumMiseVersionPattern = regexp.MustCompile(
+		`^[0-9]+\.[0-9]+(?:\.[0-9]+)?$`,
+	)
+	usesPattern      = regexp.MustCompile(`(?m)^\s*(?:-\s+)?uses:\s*([^\s#]+)`)
+	imagePattern     = regexp.MustCompile(`(?m)^\s*image:\s*([^\s#]+)`)
+	pnpmExactPattern = regexp.MustCompile(`^pnpm@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
+	calverPattern    = regexp.MustCompile(`^[0-9]{4}\.(0[1-9]|1[0-2])(?:\.[1-9][0-9]*)?$`)
+	semverPattern    = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 )

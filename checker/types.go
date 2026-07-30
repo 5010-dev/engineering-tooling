@@ -158,13 +158,14 @@ type RuleApplicability struct {
 }
 
 type CompatibilityManifest struct {
-	SchemaVersion     string               `json:"schemaVersion"`
-	CheckerVersion    string               `json:"checkerVersion"`
-	Lifecycle         string               `json:"lifecycle"`
-	Enforcement       []string             `json:"enforcement"`
-	Standards         []CompatibleStandard `json:"standards"`
-	RuntimeSelections []RuntimeSelection   `json:"runtimeSelections"`
-	SupportedTargets  []SupportedTarget    `json:"supportedTargets"`
+	SchemaVersion              string               `json:"schemaVersion"`
+	CheckerVersion             string               `json:"checkerVersion"`
+	Lifecycle                  string               `json:"lifecycle"`
+	Enforcement                []string             `json:"enforcement"`
+	ExceptionExpiryWarningDays int                  `json:"exceptionExpiryWarningDays"`
+	Standards                  []CompatibleStandard `json:"standards"`
+	RuntimeSelections          []RuntimeSelection   `json:"runtimeSelections"`
+	SupportedTargets           []SupportedTarget    `json:"supportedTargets"`
 }
 
 type CompatibleStandard struct {

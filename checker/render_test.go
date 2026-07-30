@@ -24,3 +24,28 @@ func TestTextAndJSONDescribeSameFindingSet(t *testing.T) {
 		}
 	}
 }
+
+func TestGitHubAnnotationsEscapePropertiesAndMessagesSeparately(t *testing.T) {
+	result := Result{Findings: []Finding{{
+		RuleID:      "DT-TEST-001",
+		Status:      "fail",
+		Path:        "path:with,delimiters",
+		Message:     "message: keep, punctuation",
+		Remediation: "retry: once, then stop",
+	}}}
+	annotation := string(RenderGitHubAnnotations(result))
+	for _, expected := range []string{
+		"file=path%3Awith%2Cdelimiters",
+		"message: keep, punctuation",
+		"Remediation: retry: once, then stop",
+	} {
+		if !strings.Contains(annotation, expected) {
+			t.Errorf("annotation %q does not contain %q", annotation, expected)
+		}
+	}
+	for _, forbidden := range []string{"message%3A", "keep%2C", "retry%3A", "once%2C"} {
+		if strings.Contains(annotation, forbidden) {
+			t.Errorf("annotation %q contains over-escaped message fragment %q", annotation, forbidden)
+		}
+	}
+}

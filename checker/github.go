@@ -113,10 +113,10 @@ func RenderGitHubAnnotations(result Result) []byte {
 			&builder,
 			"::%s file=%s,title=%s::%s Remediation: %s\n",
 			level,
-			githubCommandValue(finding.Path),
-			githubCommandValue(finding.RuleID+" "+finding.Status),
-			githubCommandValue(finding.Message),
-			githubCommandValue(finding.Remediation),
+			githubCommandProperty(finding.Path),
+			githubCommandProperty(finding.RuleID+" "+finding.Status),
+			githubCommandData(finding.Message),
+			githubCommandData(finding.Remediation),
 		)
 	}
 	return []byte(builder.String())
@@ -136,10 +136,15 @@ func markdownCell(value string) string {
 	return value
 }
 
-func githubCommandValue(value string) string {
+func githubCommandData(value string) string {
 	value = strings.ReplaceAll(value, "%", "%25")
 	value = strings.ReplaceAll(value, "\r", "%0D")
 	value = strings.ReplaceAll(value, "\n", "%0A")
+	return value
+}
+
+func githubCommandProperty(value string) string {
+	value = githubCommandData(value)
 	value = strings.ReplaceAll(value, ":", "%3A")
 	value = strings.ReplaceAll(value, ",", "%2C")
 	return value
