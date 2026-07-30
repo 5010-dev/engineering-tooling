@@ -1,0 +1,7 @@
+init:
+    uv sync --locked
+
+check:
+    uv run --locked pytest
+
+ci: check
