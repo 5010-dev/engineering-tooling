@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,7 +31,18 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		"golden-path_0.1.0_linux_amd64.tar.gz",
 		"golden-path_0.1.0_linux_arm64.tar.gz",
 	} {
-		if err := root.WriteFile(name, []byte("fixture:"+name), 0o600); err != nil {
+		archive := []byte("fixture:" + name)
+		if err := root.WriteFile(name, archive, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(archive)
+		sbomName := strings.TrimSuffix(name, ".tar.gz") + ".cdx.json"
+		sbom := fmt.Sprintf(
+			`{"bomFormat":"CycloneDX","specVersion":"1.6","metadata":{"component":{"name":%q,"hashes":[{"alg":"SHA-256","content":"%x"}]}}}`,
+			name,
+			sum,
+		)
+		if err := root.WriteFile(sbomName, []byte(sbom), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -66,7 +79,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateDocument(t, releaseSchema, data)
-	if result.ReleaseVersion != "0.1.0" || len(result.Assets) != 4 {
+	if result.ReleaseVersion != "0.1.0" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 {
 		t.Fatalf("unexpected manifest: %+v", result)
 	}
 	for index := 1; index < len(result.Assets); index++ {
@@ -75,7 +88,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		}
 	}
 	for _, item := range result.Assets {
-		if len(item.SHA256) != 64 || item.Size == 0 {
+		if len(item.SHA256) != 64 || item.Size == 0 || len(item.SBOM.SHA256) != 64 || item.SBOM.Size == 0 {
 			t.Fatalf("asset identity is incomplete: %+v", item)
 		}
 	}

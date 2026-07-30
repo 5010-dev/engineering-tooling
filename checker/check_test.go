@@ -3,6 +3,7 @@ package checker
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -83,7 +84,7 @@ func TestCheckFixtureContracts(t *testing.T) {
 				"DT-CMD-001":     "pass",
 				"DT-DEP-001":     "pass",
 				"DT-RUST-001":    "pass",
-				"DT-RUNTIME-001": "skip",
+				"DT-RUNTIME-001": "pass",
 			},
 		},
 		{
@@ -236,7 +237,172 @@ func TestUnsupportedStandardIsConfigurationError(t *testing.T) {
 	}
 }
 
-func TestUnsafeInputIsIncompleteInternalEvaluation(t *testing.T) {
+func TestMalformedNativeManifestIsConfigurationError(t *testing.T) {
+	root := copyFixture(t, "positive-node")
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := rootFS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := rootFS.WriteFile("package.json", []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if result.ExitCode != 2 || result.Complete {
+		t.Fatalf("got exit=%d complete=%t, want exit=2 complete=false", result.ExitCode, result.Complete)
+	}
+}
+
+func TestMalformedMiseLockIsConfigurationError(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := rootFS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := rootFS.WriteFile("mise.lock", []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if result.ExitCode != 2 || result.Complete {
+		t.Fatalf("got exit=%d complete=%t, want exit=2 complete=false", result.ExitCode, result.Complete)
+	}
+}
+
+func TestRuntimeRequiresExactCompatibilityMapping(t *testing.T) {
+	root := copyFixture(t, "positive-node")
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := rootFS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	miseData, err := rootFS.ReadFile("mise.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	miseData = []byte(strings.Replace(string(miseData), "24.18.1", "24.18.0", 1))
+	if err := rootFS.WriteFile("mise.toml", miseData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lockData, err := rootFS.ReadFile("mise.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockData = []byte(strings.Replace(string(lockData), "24.18.1", "24.18.0", 1))
+	if err := rootFS.WriteFile("mise.lock", lockData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if result.ExitCode != 1 || findingStatus(result, "DT-RUNTIME-001") != "fail" {
+		t.Fatalf("unexpected runtime mapping result: exit=%d finding=%q", result.ExitCode, findingStatus(result, "DT-RUNTIME-001"))
+	}
+}
+
+func TestUnpinnedWorkflowContainerFailsRemoteAssetRule(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	workflowDirectory := filepath.Join(root, ".github", "workflows")
+	if err := os.MkdirAll(workflowDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := rootFS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	workflow := []byte(`name: test
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    container:
+      image: node:latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+`)
+	if err := rootFS.WriteFile(".github/workflows/test.yml", workflow, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if result.ExitCode != 1 || findingStatus(result, "DT-ASSET-002") != "fail" {
+		t.Fatalf("unexpected remote asset result: exit=%d finding=%q", result.ExitCode, findingStatus(result, "DT-ASSET-002"))
+	}
+}
+
+func TestJustImportTraversalHasAggregateFileBound(t *testing.T) {
+	root := t.TempDir()
+	importDirectory := filepath.Join(root, "just")
+	if err := os.MkdirAll(importDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := rootFS.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	var justfile strings.Builder
+	justfile.WriteString("init:\n    true\ncheck:\n    true\nci:\n    true\n")
+	for index := range maxJustImportFiles {
+		name := fmt.Sprintf("just/%03d.just", index)
+		fmt.Fprintf(&justfile, "import %q\n", name)
+		if err := rootFS.WriteFile(name, []byte(fmt.Sprintf("recipe_%d:\n    true\n", index)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := collectJustRecipes(
+		root,
+		"justfile",
+		[]byte(justfile.String()),
+		&justTraversal{seen: map[string]bool{}},
+		0,
+	); err == nil {
+		t.Fatal("aggregate Just import file bound was not enforced")
+	}
+}
+
+func TestJustRecipeParserAcceptsDefaultParametersWithoutTreatingAssignmentsAsRecipes(t *testing.T) {
+	recipes := parseJustRecipes(`evaluation := "2026-07-31T00:00:00Z"
+init:
+    true
+check evaluated_at=evaluation:
+    true
+ci evaluated_at=evaluation: (check evaluated_at)
+    true
+`)
+	for _, expected := range []string{"init", "check", "ci"} {
+		if !recipes[expected] {
+			t.Errorf("recipe %q was not detected", expected)
+		}
+	}
+	if recipes["evaluation"] {
+		t.Fatal("assignment was treated as a recipe")
+	}
+}
+
+func TestUnsafeInputIsConfigurationError(t *testing.T) {
 	root := copyFixture(t, "positive-go")
 	rootFS, err := os.OpenRoot(root)
 	if err != nil {
@@ -255,8 +421,8 @@ func TestUnsafeInputIsIncompleteInternalEvaluation(t *testing.T) {
 	}
 
 	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
-	if result.ExitCode != 3 || result.Complete {
-		t.Fatalf("got exit=%d complete=%t, want exit=3 complete=false", result.ExitCode, result.Complete)
+	if result.ExitCode != 2 || result.Complete {
+		t.Fatalf("got exit=%d complete=%t, want exit=2 complete=false", result.ExitCode, result.Complete)
 	}
 	if got := findingStatus(result, "DT-CMD-001"); got != "error" {
 		t.Fatalf("DT-CMD-001 status = %q, want error", got)
@@ -330,16 +496,20 @@ func TestRuntimeSupportUsesExplicitEvaluationTime(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	if err := rootFS.WriteFile(".python-version", []byte("3.10.19\n"), 0o600); err != nil {
+	if err := rootFS.WriteFile(".python-version", []byte("3.10.20\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	metadata := Metadata{Profiles: []string{"python"}}
+	compatibility, err := loadCompatibility()
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	supported := evaluateRuntimeDisposition(root, metadata, rule, time.Date(2026, 10, 31, 23, 59, 59, 0, time.UTC))
+	supported := evaluateRuntimeDisposition(root, metadata, rule, time.Date(2026, 10, 31, 23, 59, 59, 0, time.UTC), compatibility)
 	if supported.Status != "pass" {
 		t.Fatalf("deadline-day status = %q, want pass", supported.Status)
 	}
-	expired := evaluateRuntimeDisposition(root, metadata, rule, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC))
+	expired := evaluateRuntimeDisposition(root, metadata, rule, time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), compatibility)
 	if expired.Status != "fail" {
 		t.Fatalf("post-deadline status = %q, want fail", expired.Status)
 	}
@@ -361,13 +531,17 @@ func TestZigRuntimeRequiresApprovedExactBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 	metadata := Metadata{Profiles: []string{"zig"}}
-	if result := evaluateRuntimeDisposition(root, metadata, rule, fixtureTime); result.Status != "pass" {
+	compatibility, err := loadCompatibility()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result := evaluateRuntimeDisposition(root, metadata, rule, fixtureTime, compatibility); result.Status != "pass" {
 		t.Fatalf("approved Zig status = %q, want pass", result.Status)
 	}
 	if err := rootFS.WriteFile("mise.toml", []byte("[tools]\nzig = \"0.15.2\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if result := evaluateRuntimeDisposition(root, metadata, rule, fixtureTime); result.Status != "fail" {
+	if result := evaluateRuntimeDisposition(root, metadata, rule, fixtureTime, compatibility); result.Status != "fail" {
 		t.Fatalf("unapproved Zig status = %q, want fail", result.Status)
 	}
 }

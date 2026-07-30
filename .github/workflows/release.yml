@@ -5,22 +5,21 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
 
-permissions:
-  contents: write
-  attestations: write
-  id-token: write
-
 concurrency:
   group: developer-tooling-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Developer Tooling / Release
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  verify-source:
+    name: Verify source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      source_commit: ${{ steps.source.outputs.source_commit }}
     steps:
-      - name: Check out source
+      - name: Check out tagged source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
@@ -31,13 +30,123 @@ jobs:
           install: true
           cache: true
 
+      - name: Require tagged commit on validated main
+        id: source
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          source_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          git merge-base --is-ancestor "$source_commit" origin/main
+          printf 'source_commit=%s\n' "$source_commit" >> "$GITHUB_OUTPUT"
+
       - name: Select explicit evaluation time
         run: echo "GOLDEN_PATH_EVALUATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
 
-      - name: Verify source
-        run: just ci "$GOLDEN_PATH_EVALUATED_AT"
+      - name: Verify source gate
+        run: just ci
+
+  native-target:
+    name: Native release / ${{ matrix.target }}
+    needs: verify-source
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux/amd64
+            artifact: target-linux-amd64
+            archive: golden-path_0.1.0_linux_amd64.tar.gz
+            sbom: golden-path_0.1.0_linux_amd64.cdx.json
+          - runner: ubuntu-24.04-arm
+            target: linux/arm64
+            artifact: target-linux-arm64
+            archive: golden-path_0.1.0_linux_arm64.tar.gz
+            sbom: golden-path_0.1.0_linux_arm64.cdx.json
+          - runner: macos-26-intel
+            target: darwin/amd64
+            artifact: target-darwin-amd64
+            archive: golden-path_0.1.0_darwin_amd64.tar.gz
+            sbom: golden-path_0.1.0_darwin_amd64.cdx.json
+          - runner: macos-26
+            target: darwin/arm64
+            artifact: target-darwin-arm64
+            archive: golden-path_0.1.0_darwin_arm64.tar.gz
+            sbom: golden-path_0.1.0_darwin_arm64.cdx.json
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.verify-source.outputs.source_commit }}
+
+      - name: Install pinned toolchain
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        with:
+          install: true
+          cache: true
+
+      - name: Build and execute native release target
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          go run -mod=readonly ./cmd/release-package \
+            --source . \
+            --dist "$RUNNER_TEMP/dist" \
+            --target "$TARGET"
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -xzf "$RUNNER_TEMP/dist/$ARCHIVE" -C "$RUNNER_TEMP/unpacked"
+          "$RUNNER_TEMP/unpacked/golden-path/golden-path" --version
+          "$RUNNER_TEMP/unpacked/golden-path/golden-path" check \
+            --root testdata/positive-go \
+            --evaluated-at 2026-07-31T00:00:00Z \
+            --json-output "$RUNNER_TEMP/native-result.json"
+
+      - name: Upload validated target
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ runner.temp }}/dist/${{ matrix.archive }}
+            ${{ runner.temp }}/dist/${{ matrix.sbom }}
+          if-no-files-found: error
+
+  assemble:
+    name: Assemble release
+    needs:
+      - verify-source
+      - native-target
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.verify-source.outputs.source_commit }}
+
+      - name: Install pinned assembly toolchain
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        with:
+          install: true
+          cache: true
+
+      - name: Download validated targets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: target-*
+          path: dist
+          merge-multiple: true
 
       - name: Assemble release evidence
+        env:
+          SOURCE_COMMIT: ${{ needs.verify-source.outputs.source_commit }}
         run: |
           set -euo pipefail
           cp compatibility/manifest.json dist/compatibility-manifest.json
@@ -49,28 +158,80 @@ jobs:
           go run -mod=readonly ./cmd/release-manifest \
             --dist dist \
             --tag "$GITHUB_REF_NAME" \
-            --source-commit "$GITHUB_SHA" \
+            --source-commit "$SOURCE_COMMIT" \
             --output dist/release-manifest.json
-          (cd dist && shasum -a 256 \
-            compatibility-manifest.json \
-            golden-path-checker-compatibility-v1.schema.json \
-            golden-path_*.tar.gz \
-            golden-path-release-manifest-v1.schema.json \
-            release-manifest.json \
-            standard-snapshot-manifest.json > checksums.txt)
+          (
+            cd dist
+            shasum -a 256 \
+              compatibility-manifest.json \
+              golden-path-checker-compatibility-v1.schema.json \
+              golden-path_*.cdx.json \
+              golden-path_*.tar.gz \
+              golden-path-release-manifest-v1.schema.json \
+              release-manifest.json \
+              standard-snapshot-manifest.json > checksums.txt
+          )
+          mkdir publisher-tools
+          cp "$(mise which gh)" publisher-tools/gh
+          tar -C publisher-tools -czf publisher-tools.tar.gz gh
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-bundle
+          path: |
+            dist
+            release/RELEASE_NOTES.md
+          if-no-files-found: error
+
+      - name: Upload pinned publisher
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: publisher-tools
+          path: publisher-tools.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Attest and publish
+    needs: assemble
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-bundle
+          path: bundle
+
+      - name: Download pinned publisher
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: publisher-tools
+          path: publisher
+
+      - name: Extract pinned publisher
+        run: |
+          set -euo pipefail
+          mkdir publisher/bin
+          tar -xzf publisher/publisher-tools.tar.gz -C publisher/bin
+          test -x publisher/bin/gh
 
       - name: Attest release subjects
         uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
         with:
-          subject-path: dist/*
+          subject-path: bundle/dist/*
 
       - name: Publish immutable prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME" dist/*
+          publisher/bin/gh release create "$GITHUB_REF_NAME" bundle/dist/*
           --repo "$GITHUB_REPOSITORY"
           --verify-tag
           --prerelease
           --title "Golden Path checker $GITHUB_REF_NAME"
-          --notes-file release/RELEASE_NOTES.md
+          --notes-file bundle/release/RELEASE_NOTES.md

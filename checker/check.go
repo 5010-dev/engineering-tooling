@@ -33,6 +33,10 @@ func Check(options Options) Result {
 		return internalResult(result, "The bundled standard snapshot could not be verified.")
 	}
 	result.CatalogDigest = digest
+	compatibility, err := loadCompatibility()
+	if err != nil {
+		return internalResult(result, "The bundled checker compatibility manifest could not be verified.")
+	}
 
 	if options.Root == "" {
 		return configurationResult(result, "DT-META-001", ".github/golden-path.yaml", "Repository root is required.")
@@ -69,7 +73,7 @@ func Check(options Options) Result {
 	}
 
 	for _, rule := range catalog.Rules {
-		finding := evaluateRule(options.Root, metadata, rule, exceptionsPresent, options.EvaluatedAt)
+		finding := evaluateRule(options.Root, metadata, rule, exceptionsPresent, options.EvaluatedAt, compatibility)
 		if finding.Status == "fail" {
 			if exception, expired := matchingException(exceptions.Exceptions, metadata, finding, rule, options.EvaluatedAt); exception != nil {
 				if expired {
@@ -78,6 +82,10 @@ func Check(options Options) Result {
 					finding.Status = "waived"
 					finding.ExceptionID = &exception.ID
 					finding.Message += " Waived by " + exception.ID + "."
+					if finding.Extensions == nil {
+						finding.Extensions = map[string]any{}
+					}
+					finding.Extensions["exceptionExpiresAt"] = exception.ExpiresAt
 				}
 			}
 		}
@@ -97,7 +105,7 @@ func Check(options Options) Result {
 	result.Complete = true
 	result.Summary = summarize(result.Findings)
 	if result.Summary.Error > 0 {
-		result.ExitCode = 3
+		result.ExitCode = errorExitCode(result.Findings)
 		result.Complete = false
 	} else if result.Summary.Fail > 0 {
 		result.ExitCode = 1
@@ -117,9 +125,28 @@ func configurationResult(result Result, ruleID, findingPath, message string) Res
 		Message:     message,
 		Remediation: "Correct the repository-local configuration and run the checker again.",
 		ExceptionID: nil,
+		Extensions:  map[string]any{"errorKind": "configuration"},
 	}}
 	result.Summary = summarize(result.Findings)
 	return result
+}
+
+func errorExitCode(findings []Finding) int {
+	hasConfigurationError := false
+	for _, finding := range findings {
+		if finding.Status != "error" {
+			continue
+		}
+		if finding.Extensions["errorKind"] == "configuration" {
+			hasConfigurationError = true
+			continue
+		}
+		return 3
+	}
+	if hasConfigurationError {
+		return 2
+	}
+	return 3
 }
 
 func internalResult(result Result, message string) Result {

@@ -24,7 +24,7 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	if len(arguments) == 0 || arguments[0] != "check" {
-		if !writeMessage(stderr, "usage: golden-path check --root <repository> --evaluated-at <RFC3339 UTC> [--json-output <path|->]") {
+		if !writeMessage(stderr, "usage: golden-path check --root <repository> --evaluated-at <RFC3339 UTC> [--json-output <path|->] [--github-summary-output <path>] [--github-annotations]") {
 			return 3
 		}
 		return 2
@@ -36,6 +36,8 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 	evaluatedAtInput := flags.String("evaluated-at", "", "explicit RFC3339 UTC evaluation time")
 	enforcement := flags.String("enforcement", "report-only", "report-only enforcement for 0.x")
 	jsonOutput := flags.String("json-output", "-", "JSON output path outside the repository, or - for standard output")
+	githubSummaryOutput := flags.String("github-summary-output", "", "GitHub step summary path outside the repository")
+	githubAnnotations := flags.Bool("github-annotations", false, "emit bounded GitHub workflow annotations")
 	if err := flags.Parse(arguments[1:]); err != nil {
 		return 2
 	}
@@ -61,16 +63,27 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	resolvedJSONOutput := *jsonOutput
 	if *jsonOutput != "-" {
-		inside, checkErr := pathInsideRoot(*root, *jsonOutput)
-		if checkErr != nil {
+		resolvedJSONOutput, err = safeOutputPath(*root, *jsonOutput)
+		if err != nil {
 			if !writeMessage(stderr, "unable to validate JSON output path") {
 				return 3
 			}
 			return 2
 		}
-		if inside {
-			if !writeMessage(stderr, "json-output must be outside the checked repository") {
+	}
+	resolvedSummaryOutput := ""
+	if *githubSummaryOutput != "" {
+		resolvedSummaryOutput, err = safeOutputPath(*root, *githubSummaryOutput)
+		if err != nil {
+			if !writeMessage(stderr, "unable to validate GitHub summary output path") {
+				return 3
+			}
+			return 2
+		}
+		if resolvedSummaryOutput == resolvedJSONOutput {
+			if !writeMessage(stderr, "JSON and GitHub summary outputs must use different paths") {
 				return 3
 			}
 			return 2
@@ -90,6 +103,19 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 	textData := checker.RenderText(result)
+	if resolvedSummaryOutput != "" {
+		if err := writeOutput(resolvedSummaryOutput, checker.RenderGitHubSummary(result)); err != nil {
+			if !writeMessage(stderr, "unable to write GitHub summary output") {
+				return 3
+			}
+			return 3
+		}
+	}
+	if *githubAnnotations {
+		if _, err := stderr.Write(checker.RenderGitHubAnnotations(result)); err != nil {
+			return 3
+		}
+	}
 
 	if *jsonOutput == "-" {
 		if _, err := stderr.Write(textData); err != nil {
@@ -103,7 +129,7 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 	if _, err := stdout.Write(textData); err != nil {
 		return 3
 	}
-	if err := writeOutput(*jsonOutput, jsonData); err != nil {
+	if err := writeOutput(resolvedJSONOutput, jsonData); err != nil {
 		if !writeMessage(stderr, "unable to write JSON output") {
 			return 3
 		}
@@ -117,20 +143,32 @@ func writeMessage(writer io.Writer, message string) bool {
 	return err == nil
 }
 
-func pathInsideRoot(root, output string) (bool, error) {
+func safeOutputPath(root, output string) (string, error) {
 	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
-		return false, err
+		return "", err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(absoluteRoot)
+	if err != nil {
+		return "", err
 	}
 	absoluteOutput, err := filepath.Abs(output)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	relative, err := filepath.Rel(absoluteRoot, absoluteOutput)
+	resolvedParent, err := filepath.EvalSymlinks(filepath.Dir(absoluteOutput))
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	return relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)), nil
+	resolvedOutput := filepath.Join(resolvedParent, filepath.Base(absoluteOutput))
+	relative, err := filepath.Rel(resolvedRoot, resolvedOutput)
+	if err != nil {
+		return "", err
+	}
+	if relative == "." || relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("output resolves inside repository")
+	}
+	return resolvedOutput, nil
 }
 
 func writeOutput(name string, data []byte) error {

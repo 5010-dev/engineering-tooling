@@ -1,5 +1,7 @@
 set dotenv-load := false
 
+default_evaluated_at := env_var_or_default("GOLDEN_PATH_EVALUATED_AT", `date -u +'%Y-%m-%dT%H:%M:%SZ'`)
+
 default:
     @just --list
 
@@ -34,12 +36,12 @@ package-check source_commit:
     go run -mod=readonly ./cmd/release-package --source . --dist dist
     go run -mod=readonly ./cmd/release-manifest --dist dist --tag v0.1.0 --source-commit "{{source_commit}}" --output dist/release-manifest.json
 
-conformance evaluated_at:
+conformance evaluated_at=default_evaluated_at:
     test -n "{{evaluated_at}}"
     go run -mod=readonly ./cmd/golden-path check --root . --evaluated-at "{{evaluated_at}}" --json-output - >/dev/null
 
-check evaluated_at: module-check format-check lint test
+check evaluated_at=default_evaluated_at: module-check format-check lint test
     just conformance "{{evaluated_at}}"
 
-ci evaluated_at: (check evaluated_at) build
+ci evaluated_at=default_evaluated_at: (check evaluated_at) build
     just package-check "$(git rev-parse HEAD)"

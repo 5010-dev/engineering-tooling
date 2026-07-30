@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"sort"
 	"strings"
 
 	"github.com/5010-dev/engineering-tooling/standards"
@@ -18,8 +19,16 @@ type snapshotManifest struct {
 	StandardVersion string `json:"standardVersion"`
 	ContractVersion string `json:"contractVersion"`
 	Source          struct {
-		Commit string `json:"commit"`
+		Repository string `json:"repository"`
+		Commit     string `json:"commit"`
+		Path       string `json:"path"`
+		GitTree    string `json:"gitTree"`
 	} `json:"source"`
+	Aggregate struct {
+		Algorithm  string `json:"algorithm"`
+		Definition string `json:"definition"`
+		Digest     string `json:"digest"`
+	} `json:"aggregate"`
 	Files map[string]string `json:"files"`
 }
 
@@ -40,8 +49,14 @@ func loadSnapshot() (Catalog, string, error) {
 	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 		return Catalog{}, "", fmt.Errorf("decode bundled snapshot manifest: %w", err)
 	}
-	if manifest.StandardVersion != StandardVersion || manifest.ContractVersion != ContractVersion {
+	if manifest.SchemaVersion != "golden-path-standard-snapshot/v1" ||
+		manifest.StandardVersion != StandardVersion ||
+		manifest.ContractVersion != ContractVersion ||
+		manifest.Source.Commit != SnapshotSourceCommit {
 		return Catalog{}, "", fmt.Errorf("bundled snapshot compatibility mismatch")
+	}
+	if manifest.Aggregate.Algorithm != "sha256" {
+		return Catalog{}, "", fmt.Errorf("bundled snapshot aggregate algorithm mismatch")
 	}
 
 	inventory := make(map[string]struct{}, len(manifest.Files))
@@ -66,15 +81,34 @@ func loadSnapshot() (Catalog, string, error) {
 		return Catalog{}, "", fmt.Errorf("bundled snapshot manifest inventory is incomplete")
 	}
 
-	for path, want := range manifest.Files {
-		data, readErr := readSnapshot(path)
+	names := make([]string, 0, len(manifest.Files))
+	for name := range manifest.Files {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	aggregate := sha256.New()
+	for _, name := range names {
+		want := manifest.Files[name]
+		data, readErr := readSnapshot(name)
 		if readErr != nil {
 			return Catalog{}, "", readErr
 		}
 		got := sha256.Sum256(data)
 		if hex.EncodeToString(got[:]) != want {
-			return Catalog{}, "", fmt.Errorf("bundled snapshot digest mismatch for %q", path)
+			return Catalog{}, "", fmt.Errorf("bundled snapshot digest mismatch for %q", name)
 		}
+		_, _ = fmt.Fprintf(
+			aggregate,
+			"%s  standards/%s/%s\n",
+			hex.EncodeToString(got[:]),
+			snapshotRoot,
+			name,
+		)
+	}
+	aggregateDigest := hex.EncodeToString(aggregate.Sum(nil))
+	if aggregateDigest != manifest.Aggregate.Digest ||
+		"sha256:"+aggregateDigest != SnapshotAggregateDigest {
+		return Catalog{}, "", fmt.Errorf("bundled snapshot aggregate digest mismatch")
 	}
 
 	catalogBytes, err := readSnapshot("rules/catalog.v1.json")
@@ -97,5 +131,9 @@ func loadSnapshot() (Catalog, string, error) {
 		return Catalog{}, "", fmt.Errorf("decode bundled rule catalog: %w", err)
 	}
 	sum := sha256.Sum256(catalogBytes)
-	return catalog, "sha256:" + hex.EncodeToString(sum[:]), nil
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	if digest != CatalogDigest {
+		return Catalog{}, "", fmt.Errorf("bundled catalog digest does not match checker identity")
+	}
+	return catalog, digest, nil
 }

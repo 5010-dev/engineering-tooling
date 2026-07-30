@@ -20,7 +20,7 @@ concurrency:
 jobs:
   conformance:
     name: Developer Tooling / Conformance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Check out source
@@ -36,4 +36,72 @@ jobs:
         run: echo "GOLDEN_PATH_EVALUATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
 
       - name: Run repository gate
-        run: just ci "$GOLDEN_PATH_EVALUATED_AT"
+        id: gate
+        continue-on-error: true
+        run: just ci
+
+      - name: Publish bounded conformance evidence
+        if: always()
+        run: |
+          set +e
+          go run -mod=readonly ./cmd/golden-path check \
+            --root . \
+            --evaluated-at "$GOLDEN_PATH_EVALUATED_AT" \
+            --json-output "$RUNNER_TEMP/golden-path-result.json" \
+            --github-summary-output "$GITHUB_STEP_SUMMARY" \
+            --github-annotations
+          exit 0
+
+      - name: Enforce repository gate result
+        if: always()
+        env:
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+        run: test "$GATE_OUTCOME" = "success"
+
+  native-target:
+    name: Native / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: linux/amd64
+            archive: golden-path_0.1.0_linux_amd64.tar.gz
+          - runner: ubuntu-24.04-arm
+            target: linux/arm64
+            archive: golden-path_0.1.0_linux_arm64.tar.gz
+          - runner: macos-26-intel
+            target: darwin/amd64
+            archive: golden-path_0.1.0_darwin_amd64.tar.gz
+          - runner: macos-26
+            target: darwin/arm64
+            archive: golden-path_0.1.0_darwin_arm64.tar.gz
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install pinned toolchain
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        with:
+          install: true
+          cache: true
+
+      - name: Build and execute native release target
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          go run -mod=readonly ./cmd/release-package \
+            --source . \
+            --dist "$RUNNER_TEMP/dist" \
+            --target "$TARGET"
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -xzf "$RUNNER_TEMP/dist/$ARCHIVE" -C "$RUNNER_TEMP/unpacked"
+          "$RUNNER_TEMP/unpacked/golden-path/golden-path" --version
+          "$RUNNER_TEMP/unpacked/golden-path/golden-path" check \
+            --root testdata/positive-go \
+            --evaluated-at 2026-07-31T00:00:00Z \
+            --json-output "$RUNNER_TEMP/native-result.json"

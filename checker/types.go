@@ -4,9 +4,12 @@ package checker
 import "time"
 
 const (
-	Version         = "0.1.0"
-	StandardVersion = "2026.07"
-	ContractVersion = "golden-path/v1"
+	Version                 = "0.1.0"
+	StandardVersion         = "2026.07"
+	ContractVersion         = "golden-path/v1"
+	CatalogDigest           = "sha256:c2ec366495c5f2aa124a886152aadd1f4f0d1b7dcb34beb674c9dfa0db4b86ac"
+	SnapshotAggregateDigest = "sha256:e62a016975a65b0e085c999891032400ea6e8b0dd8ef25f64cef978191319e52"
+	SnapshotSourceCommit    = "a47aac134196460edf81131defc9b420745abe73"
 )
 
 type Options struct {
@@ -152,4 +155,41 @@ type RuleApplicability struct {
 	ArtifactTypes []string `json:"artifactTypes"`
 	Capabilities  []string `json:"capabilities"`
 	Condition     string   `json:"condition"`
+}
+
+type CompatibilityManifest struct {
+	SchemaVersion     string               `json:"schemaVersion"`
+	CheckerVersion    string               `json:"checkerVersion"`
+	Lifecycle         string               `json:"lifecycle"`
+	Enforcement       []string             `json:"enforcement"`
+	Standards         []CompatibleStandard `json:"standards"`
+	RuntimeSelections []RuntimeSelection   `json:"runtimeSelections"`
+	SupportedTargets  []SupportedTarget    `json:"supportedTargets"`
+}
+
+type CompatibleStandard struct {
+	StandardVersion         string   `json:"standardVersion"`
+	ContractVersion         string   `json:"contractVersion"`
+	SchemaVersions          []string `json:"schemaVersions"`
+	Snapshot                string   `json:"snapshot"`
+	SourceCommit            string   `json:"sourceCommit"`
+	CatalogDigest           string   `json:"catalogDigest"`
+	SnapshotAggregateDigest string   `json:"snapshotAggregateDigest"`
+}
+
+type RuntimeSelection struct {
+	Profile  string                    `json:"profile"`
+	Tool     string                    `json:"tool"`
+	Versions []RuntimeSelectionVersion `json:"versions"`
+}
+
+type RuntimeSelectionVersion struct {
+	Version       string `json:"version"`
+	Disposition   string `json:"disposition"`
+	SupportEndsAt string `json:"supportEndsAt,omitempty"`
+}
+
+type SupportedTarget struct {
+	OS           string `json:"os"`
+	Architecture string `json:"architecture"`
 }
