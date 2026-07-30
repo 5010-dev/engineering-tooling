@@ -1,0 +1,7 @@
+.{
+    .name = .positive_zig_fixture,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x7bcd4d3d03fd88f4,
+    .paths = .{ "build.zig", "build.zig.zon" },
+}

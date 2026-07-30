@@ -54,6 +54,69 @@ func TestCheckFixtureContracts(t *testing.T) {
 			},
 		},
 		{
+			name:     "node profile",
+			fixture:  "positive-node",
+			wantExit: 0,
+			wantStatus: map[string]string{
+				"DT-CMD-001":     "pass",
+				"DT-DEP-001":     "pass",
+				"DT-NODE-001":    "skip",
+				"DT-RUNTIME-001": "pass",
+			},
+		},
+		{
+			name:     "python profile",
+			fixture:  "positive-python",
+			wantExit: 0,
+			wantStatus: map[string]string{
+				"DT-CMD-001":     "pass",
+				"DT-DEP-001":     "pass",
+				"DT-PY-001":      "skip",
+				"DT-RUNTIME-001": "pass",
+			},
+		},
+		{
+			name:     "rust profile",
+			fixture:  "positive-rust",
+			wantExit: 0,
+			wantStatus: map[string]string{
+				"DT-CMD-001":     "pass",
+				"DT-DEP-001":     "pass",
+				"DT-RUST-001":    "pass",
+				"DT-RUNTIME-001": "skip",
+			},
+		},
+		{
+			name:     "zig profile",
+			fixture:  "positive-zig",
+			wantExit: 0,
+			wantStatus: map[string]string{
+				"DT-CMD-001":     "pass",
+				"DT-DEP-001":     "pass",
+				"DT-ZIG-001":     "pass",
+				"DT-RUNTIME-001": "pass",
+			},
+		},
+		{
+			name:     "infrastructure artifact",
+			fixture:  "positive-infrastructure",
+			wantExit: 0,
+			wantStatus: map[string]string{
+				"DT-META-001": "pass",
+				"DT-CMD-001":  "pass",
+				"DT-IAC-001":  "skip",
+			},
+		},
+		{
+			name:     "not applicable",
+			fixture:  "not-applicable",
+			wantExit: 0,
+			wantStatus: map[string]string{
+				"DT-META-001": "pass",
+				"DT-CMD-001":  "skip",
+			},
+		},
+		{
 			name:     "malformed",
 			fixture:  "malformed",
 			wantExit: 2,
