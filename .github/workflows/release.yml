@@ -1,0 +1,76 @@
+name: Developer Tooling / Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: developer-tooling-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Developer Tooling / Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned toolchain
+        uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3
+        with:
+          install: true
+          cache: true
+
+      - name: Select explicit evaluation time
+        run: echo "GOLDEN_PATH_EVALUATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+
+      - name: Verify source
+        run: just ci "$GOLDEN_PATH_EVALUATED_AT"
+
+      - name: Assemble release evidence
+        run: |
+          set -euo pipefail
+          cp compatibility/manifest.json dist/compatibility-manifest.json
+          cp compatibility/golden-path-checker-compatibility-v1.schema.json \
+            dist/golden-path-checker-compatibility-v1.schema.json
+          cp standards/snapshots/2026.07/manifest.json dist/standard-snapshot-manifest.json
+          cp release/golden-path-release-manifest-v1.schema.json \
+            dist/golden-path-release-manifest-v1.schema.json
+          go run -mod=readonly ./cmd/release-manifest \
+            --dist dist \
+            --tag "$GITHUB_REF_NAME" \
+            --source-commit "$GITHUB_SHA" \
+            --output dist/release-manifest.json
+          (cd dist && shasum -a 256 \
+            compatibility-manifest.json \
+            golden-path-checker-compatibility-v1.schema.json \
+            golden-path_*.tar.gz \
+            golden-path-release-manifest-v1.schema.json \
+            release-manifest.json \
+            standard-snapshot-manifest.json > checksums.txt)
+
+      - name: Attest release subjects
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: dist/*
+
+      - name: Publish immutable prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --prerelease
+          --title "Golden Path checker $GITHUB_REF_NAME"
+          --notes-file release/RELEASE_NOTES.md

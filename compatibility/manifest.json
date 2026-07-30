@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "golden-path-checker-compatibility/v1",
+  "checkerVersion": "0.1.0",
+  "lifecycle": "prerelease",
+  "enforcement": [
+    "report-only"
+  ],
+  "standards": [
+    {
+      "standardVersion": "2026.07",
+      "contractVersion": "golden-path/v1",
+      "schemaVersions": [
+        "golden-path-metadata/v1",
+        "golden-path-exceptions/v1",
+        "golden-path-checker-output/v1",
+        "golden-path-rule-catalog/v1",
+        "runtime-support/v1"
+      ],
+      "snapshot": "standards/snapshots/2026.07/manifest.json",
+      "sourceCommit": "a47aac134196460edf81131defc9b420745abe73",
+      "catalogDigest": "sha256:c2ec366495c5f2aa124a886152aadd1f4f0d1b7dcb34beb674c9dfa0db4b86ac"
+    }
+  ],
+  "supportedTargets": [
+    {
+      "os": "darwin",
+      "architecture": "amd64"
+    },
+    {
+      "os": "darwin",
+      "architecture": "arm64"
+    },
+    {
+      "os": "linux",
+      "architecture": "amd64"
+    },
+    {
+      "os": "linux",
+      "architecture": "arm64"
+    }
+  ]
+}
