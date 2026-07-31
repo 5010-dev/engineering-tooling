@@ -376,6 +376,8 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		"--signer-digest \"$SOURCE_COMMIT\"",
 		"--source-ref \"refs/tags/v$CHECKER_VERSION\"",
 		"--deny-self-hosted-runners",
+		"check_help=\"$(\"$GOLDEN_PATH_BIN\" check --help 2>&1 || true)\"",
+		"check_arguments+=(--expected-profiles \"$EXPECTED_PROFILES\")",
 	} {
 		if !strings.Contains(string(reusable), expected) {
 			t.Fatalf("reusable workflow does not enforce %q", expected)

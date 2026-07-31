@@ -154,14 +154,21 @@ jobs:
           GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
         run: |
           set -euo pipefail
+          check_arguments=(
+            --root .
+            --evaluated-at "$GOLDEN_PATH_EVALUATED_AT"
+            --json-output "$RUNNER_TEMP/golden-path-result.json"
+            --github-summary-output "$GITHUB_STEP_SUMMARY"
+            --github-annotations
+          )
+          check_help="$("$GOLDEN_PATH_BIN" check --help 2>&1 || true)"
+          if grep -q -- '-expected-profiles' <<<"$check_help"; then
+            check_arguments+=(--expected-profiles "$EXPECTED_PROFILES")
+          else
+            printf '%s\n' 'The selected legacy checker does not support exact caller-profile comparison.' >&2
+          fi
           status=0
-          "$GOLDEN_PATH_BIN" check \
-            --root . \
-            --evaluated-at "$GOLDEN_PATH_EVALUATED_AT" \
-            --expected-profiles "$EXPECTED_PROFILES" \
-            --json-output "$RUNNER_TEMP/golden-path-result.json" \
-            --github-summary-output "$GITHUB_STEP_SUMMARY" \
-            --github-annotations || status=$?
+          "$GOLDEN_PATH_BIN" check "${check_arguments[@]}" || status=$?
           if [[ "$status" -eq 1 ]]; then
             printf '%s\n' 'Golden Path 0.x is report-only; see the emitted evidence.' >&2
             exit 0
