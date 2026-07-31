@@ -1,0 +1,431 @@
+package generator
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
+)
+
+func TestSyntheticRequestMatrixRendersDeterministically(t *testing.T) {
+	t.Parallel()
+	release := fixtureRelease(t)
+	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml"} {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			request := fixtureRequest(t, name)
+			first, firstDigest, err := Render(request, release)
+			if err != nil {
+				t.Fatalf("render first candidate: %v", err)
+			}
+			second, secondDigest, err := Render(request, release)
+			if err != nil {
+				t.Fatalf("render second candidate: %v", err)
+			}
+			if firstDigest != secondDigest || len(first) != len(second) {
+				t.Fatal("render is not deterministic")
+			}
+			for index := range first {
+				if first[index].Path != second[index].Path || first[index].Mode != second[index].Mode || !bytes.Equal(first[index].Content, second[index].Content) {
+					t.Fatalf("rendered file %d differs between runs", index)
+				}
+				for _, delimiter := range []string{"[[.", "[[if", "[[range"} {
+					if bytes.Contains(first[index].Content, []byte(delimiter)) {
+						t.Fatalf("rendered file %q retains template delimiter %q", first[index].Path, delimiter)
+					}
+				}
+			}
+			canonicalRequest, err := DecodeRequest(bytes.NewReader(fileContent(t, first, ".github/golden-path-request.json")))
+			if err != nil {
+				t.Fatalf("decode generated canonical request: %v", err)
+			}
+			if !reflect.DeepEqual(canonicalRequest, request) {
+				t.Fatal("generated canonical request does not reproduce the normalized input")
+			}
+		})
+	}
+}
+
+func TestDocumentationDoesNotExposeSuccessfulNoOpCommands(t *testing.T) {
+	t.Parallel()
+	files, _, err := Render(fixtureRequest(t, "documentation.yaml"), fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	justfile := string(fileContent(t, files, "justfile"))
+	for _, command := range []string{"\nformat:\n", "\nlint:\n", "\ntypecheck:\n", "\nbuild:\n"} {
+		if strings.Contains(justfile, command) {
+			t.Fatalf("documentation template exposes inapplicable command %q", command)
+		}
+	}
+	for _, command := range []string{"\nformat-check:", "\ntest:", "\ncheck:", "\nci:"} {
+		if !strings.Contains(justfile, command) {
+			t.Fatalf("documentation template omits applicable command %q", command)
+		}
+	}
+}
+
+func TestAllAcceptedProfilesCarryNativeAuthorities(t *testing.T) {
+	t.Parallel()
+	files, _, err := Render(fixtureRequest(t, "all-profiles.yaml"), fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		".github/golden-path-request.json",
+		"components/cdk/cdk.json", "components/cdk/pnpm-lock.yaml",
+		"components/go-service/go.mod", "components/go-service/go.sum",
+		"components/node-app/pnpm-lock.yaml", "components/opentofu/.terraform.lock.hcl",
+		"components/pulumi/Pulumi.yaml", "components/python-service/uv.lock",
+		"components/rust-cli/Cargo.lock", "components/rust-cli/rust-toolchain.toml",
+		"components/terraform/.terraform.lock.hcl", "components/zig-cli/build.zig.zon",
+		"mise.lock", ".github/workflows/developer-tooling.yml",
+	} {
+		_ = fileContent(t, files, path)
+	}
+	mise := string(fileContent(t, files, "mise.toml"))
+	for _, pin := range []string{"go = \"1.26.5\"", "node = \"24.18.1\"", "uv = \"0.12.0\"", "zig = \"0.16.0\"", "terraform = \"1.15.8\"", "opentofu = \"1.12.5\"", "pulumi = \"3.255.0\""} {
+		if !strings.Contains(mise, pin) {
+			t.Errorf("mise.toml missing %s", pin)
+		}
+	}
+}
+
+func TestUpgradeClassifiesLocalCustomizationWithoutMutatingSource(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "single-go.yaml")
+	release := fixtureRelease(t)
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, requestDigest, err := Render(request, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := WriteStaging(repository, files, GeneratePlan(files, requestDigest, bundle, release)); err != nil {
+		t.Fatal(err)
+	}
+	customized := []byte("# consumer-owned customization\n")
+	// #nosec G306 -- the test intentionally models a repository-owned 0644 source file.
+	if err := os.WriteFile(filepath.Join(repository, "justfile"), customized, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := UpgradePlan(repository, files, requestDigest, bundle, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConflictCount != 1 {
+		t.Fatalf("conflict count = %d, want 1", plan.ConflictCount)
+	}
+	for _, change := range plan.Changes {
+		if change.Path == "justfile" && change.Status != "conflict" {
+			t.Fatalf("customized justfile status = %q", change.Status)
+		}
+	}
+	// #nosec G304 -- repository is a test-owned temporary directory.
+	after, err := os.ReadFile(filepath.Join(repository, "justfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, customized) {
+		t.Fatal("upgrade planning mutated the source repository")
+	}
+	staging := filepath.Join(t.TempDir(), "candidate")
+	if err := ValidateSeparateOutput(repository, staging); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStaging(staging, files, plan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(staging, "golden-path-plan.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpgradePlansRetiredGeneratedAssetsWithoutMutatingSource(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "single-go.yaml")
+	release := fixtureRelease(t)
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, requestDigest, err := Render(request, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := WriteStaging(repository, files, GeneratePlan(files, requestDigest, bundle, release)); err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(repository, ".github", "golden-path-assets.json")
+	manifestData, err := os.ReadFile(manifestPath) // #nosec G304 -- test-owned temporary repository.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest AssetManifest
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	cleanContent := []byte("retired generated file\n")
+	originalCustomizedContent := []byte("retired generated default\n")
+	manifest.Files = append(manifest.Files,
+		GeneratedAsset{Path: "retired-clean.txt", Mode: "0644", SHA256: digest(cleanContent), Source: "retired/template"},
+		GeneratedAsset{Path: "retired-customized.txt", Mode: "0644", SHA256: digest(originalCustomizedContent), Source: "retired/template"},
+	)
+	updatedManifest, err := indentJSON(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G306 -- test-owned repository files intentionally model conventional generated files.
+	if err := os.WriteFile(manifestPath, updatedManifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G306 -- test-owned repository files intentionally model conventional generated files.
+	if err := os.WriteFile(filepath.Join(repository, "retired-clean.txt"), cleanContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	customizedContent := []byte("consumer customization\n")
+	// #nosec G306 -- test-owned repository files intentionally model conventional generated files.
+	if err := os.WriteFile(filepath.Join(repository, "retired-customized.txt"), customizedContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := UpgradePlan(repository, files, requestDigest, bundle, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConflictCount != 1 {
+		t.Fatalf("conflict count = %d, want 1", plan.ConflictCount)
+	}
+	statuses := map[string]string{}
+	for _, change := range plan.Changes {
+		statuses[change.Path] = change.Status
+	}
+	if statuses["retired-clean.txt"] != "remove" {
+		t.Fatalf("clean retired file status = %q, want remove", statuses["retired-clean.txt"])
+	}
+	if statuses["retired-customized.txt"] != "conflict" {
+		t.Fatalf("customized retired file status = %q, want conflict", statuses["retired-customized.txt"])
+	}
+	planData, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateAgainstSchema(t, "golden-path-materialization-plan-v1.schema.json", planData)
+	for path, expected := range map[string][]byte{
+		"retired-clean.txt":      cleanContent,
+		"retired-customized.txt": customizedContent,
+	} {
+		actual, readErr := os.ReadFile(filepath.Join(repository, path)) // #nosec G304 -- test-owned temporary repository.
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !bytes.Equal(actual, expected) {
+			t.Fatalf("upgrade planning mutated %s", path)
+		}
+	}
+}
+
+func TestGeneratedCallerPinsReusableWorkflowWithoutRedundantSourceInput(t *testing.T) {
+	t.Parallel()
+	files, _, err := Render(fixtureRequest(t, "single-go.yaml"), fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(fileContent(t, files, ".github/workflows/developer-tooling.yml"))
+	commit := fixtureRelease(t).Source.Commit
+	if !strings.Contains(workflow, "uses: 5010-dev/engineering-tooling/.github/workflows/golden-path-quality.yml@"+commit) {
+		t.Fatal("generated caller does not pin the reusable workflow to the release source commit")
+	}
+	if strings.Contains(workflow, "automation-source-commit") {
+		t.Fatal("generated caller redundantly passes the reusable workflow source commit")
+	}
+	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("generated GitHub Free baseline caller contains %q", forbidden)
+		}
+	}
+	reusable, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "golden-path-quality.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(reusable), "permissions:\n  contents: read") {
+		t.Fatal("reusable workflow does not declare the read-only baseline permission")
+	}
+	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
+		if strings.Contains(string(reusable), forbidden) {
+			t.Fatalf("reusable GitHub Free baseline workflow contains %q", forbidden)
+		}
+	}
+}
+
+func TestRejectsCodeFirstInfrastructureWithoutHostProfile(t *testing.T) {
+	t.Parallel()
+	input := `schemaVersion: golden-path-generator-request/v1
+layout: single
+projectName: Invalid CDK Project
+projectSlug: invalid-cdk-project
+components:
+  - name: infra
+    path: .
+    profiles: [infrastructure-aws-cdk]
+    artifactTypes: [infrastructure]
+`
+	if _, err := DecodeRequest(strings.NewReader(input)); err == nil {
+		t.Fatal("accepted CDK without node-typescript")
+	}
+}
+
+func TestRequestDecodingRejectsTrailingDocumentsAndOverlappingComponents(t *testing.T) {
+	t.Parallel()
+	valid := `schemaVersion: golden-path-generator-request/v1
+layout: single
+projectName: Valid Project
+projectSlug: valid-project
+components:
+  - name: app
+    path: .
+    profiles: [go]
+    artifactTypes: [application]
+`
+	if _, err := DecodeRequest(strings.NewReader(valid + "---\n{}\n")); err == nil {
+		t.Fatal("accepted a trailing YAML document")
+	}
+	overlapping := `schemaVersion: golden-path-generator-request/v1
+layout: monorepo
+projectName: Invalid Monorepo
+projectSlug: invalid-monorepo
+components:
+  - name: parent
+    path: components/parent
+    profiles: [go]
+    artifactTypes: [service]
+  - name: child
+    path: components/parent/child
+    profiles: [python]
+    artifactTypes: [service]
+`
+	if _, err := DecodeRequest(strings.NewReader(overlapping)); err == nil {
+		t.Fatal("accepted overlapping component paths")
+	}
+}
+
+func TestLibraryEntryPointsRejectUnsafeProgrammaticPaths(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "single-go.yaml")
+	request.Components[0].Path = "../escape"
+	if _, _, err := Render(request, fixtureRelease(t)); err == nil {
+		t.Fatal("Render accepted an unsafe programmatic component path")
+	}
+	parent := t.TempDir()
+	output := filepath.Join(parent, "candidate")
+	unsafe := []File{{Path: "../escape", Mode: 0o644, Content: []byte("unsafe\n"), Source: "test"}}
+	if err := WriteStaging(output, unsafe, Plan{}); err == nil {
+		t.Fatal("WriteStaging accepted an unsafe programmatic file path")
+	}
+	if _, err := os.Stat(filepath.Join(parent, "escape")); !os.IsNotExist(err) {
+		t.Fatal("unsafe staging path escaped the candidate directory")
+	}
+}
+
+func TestPublishedGeneratorSchemasAcceptGeneratedContracts(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "single-go.yaml")
+	release := fixtureRelease(t)
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, requestDigest, err := Render(request, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestData, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateAgainstSchema(t, "golden-path-generator-request-v1.schema.json", requestData)
+	validateAgainstSchema(t, "golden-path-generated-assets-v1.schema.json", fileContent(t, files, ".github/golden-path-assets.json"))
+	planData, err := json.Marshal(GeneratePlan(files, requestDigest, bundle, release))
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateAgainstSchema(t, "golden-path-materialization-plan-v1.schema.json", planData)
+}
+
+func fixtureRequest(t *testing.T, name string) Request {
+	t.Helper()
+	// #nosec G304 -- name is selected from the source-controlled test fixture matrix.
+	file, err := os.Open(filepath.Join("..", "testdata", "generator", "requests", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	request, err := DecodeRequest(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return request
+}
+
+func fixtureRelease(t *testing.T) ReleaseManifest {
+	t.Helper()
+	file, err := os.Open(filepath.Join("..", "testdata", "generator", "release-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	release, err := DecodeReleaseManifest(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return release
+}
+
+func fileContent(t *testing.T, files []File, path string) []byte {
+	t.Helper()
+	for _, file := range files {
+		if file.Path == path {
+			return file.Content
+		}
+	}
+	t.Fatalf("rendered file %q not found", path)
+	return nil
+}
+
+func validateAgainstSchema(t *testing.T, name string, documentData []byte) {
+	t.Helper()
+	// #nosec G304 -- name is selected from source-controlled schema fixtures.
+	schemaData, err := os.ReadFile(filepath.Join("schemas", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var schemaDocument any
+	if err := json.Unmarshal(schemaData, &schemaDocument); err != nil {
+		t.Fatal(err)
+	}
+	var document any
+	if err := json.Unmarshal(documentData, &document); err != nil {
+		t.Fatal(err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("urn:test:schema", schemaDocument); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := compiler.Compile("urn:test:schema")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(document); err != nil {
+		t.Fatal(err)
+	}
+}

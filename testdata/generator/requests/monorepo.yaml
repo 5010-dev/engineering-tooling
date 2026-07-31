@@ -1,0 +1,13 @@
+schemaVersion: golden-path-generator-request/v1
+layout: monorepo
+projectName: Example Monorepo
+projectSlug: example-monorepo
+components:
+  - name: web
+    path: packages/web
+    profiles: [node-typescript]
+    artifactTypes: [application]
+  - name: worker
+    path: packages/worker
+    profiles: [python]
+    artifactTypes: [service]

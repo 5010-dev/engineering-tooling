@@ -38,6 +38,38 @@ including through symbolic-link parents.
 The checker is intentionally `0.x` and report-only while its compatibility,
 rollback, platform, and migration fixtures are being completed.
 
+## Golden Path materialization
+
+`generate` and `upgrade` use the template bundle embedded in the exact CLI
+release. Both commands are preview-only unless `--write` and an empty staging
+directory are provided together.
+
+```sh
+golden-path generate \
+  --request golden-path-request.yaml \
+  --release-manifest release-manifest.json
+
+golden-path upgrade \
+  --root /path/to/existing-repository \
+  --request /path/to/existing-repository/.github/golden-path-request.json \
+  --release-manifest release-manifest.json \
+  --write \
+  --output /tmp/golden-path-candidate
+```
+
+Generation records the standard, asset bundle, release source commit, request
+digest, canonical request, and every generated file digest. Upgrade reads that
+inventory to distinguish unchanged generated files from consumer customization.
+It writes a separate candidate and `golden-path-plan.json`; it never writes to
+the source repository or a default branch.
+
+The generated caller owns events, permissions, concurrency, runner, working
+directory, selected profiles, immutable automation source, and release
+checksums. The reusable workflow owns only stable quality orchestration and
+calls the repository's root `just init` and `just ci`. It does not require
+GitHub Environments, protected branches, paid rulesets, deployment credentials,
+or secrets, so private consumers on GitHub Free retain the baseline outcome.
+
 Every catalog rule is represented in output. Fully evaluated structural rules
 can pass or fail; non-applicable, hybrid, manual, or only partially evaluated
 rules are explicit `skip` findings. The checker never converts missing evidence
@@ -50,7 +82,7 @@ exact release. The resolved patch must still appear in the immutable runtime
 mapping; the checker never infers runtime support from a broad selector.
 
 The same versioned manifest defines the checker release's 30-day
-exception-expiry warning window. Golden Path `0.1.0` intentionally does not
+exception-expiry warning window. Golden Path `0.2.0` intentionally does not
 admit Zig's previous-tagged-stable compatibility-only tier: the normative
 standard requires a bounded reason, owner, and review date, while the v1
 repository metadata contract does not yet define that evidence. Until a future
@@ -60,6 +92,9 @@ than passing without the required evidence.
 ## Repository layout
 
 - `checker/`: checker library and stable result contract
+- `generator/`: deterministic materialization and conflict-aware upgrade logic
+- `templates/`: versioned common, profile, lock, and thin-caller assets
+- `actions/`: reusable checksum-verifying setup action
 - `compatibility/`: supported standard and schema compatibility
 - `standards/snapshots/`: immutable normative source snapshots
 - `testdata/`: positive, negative, exception, and malformed fixtures

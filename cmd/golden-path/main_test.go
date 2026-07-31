@@ -27,6 +27,59 @@ func TestRunWritesJSONAndText(t *testing.T) {
 	}
 }
 
+func TestRunChecksThinCallerProfiles(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "positive-go")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check",
+		"--root", root,
+		"--evaluated-at", "2026-07-31T00:00:00Z",
+		"--expected-profiles", `["python"]`,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("exit = %d, want report-only finding exit 1; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "caller-profile-contract") {
+		t.Fatal("result does not contain thin-caller profile mismatch evidence")
+	}
+}
+
+func TestRunGeneratesOnlyIntoExplicitStaging(t *testing.T) {
+	request := filepath.Join("..", "..", "testdata", "generator", "requests", "single-go.yaml")
+	release := filepath.Join("..", "..", "testdata", "generator", "release-manifest.json")
+	var preview, stderr bytes.Buffer
+	code := run([]string{
+		"generate", "--request", request, "--release-manifest", release,
+	}, &preview, &stderr)
+	if code != 0 {
+		t.Fatalf("preview exit = %d; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(preview.String(), `"operation": "generate"`) {
+		t.Fatal("preview does not contain a generation plan")
+	}
+	output := filepath.Join(t.TempDir(), "candidate")
+	var materialized bytes.Buffer
+	code = run([]string{
+		"generate", "--request", request, "--release-manifest", release,
+		"--write", "--output", output,
+	}, &materialized, &stderr)
+	if code != 0 {
+		t.Fatalf("write exit = %d; stderr=%s", code, stderr.String())
+	}
+	for _, name := range []string{"justfile", "go.mod", "go.sum", "mise.lock", "golden-path-plan.json", ".github/golden-path-assets.json", ".github/golden-path-request.json"} {
+		if _, err := os.Stat(filepath.Join(output, name)); err != nil {
+			t.Fatalf("missing generated %s: %v", name, err)
+		}
+	}
+	info, err := os.Stat(filepath.Join(output, "scripts", "golden-path"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("generated bootstrap mode = %o", info.Mode().Perm())
+	}
+}
+
 func TestRunRejectsRepositoryOutputPath(t *testing.T) {
 	root := filepath.Join("..", "..", "testdata", "positive-go")
 	var stdout, stderr bytes.Buffer

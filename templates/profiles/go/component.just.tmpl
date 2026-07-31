@@ -1,0 +1,39 @@
+[private]
+_[[.RecipePrefix]]_init:
+    cd [[.ShellPath]] && go mod download
+
+[private]
+_[[.RecipePrefix]]_format:
+    cd [[.ShellPath]] && gofmt -w . && go tool goimports -w .
+
+[private]
+_[[.RecipePrefix]]_format_check:
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    test -z "$(gofmt -l .)"
+    test -z "$(go tool goimports -l .)"
+
+[private]
+_[[.RecipePrefix]]_lint:
+    cd [[.ShellPath]] && GOTOOLCHAIN=local go vet ./... && golangci-lint run
+
+[private]
+_[[.RecipePrefix]]_typecheck:
+    cd [[.ShellPath]] && GOTOOLCHAIN=local go test -mod=readonly -run '^$' ./...
+
+[private]
+_[[.RecipePrefix]]_test:
+    cd [[.ShellPath]] && GOTOOLCHAIN=local go test -mod=readonly ./...
+
+[private]
+_[[.RecipePrefix]]_build:
+    cd [[.ShellPath]] && GOTOOLCHAIN=local go build -mod=readonly -trimpath ./...
+
+[private]
+_[[.RecipePrefix]]_check:
+    cd [[.ShellPath]] && go mod tidy -diff && go mod verify
+
+[private]
+_[[.RecipePrefix]]_ci:
+    cd [[.ShellPath]] && GOTOOLCHAIN=local go test -mod=readonly -race ./...

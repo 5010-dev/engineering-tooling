@@ -1,0 +1,35 @@
+[private]
+_[[.RecipePrefix]]_init:
+    cd [[.ShellPath]] && uv sync --locked --all-groups
+
+[private]
+_[[.RecipePrefix]]_format:
+    cd [[.ShellPath]] && uv run --locked ruff format .
+
+[private]
+_[[.RecipePrefix]]_format_check:
+    cd [[.ShellPath]] && uv run --locked ruff format --check .
+
+[private]
+_[[.RecipePrefix]]_lint:
+    cd [[.ShellPath]] && uv run --locked ruff check .
+
+[private]
+_[[.RecipePrefix]]_typecheck:
+    cd [[.ShellPath]] && uv run --locked mypy src tests
+
+[private]
+_[[.RecipePrefix]]_test:
+    cd [[.ShellPath]] && uv run --locked pytest
+
+[private]
+_[[.RecipePrefix]]_build:
+    cd [[.ShellPath]] && rm -rf dist && uv run --locked uv build --no-build-isolation --offline
+
+[private]
+_[[.RecipePrefix]]_check:
+    cd [[.ShellPath]] && uv lock --check
+
+[private]
+_[[.RecipePrefix]]_ci:
+    cd [[.ShellPath]] && test -n "$(find dist -type f -name '*.whl' -print -quit)"

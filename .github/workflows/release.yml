@@ -149,6 +149,7 @@ jobs:
           cp standards/snapshots/2026.07/manifest.json dist/standard-snapshot-manifest.json
           cp release/golden-path-release-manifest-v1.schema.json \
             dist/golden-path-release-manifest-v1.schema.json
+          cp generator/schemas/*.json dist/
           go run -mod=readonly ./cmd/release-manifest \
             --dist dist \
             --tag "$GITHUB_REF_NAME" \
@@ -158,10 +159,9 @@ jobs:
             cd dist
             shasum -a 256 \
               compatibility-manifest.json \
-              golden-path-checker-compatibility-v1.schema.json \
               golden-path_*.cdx.json \
               golden-path_*.tar.gz \
-              golden-path-release-manifest-v1.schema.json \
+              golden-path-*.schema.json \
               release-manifest.json \
               standard-snapshot-manifest.json > checksums.txt
           )
@@ -227,5 +227,5 @@ jobs:
           --repo "$GITHUB_REPOSITORY"
           --verify-tag
           --prerelease
-          --title "Golden Path checker $GITHUB_REF_NAME"
+          --title "Golden Path tooling $GITHUB_REF_NAME"
           --notes-file bundle/release/RELEASE_NOTES.md

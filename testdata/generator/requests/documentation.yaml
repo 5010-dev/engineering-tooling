@@ -1,0 +1,9 @@
+schemaVersion: golden-path-generator-request/v1
+layout: documentation
+projectName: Example Documentation
+projectSlug: example-documentation
+components:
+  - name: documentation
+    path: .
+    profiles: [documentation]
+    artifactTypes: [documentation]
