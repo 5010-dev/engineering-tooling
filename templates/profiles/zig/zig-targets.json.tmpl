@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "golden-path-zig-native-targets/v1",
+  "optimization": "ReleaseSafe",
+  "targets": [
+    { "host": "darwin/amd64", "target": "x86_64-macos", "libc": "system", "execution": true },
+    { "host": "darwin/arm64", "target": "aarch64-macos", "libc": "system", "execution": true },
+    { "host": "linux/amd64", "target": "x86_64-linux-musl", "libc": "musl", "execution": true },
+    { "host": "linux/arm64", "target": "aarch64-linux-musl", "libc": "musl", "execution": true }
+  ]
+}

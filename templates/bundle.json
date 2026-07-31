@@ -24,6 +24,7 @@
     "constructs": "10.8.0",
     "eslint": "10.8.0",
     "eslint-js": "10.0.1",
+    "github-cli": "2.96.0",
     "go": "1.26.5",
     "goimports": "0.48.0",
     "golangci-lint": "2.12.2",

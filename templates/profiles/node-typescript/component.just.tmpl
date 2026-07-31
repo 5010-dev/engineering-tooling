@@ -29,3 +29,5 @@ _[[.RecipePrefix]]_build:
 [private]
 _[[.RecipePrefix]]_ci:
     cd [[.ShellPath]] && test -s dist/index.js
+[[if .NodeExecutable]]    cd [[.ShellPath]] && test "$(node dist/index.js)" = [[.ProjectNameShellQuoted]]
+[[end]]

@@ -17,6 +17,7 @@ import (
 
 	"github.com/5010-dev/engineering-tooling/checker"
 	bundlefs "github.com/5010-dev/engineering-tooling/templates"
+	"golang.org/x/mod/module"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,7 +29,6 @@ const (
 
 var (
 	identifierPattern    = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
-	modulePattern        = regexp.MustCompile(`^[A-Za-z0-9._~/-]+$`)
 	componentPathPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*$`)
 	fullCommitPattern    = regexp.MustCompile(`^[a-f0-9]{40}$`)
 	exactVersionPattern  = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
@@ -94,6 +94,9 @@ type FileChange struct {
 	Path           string `json:"path"`
 	Status         string `json:"status"`
 	Source         string `json:"source"`
+	DesiredMode    string `json:"desiredMode,omitempty"`
+	CurrentMode    string `json:"currentMode,omitempty"`
+	PreviousMode   string `json:"previousGeneratedMode,omitempty"`
 	DesiredSHA256  string `json:"desiredSHA256,omitempty"`
 	CurrentSHA256  string `json:"currentSHA256,omitempty"`
 	PreviousSHA256 string `json:"previousGeneratedSHA256,omitempty"`
@@ -191,7 +194,7 @@ func LoadBundle() (Bundle, error) {
 		}
 	}
 	for _, tool := range []string{
-		"actionlint", "aws-cdk", "aws-cdk-lib", "constructs", "eslint", "eslint-js", "go", "goimports",
+		"actionlint", "aws-cdk", "aws-cdk-lib", "constructs", "eslint", "eslint-js", "github-cli", "go", "goimports",
 		"golangci-lint", "just", "mypy", "node", "node-types", "opentofu", "pnpm", "prettier", "pulumi",
 		"pulumi-sdk", "pytest", "python", "ruff", "rust", "terraform", "typescript", "typescript-eslint",
 		"uv", "uv-build", "vitest", "zig",
@@ -312,9 +315,12 @@ func validateRequest(request *Request) error {
 		}
 		if profileSelection["go"] {
 			if component.ModulePath == "" {
-				component.ModulePath = "github.com/5010-dev/" + component.Name
+				component.ModulePath = path.Join("github.com/5010-dev", request.ProjectSlug)
+				if component.Path != "." {
+					component.ModulePath = path.Join(component.ModulePath, component.Path)
+				}
 			}
-			if !modulePattern.MatchString(component.ModulePath) || strings.Contains(component.ModulePath, "..") {
+			if err := module.CheckPath(component.ModulePath); err != nil {
 				return fmt.Errorf("component %q has invalid Go modulePath", component.Name)
 			}
 		} else if component.ModulePath != "" {

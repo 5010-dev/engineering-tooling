@@ -23,6 +23,9 @@
           "path": { "type": "string", "minLength": 1 },
           "status": { "enum": ["create", "update", "remove", "unchanged", "conflict"] },
           "source": { "type": "string", "minLength": 1 },
+          "desiredMode": { "$ref": "#/$defs/mode" },
+          "currentMode": { "$ref": "#/$defs/mode" },
+          "previousGeneratedMode": { "$ref": "#/$defs/mode" },
           "desiredSHA256": { "$ref": "#/$defs/digest" },
           "currentSHA256": { "$ref": "#/$defs/digest" },
           "previousGeneratedSHA256": { "$ref": "#/$defs/digest" }
@@ -30,7 +33,7 @@
         "allOf": [
           {
             "if": { "properties": { "status": { "enum": ["create", "update"] } } },
-            "then": { "required": ["desiredSHA256"] }
+            "then": { "required": ["desiredMode", "desiredSHA256"] }
           },
           {
             "if": { "properties": { "status": { "const": "remove" } } },
@@ -43,6 +46,7 @@
   },
   "$defs": {
     "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$" },
+    "mode": { "enum": ["0644", "0755"] },
     "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
   }
 }

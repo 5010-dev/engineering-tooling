@@ -3,6 +3,6 @@ _[[.RecipePrefix]]_iac_check:
     #!/usr/bin/env sh
     set -eu
     cd [[.ShellPath]]
-    output="$$(mktemp -d)"
-    trap 'rm -rf "$$output"' EXIT HUP INT TERM
-    ./scripts/pnpm exec cdk synth --quiet --output "$$output"
+    output="$(mktemp -d)"
+    trap 'rm -rf "$output"' EXIT HUP INT TERM
+    ./scripts/pnpm exec cdk synth --quiet --output "$output"

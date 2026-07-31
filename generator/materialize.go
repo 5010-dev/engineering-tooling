@@ -19,7 +19,10 @@ func GeneratePlan(files []File, requestDigest string, bundle Bundle, release Rel
 		RequestSHA256: requestDigest, Changes: make([]FileChange, 0, len(files)),
 	}
 	for _, file := range files {
-		plan.Changes = append(plan.Changes, FileChange{Path: file.Path, Status: "create", Source: file.Source, DesiredSHA256: digest(file.Content)})
+		plan.Changes = append(plan.Changes, FileChange{
+			Path: file.Path, Status: "create", Source: file.Source,
+			DesiredMode: fileModeString(file.Mode), DesiredSHA256: digest(file.Content),
+		})
 	}
 	SortPlan(&plan)
 	return plan
@@ -46,10 +49,23 @@ func UpgradePlan(repository string, files []File, requestDigest string, bundle B
 	desiredPaths := make(map[string]bool, len(files))
 	for _, file := range files {
 		desiredPaths[file.Path] = true
-		change := FileChange{Path: file.Path, Source: file.Source, DesiredSHA256: digest(file.Content), PreviousSHA256: previous[file.Path]}
+		previousAsset, tracked := previous[file.Path]
+		change := FileChange{
+			Path: file.Path, Source: file.Source,
+			DesiredMode: fileModeString(file.Mode), DesiredSHA256: digest(file.Content),
+		}
+		if tracked {
+			change.PreviousMode = previousAsset.Mode
+			change.PreviousSHA256 = previousAsset.SHA256
+		}
 		info, statErr := root.Lstat(filepath.FromSlash(file.Path))
 		if errors.Is(statErr, fs.ErrNotExist) {
-			change.Status = "create"
+			if tracked {
+				change.Status = "conflict"
+				plan.ConflictCount++
+			} else {
+				change.Status = "create"
+			}
 			plan.Changes = append(plan.Changes, change)
 			continue
 		}
@@ -62,15 +78,16 @@ func UpgradePlan(repository string, files []File, requestDigest string, bundle B
 			plan.Changes = append(plan.Changes, change)
 			continue
 		}
+		change.CurrentMode = fileModeString(info.Mode())
 		content, readErr := root.ReadFile(filepath.FromSlash(file.Path))
 		if readErr != nil {
 			return Plan{}, fmt.Errorf("read existing generated path %q: %w", file.Path, readErr)
 		}
 		change.CurrentSHA256 = digest(content)
 		switch {
-		case change.CurrentSHA256 == change.DesiredSHA256:
+		case change.CurrentSHA256 == change.DesiredSHA256 && change.CurrentMode == change.DesiredMode:
 			change.Status = "unchanged"
-		case change.PreviousSHA256 != "" && change.CurrentSHA256 == change.PreviousSHA256:
+		case tracked && change.CurrentSHA256 == change.PreviousSHA256 && change.CurrentMode == change.PreviousMode:
 			change.Status = "update"
 		default:
 			change.Status = "conflict"
@@ -78,13 +95,13 @@ func UpgradePlan(repository string, files []File, requestDigest string, bundle B
 		}
 		plan.Changes = append(plan.Changes, change)
 	}
-	for previousPath, previousDigest := range previous {
+	for previousPath, previousAsset := range previous {
 		if desiredPaths[previousPath] || previousPath == ".github/golden-path-assets.json" {
 			continue
 		}
 		change := FileChange{
 			Path: previousPath, Status: "remove", Source: "previous-generated-asset",
-			PreviousSHA256: previousDigest,
+			PreviousMode: previousAsset.Mode, PreviousSHA256: previousAsset.SHA256,
 		}
 		info, statErr := root.Lstat(filepath.FromSlash(previousPath))
 		if errors.Is(statErr, fs.ErrNotExist) {
@@ -101,12 +118,13 @@ func UpgradePlan(repository string, files []File, requestDigest string, bundle B
 			plan.Changes = append(plan.Changes, change)
 			continue
 		}
+		change.CurrentMode = fileModeString(info.Mode())
 		content, readErr := root.ReadFile(filepath.FromSlash(previousPath))
 		if readErr != nil {
 			return Plan{}, fmt.Errorf("read retired generated path %q: %w", previousPath, readErr)
 		}
 		change.CurrentSHA256 = digest(content)
-		if change.CurrentSHA256 != change.PreviousSHA256 {
+		if change.CurrentSHA256 != change.PreviousSHA256 || change.CurrentMode != change.PreviousMode {
 			change.Status = "conflict"
 			plan.ConflictCount++
 		}
@@ -174,10 +192,10 @@ func ValidateSeparateOutput(repository, output string) error {
 	return nil
 }
 
-func readPreviousAssets(root *os.Root) (map[string]string, error) {
+func readPreviousAssets(root *os.Root) (map[string]GeneratedAsset, error) {
 	data, err := root.ReadFile(filepath.FromSlash(".github/golden-path-assets.json"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return map[string]string{}, nil
+		return map[string]GeneratedAsset{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read previous generated-assets manifest: %w", err)
@@ -192,16 +210,23 @@ func readPreviousAssets(root *os.Root) (map[string]string, error) {
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("previous generated-assets manifest must contain exactly one JSON document")
 	}
-	result := make(map[string]string, len(manifest.Files))
+	result := make(map[string]GeneratedAsset, len(manifest.Files))
 	for _, file := range manifest.Files {
 		cleaned, pathErr := cleanRelativePath(file.Path)
-		if pathErr != nil || cleaned == "." || file.Path == ".github/golden-path-assets.json" || !fullDigest(file.SHA256) || result[file.Path] != "" || (file.Mode != "0644" && file.Mode != "0755") || file.Source == "" {
+		_, duplicate := result[file.Path]
+		if pathErr != nil || cleaned == "." || file.Path == ".github/golden-path-assets.json" || !fullDigest(file.SHA256) || duplicate || (file.Mode != "0644" && file.Mode != "0755") || file.Source == "" {
 			return nil, fmt.Errorf("previous generated-assets manifest contains an invalid file record")
 		}
-		result[file.Path] = file.SHA256
+		result[file.Path] = file
 	}
-	result[".github/golden-path-assets.json"] = digest(data)
+	result[".github/golden-path-assets.json"] = GeneratedAsset{
+		Path: ".github/golden-path-assets.json", Mode: "0644", SHA256: digest(data), Source: "generator/assets-manifest",
+	}
 	return result, nil
+}
+
+func fileModeString(mode fs.FileMode) string {
+	return fmt.Sprintf("%04o", mode.Perm())
 }
 
 func requireEmptyOutput(output string) error {

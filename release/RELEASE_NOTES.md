@@ -29,8 +29,15 @@ shared quality automation to the existing checker.
   profile
 - Preview-first `generate` and conflict-aware `upgrade` commands
 - Reviewable staging output that never writes to an upgraded repository
-- Thin caller workflow, reusable quality workflow, and checksum-verifying
-  setup action
+- Thin caller workflow, reusable quality workflow, and checksum- plus
+  provenance-verifying setup action
+- Context-safe project-name rendering, artifact-aware entry points, built
+  artifact smoke tests, and repository-local Go binary output
+- Exact native Zig and `zig cc` target contracts for Darwin and Linux
+  AMD64/ARM64
+- Upgrade conflicts for deleted managed assets and generated mode drift
+- Full generated-profile execution plus released setup-action and reusable
+  workflow integration tests
 - Synthetic single-repository, monorepo, polyglot, documentation, and GitHub
   Free private-consumer fixtures
 

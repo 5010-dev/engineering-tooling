@@ -32,4 +32,15 @@ _[[.RecipePrefix]]_check:
 
 [private]
 _[[.RecipePrefix]]_ci:
-    cd [[.ShellPath]] && test -n "$(find dist -type f -name '*.whl' -print -quit)"
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    wheel="$(find dist -type f -name '*.whl' -print -quit)"
+    test -n "$wheel"
+    temporary="$(mktemp -d)"
+    trap 'rm -rf "$temporary"' EXIT HUP INT TERM
+    uv venv --python [[.PythonVersion]] "$temporary/venv"
+    uv pip install --python "$temporary/venv/bin/python" --no-deps "$wheel"
+    "$temporary/venv/bin/python" -c 'import [[.PythonModule]]'
+[[if .PythonExecutable]]    test "$($temporary/venv/bin/[[.PackageName]])" = [[.ProjectNameShellQuoted]]
+[[end]]

@@ -3,19 +3,23 @@ package generator
 import (
 	"bytes"
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"gopkg.in/yaml.v3"
 )
 
 func TestSyntheticRequestMatrixRendersDeterministically(t *testing.T) {
 	t.Parallel()
 	release := fixtureRelease(t)
-	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml"} {
+	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml", "zig-profiles.yaml"} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -80,20 +84,119 @@ func TestAllAcceptedProfilesCarryNativeAuthorities(t *testing.T) {
 	for _, path := range []string{
 		".github/golden-path-request.json",
 		"components/cdk/cdk.json", "components/cdk/pnpm-lock.yaml",
-		"components/go-service/go.mod", "components/go-service/go.sum",
+		"components/go-service/go.mod", "components/go-service/go.sum", "components/go-service/cmd/go-service/main.go",
 		"components/node-app/pnpm-lock.yaml", "components/opentofu/.terraform.lock.hcl",
 		"components/pulumi/Pulumi.yaml", "components/python-service/uv.lock",
 		"components/rust-cli/Cargo.lock", "components/rust-cli/rust-toolchain.toml",
 		"components/terraform/.terraform.lock.hcl", "components/zig-cli/build.zig.zon",
+		"components/zig-cli/zig-targets.json", "components/zig-cc/zig-toolchain.json",
 		"mise.lock", ".github/workflows/developer-tooling.yml",
 	} {
 		_ = fileContent(t, files, path)
 	}
 	mise := string(fileContent(t, files, "mise.toml"))
-	for _, pin := range []string{"go = \"1.26.5\"", "node = \"24.18.1\"", "uv = \"0.12.0\"", "zig = \"0.16.0\"", "terraform = \"1.15.8\"", "opentofu = \"1.12.5\"", "pulumi = \"3.255.0\""} {
+	for _, pin := range []string{"github-cli = \"2.96.0\"", "go = \"1.26.5\"", "node = \"24.18.1\"", "uv = \"0.12.0\"", "zig = \"0.16.0\"", "terraform = \"1.15.8\"", "opentofu = \"1.12.5\"", "pulumi = \"3.255.0\""} {
 		if !strings.Contains(mise, pin) {
 			t.Errorf("mise.toml missing %s", pin)
 		}
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "main.go", fileContent(t, files, "components/go-service/cmd/go-service/main.go"), parser.AllErrors); err != nil {
+		t.Fatalf("generated Go source does not escape projectName: %v", err)
+	}
+	var pythonProject map[string]any
+	if err := toml.Unmarshal(fileContent(t, files, "components/python-service/pyproject.toml"), &pythonProject); err != nil {
+		t.Fatalf("generated Python TOML does not escape projectName: %v", err)
+	}
+	var pulumiProject map[string]any
+	if err := yaml.Unmarshal(fileContent(t, files, "components/pulumi/Pulumi.yaml"), &pulumiProject); err != nil {
+		t.Fatalf("generated Pulumi YAML does not escape projectName: %v", err)
+	}
+	for path, expected := range map[string]string{
+		"components/node-app/src/index.ts":         "export function main(): void",
+		"components/python-service/pyproject.toml": "[project.scripts]",
+		"just/components/rust_cli.just":            "target/release/rust-cli",
+	} {
+		if !strings.Contains(string(fileContent(t, files, path)), expected) {
+			t.Fatalf("generated artifact contract %q does not contain %q", path, expected)
+		}
+	}
+}
+
+func TestUpgradeTreatsDeletedAndModeChangedGeneratedAssetsAsConflicts(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "single-go.yaml")
+	release := fixtureRelease(t)
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, requestDigest, err := Render(request, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scenario := range []struct {
+		name   string
+		path   string
+		mutate func(string) error
+	}{
+		{name: "deleted", path: "justfile", mutate: os.Remove},
+		{name: "mode-changed", path: "scripts/golden-path", mutate: func(name string) error {
+			// #nosec G302 -- the fixture intentionally models executable-bit drift.
+			return os.Chmod(name, 0o644)
+		}},
+	} {
+		scenario := scenario
+		t.Run(scenario.name, func(t *testing.T) {
+			t.Parallel()
+			repository := filepath.Join(t.TempDir(), "repository")
+			if err := WriteStaging(repository, files, GeneratePlan(files, requestDigest, bundle, release)); err != nil {
+				t.Fatal(err)
+			}
+			if err := scenario.mutate(filepath.Join(repository, filepath.FromSlash(scenario.path))); err != nil {
+				t.Fatal(err)
+			}
+			plan, err := UpgradePlan(repository, files, requestDigest, bundle, release)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.ConflictCount != 1 {
+				t.Fatalf("conflict count = %d, want 1", plan.ConflictCount)
+			}
+			for _, change := range plan.Changes {
+				if change.Path == scenario.path && change.Status != "conflict" {
+					t.Fatalf("%s status = %q, want conflict", scenario.path, change.Status)
+				}
+			}
+		})
+	}
+}
+
+func TestGoModulePathsUseProjectBoundaryAndOfficialValidation(t *testing.T) {
+	t.Parallel()
+	valid := `schemaVersion: golden-path-generator-request/v1
+layout: polyglot
+projectName: Module Boundary
+projectSlug: module-boundary
+components:
+  - name: api
+    path: components/api
+    profiles: [go]
+    artifactTypes: [service]
+  - name: docs
+    path: components/docs
+    profiles: [documentation]
+    artifactTypes: [documentation]
+`
+	request, err := DecodeRequest(strings.NewReader(valid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Components[0].ModulePath != "github.com/5010-dev/module-boundary/components/api" {
+		t.Fatalf("default modulePath = %q", request.Components[0].ModulePath)
+	}
+	invalid := strings.Replace(valid, "artifactTypes: [service]", "artifactTypes: [service]\n    modulePath: /bad", 1)
+	if _, err := DecodeRequest(strings.NewReader(invalid)); err == nil {
+		t.Fatal("accepted an invalid Go module path")
 	}
 }
 
@@ -235,7 +338,7 @@ func TestUpgradePlansRetiredGeneratedAssetsWithoutMutatingSource(t *testing.T) {
 	}
 }
 
-func TestGeneratedCallerPinsReusableWorkflowWithoutRedundantSourceInput(t *testing.T) {
+func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 	t.Parallel()
 	files, _, err := Render(fixtureRequest(t, "single-go.yaml"), fixtureRelease(t))
 	if err != nil {
@@ -246,8 +349,13 @@ func TestGeneratedCallerPinsReusableWorkflowWithoutRedundantSourceInput(t *testi
 	if !strings.Contains(workflow, "uses: 5010-dev/engineering-tooling/.github/workflows/golden-path-quality.yml@"+commit) {
 		t.Fatal("generated caller does not pin the reusable workflow to the release source commit")
 	}
-	if strings.Contains(workflow, "automation-source-commit") {
-		t.Fatal("generated caller redundantly passes the reusable workflow source commit")
+	for _, expected := range []string{
+		"source-commit: '" + commit + "'",
+		"github-cli-version: '2.96.0'",
+	} {
+		if !strings.Contains(workflow, expected) {
+			t.Fatalf("generated caller does not contain %q", expected)
+		}
 	}
 	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
 		if strings.Contains(workflow, forbidden) {
@@ -261,9 +369,36 @@ func TestGeneratedCallerPinsReusableWorkflowWithoutRedundantSourceInput(t *testi
 	if !strings.Contains(string(reusable), "permissions:\n  contents: read") {
 		t.Fatal("reusable workflow does not declare the read-only baseline permission")
 	}
+	for _, expected := range []string{
+		"test \"$(gh version | awk 'NR == 1 { print $3 }')\" = \"$GITHUB_CLI_VERSION\"",
+		"gh attestation verify",
+		"--source-digest \"$SOURCE_COMMIT\"",
+		"--signer-digest \"$SOURCE_COMMIT\"",
+		"--source-ref \"refs/tags/v$CHECKER_VERSION\"",
+		"--deny-self-hosted-runners",
+	} {
+		if !strings.Contains(string(reusable), expected) {
+			t.Fatalf("reusable workflow does not enforce %q", expected)
+		}
+	}
 	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
 		if strings.Contains(string(reusable), forbidden) {
 			t.Fatalf("reusable GitHub Free baseline workflow contains %q", forbidden)
+		}
+	}
+	action, readErr := os.ReadFile(filepath.Join("..", "actions", "setup-golden-path", "action.yml"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	for _, expected := range []string{"gh attestation verify", "--source-digest \"$SOURCE_COMMIT\"", "--deny-self-hosted-runners"} {
+		if !strings.Contains(string(action), expected) {
+			t.Fatalf("setup action does not enforce %q", expected)
+		}
+	}
+	script := string(fileContent(t, files, "scripts/golden-path"))
+	for _, expected := range []string{"github_cli_version='2.96.0'", "gh attestation verify", "--source-digest \"$source_commit\"", "--deny-self-hosted-runners"} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("generated bootstrap does not enforce %q", expected)
 		}
 	}
 }

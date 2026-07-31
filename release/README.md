@@ -25,9 +25,11 @@ Each release must contain:
 - generated GitHub artifact attestations
 - release notes with compatibility and rollback guidance
 
-Consumers select an exact SemVer asset and verify its checksum before
-execution. Mutable tags, `latest`, and network-to-interpreter bootstrap are not
-supported.
+Consumers select an exact SemVer asset and verify both its checksum and GitHub
+artifact attestation before execution. Verification is bound to the release
+workflow, source commit, signer commit, and exact tag using the GitHub CLI
+version pinned in the generated lock. Mutable tags, `latest`, unverified
+provenance, and network-to-interpreter bootstrap are not supported.
 
 Build and assembly jobs hold only `contents: read`. The final job receives
 `contents`, `attestations`, and `id-token` write permissions after downloading

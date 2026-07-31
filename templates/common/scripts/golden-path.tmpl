@@ -3,6 +3,8 @@ set -eu
 
 version='[[.CheckerVersion]]'
 repository='5010-dev/engineering-tooling'
+source_commit='[[.AutomationSourceCommit]]'
+github_cli_version='[[.GitHubCLIVersion]]'
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
 cache_directory=${GOLDEN_PATH_CACHE_DIR:-"$repository_root/.cache/golden-path"}
@@ -55,6 +57,17 @@ else
       printf '%s\n' 'Golden Path archive checksum mismatch.' >&2
       exit 2
     fi
+    if [ "$(gh version 2>/dev/null | awk 'NR == 1 { print $3 }')" != "$github_cli_version" ]; then
+      printf '%s\n' 'The exact Golden Path GitHub CLI verifier is required.' >&2
+      exit 2
+    fi
+    gh attestation verify "$staging/$archive" \
+      --repo "$repository" \
+      --signer-workflow "$repository/.github/workflows/release.yml" \
+      --source-digest "$source_commit" \
+      --signer-digest "$source_commit" \
+      --source-ref "refs/tags/v$version" \
+      --deny-self-hosted-runners >/dev/null
     mkdir -p "$staging/unpacked" "$cache_directory/$version"
     tar -xzf "$staging/$archive" -C "$staging/unpacked"
     candidate="$staging/unpacked/golden-path/golden-path"

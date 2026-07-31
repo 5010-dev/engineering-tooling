@@ -1,5 +1,9 @@
-from [[.PythonModule]] import project_name
+from [[.PythonModule]] import [[if .PythonExecutable]]main, [[end]]project_name
 
 
 def test_project_name() -> None:
-    assert project_name() == "[[.ProjectName]]"
+    assert project_name() == [[.ProjectNamePythonQuoted]][[if .PythonExecutable]]
+
+
+def test_main() -> None:
+    assert main() == 0[[end]]

@@ -1,18 +1,42 @@
 [private]
 _[[.RecipePrefix]]_init:
-    cd [[.ShellPath]] && zig version | grep -Fx '[[.ZigVersion]]'
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    zig version | grep -Fx '[[.ZigVersion]]'
+    ./scripts/zig-target >/dev/null
+    mkdir -p .cache/zig-global
 
 [private]
 _[[.RecipePrefix]]_typecheck:
-    cd [[.ShellPath]] && zig cc -fsyntax-only src/main.c
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    target="$(./scripts/zig-target)"
+    output="$(mktemp -d)"
+    trap 'rm -rf "$output"' EXIT HUP INT TERM
+    ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global" zig cc -target "$target" -std=c17 -Wall -Wextra -Werror -c src/main.c -o "$output/main.o"
+    test -s "$output/main.o"
 
 [private]
 _[[.RecipePrefix]]_test:
-    cd [[.ShellPath]] && tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT HUP INT TERM && zig cc src/main.c -o "$$tmp/[[.PackageName]]" && "$$tmp/[[.PackageName]]"
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    target="$(./scripts/zig-target)"
+    output="$(mktemp -d)"
+    trap 'rm -rf "$output"' EXIT HUP INT TERM
+    ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global" zig cc -target "$target" -std=c17 -Wall -Wextra -Werror src/main.c -o "$output/[[.PackageName]]"
+    "$output/[[.PackageName]]"
 
 [private]
 _[[.RecipePrefix]]_build:
-    cd [[.ShellPath]] && mkdir -p zig-out/bin && zig cc src/main.c -o zig-out/bin/[[.PackageName]]
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    target="$(./scripts/zig-target)"
+    mkdir -p zig-out/bin
+    ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global" zig cc -target "$target" -std=c17 -Wall -Wextra -Werror src/main.c -o zig-out/bin/[[.PackageName]]
 
 [private]
 _[[.RecipePrefix]]_ci:
