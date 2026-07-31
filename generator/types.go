@@ -291,6 +291,9 @@ func validateRequest(request *Request) error {
 			}
 		}
 		profileSelection := stringSet(component.Profiles)
+		if (profileSelection["go"] || profileSelection["rust"]) && !hasSourceArtifact(*component) {
+			return fmt.Errorf("component %q with the go or rust profile must declare a source-bearing artifact type", component.Name)
+		}
 		if profileSelection["zig"] && profileSelection["zig-toolchain"] {
 			return fmt.Errorf("component %q cannot combine zig and zig-toolchain", component.Name)
 		}

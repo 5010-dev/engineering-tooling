@@ -246,6 +246,68 @@ components:
 	}
 }
 
+func TestGoAndRustArtifactPowerSetRejectsOrRendersSource(t *testing.T) {
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactCatalog := []string{
+		"application", "service", "library", "cli", "package", "binary", "container", "tooling",
+		"infrastructure", "documentation",
+	}
+	const sourceArtifactMask = 1<<8 - 1
+	const serviceAndInfrastructureMask = 1<<1 | 1<<8
+	for _, profile := range []string{"go", "rust"} {
+		for mask := 1; mask < 1<<len(artifactCatalog); mask++ {
+			artifacts := make([]string, 0, len(artifactCatalog))
+			for index, artifact := range artifactCatalog {
+				if mask&(1<<index) != 0 {
+					artifacts = append(artifacts, artifact)
+				}
+			}
+			request := Request{
+				SchemaVersion: RequestSchema, Layout: "single", ProjectName: "Artifact Matrix", ProjectSlug: "artifact-matrix",
+				Components: []Component{{Name: "sample", Path: ".", Profiles: []string{profile}, ArtifactTypes: artifacts}},
+			}
+			validationErr := validateRequest(&request)
+			if mask&sourceArtifactMask == 0 {
+				if validationErr == nil {
+					t.Fatalf("%s accepted artifact set without a source surface: %v", profile, artifacts)
+				}
+				continue
+			}
+			if validationErr != nil {
+				t.Fatalf("%s rejected source-bearing artifact set %v: %v", profile, artifacts, validationErr)
+			}
+			files, renderErr := renderComponent(request.Components[0], request, bundle)
+			if renderErr != nil {
+				t.Fatalf("render %s artifact set %v: %v", profile, artifacts, renderErr)
+			}
+			suffix := ".go"
+			if profile == "rust" {
+				suffix = ".rs"
+			}
+			hasSource := false
+			for _, file := range files {
+				if strings.HasSuffix(file.Path, suffix) {
+					hasSource = true
+					break
+				}
+			}
+			if !hasSource {
+				t.Fatalf("%s rendered no %s source for accepted artifact set %v", profile, suffix, artifacts)
+			}
+			if mask == serviceAndInfrastructureMask {
+				executable := "cmd/sample/main.go"
+				if profile == "rust" {
+					executable = "src/main.rs"
+				}
+				_ = fileContent(t, files, executable)
+			}
+		}
+	}
+}
+
 func TestUpgradeTreatsDeletedAndModeChangedGeneratedAssetsAsConflicts(t *testing.T) {
 	t.Parallel()
 	request := fixtureRequest(t, "single-go.yaml")
@@ -648,6 +710,15 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
 		{name: "non-domain-module-path", mutate: func(document map[string]any) {
 			document["components"].([]any)[0].(map[string]any)["modulePath"] = "local/module"
 		}},
+		{name: "go-without-source-artifact", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["artifactTypes"] = []any{"infrastructure"}
+		}},
+		{name: "rust-without-source-artifact", mutate: func(document map[string]any) {
+			component := document["components"].([]any)[0].(map[string]any)
+			component["profiles"] = []any{"rust"}
+			component["artifactTypes"] = []any{"documentation"}
+			delete(component, "modulePath")
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data, err := json.Marshal(base)
@@ -668,6 +739,18 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
 			}
 		})
 	}
+	validateAgainstSchema(t, "golden-path-generator-request-v1.schema.json", []byte(`{
+  "schemaVersion": "golden-path-generator-request/v1",
+  "layout": "single",
+  "projectName": "Mixed Artifact Service",
+  "projectSlug": "mixed-artifact-service",
+  "components": [{
+    "name": "service",
+    "path": ".",
+    "profiles": ["rust"],
+    "artifactTypes": ["service", "infrastructure"]
+  }]
+}`))
 }
 
 func fixtureRequest(t *testing.T, name string) Request {
