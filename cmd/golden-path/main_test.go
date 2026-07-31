@@ -44,6 +44,23 @@ func TestRunChecksThinCallerProfiles(t *testing.T) {
 	}
 }
 
+func TestRunPreservesConfigurationExitWhenExpectedProfilesAreUnavailable(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "malformed")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"check",
+		"--root", root,
+		"--evaluated-at", "2026-07-31T00:00:00Z",
+		"--expected-profiles", `["go"]`,
+	}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("exit = %d, want configuration exit 2; stderr=%s", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "caller-profile-contract") {
+		t.Fatal("incomplete metadata produced a caller-profile mismatch finding")
+	}
+}
+
 func TestRunGeneratesOnlyIntoExplicitStaging(t *testing.T) {
 	request := filepath.Join("..", "..", "testdata", "generator", "requests", "single-go.yaml")
 	release := filepath.Join("..", "..", "testdata", "generator", "release-manifest.json")

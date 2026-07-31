@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -40,12 +42,13 @@ type source struct {
 }
 
 type asset struct {
-	Name         string `json:"name"`
-	OS           string `json:"os"`
-	Architecture string `json:"architecture"`
-	SHA256       string `json:"sha256"`
-	Size         int64  `json:"size"`
-	SBOM         sbom   `json:"sbom"`
+	Name             string `json:"name"`
+	OS               string `json:"os"`
+	Architecture     string `json:"architecture"`
+	SHA256           string `json:"sha256"`
+	ExecutableSHA256 string `json:"executableSHA256"`
+	Size             int64  `json:"size"`
+	SBOM             sbom   `json:"sbom"`
 }
 
 type sbom struct {
@@ -243,6 +246,18 @@ func collectAssets(directory, version string, targets []checker.SupportedTarget)
 			return nil, fmt.Errorf("close release asset %q: %w", name, err)
 		}
 		archiveDigest := hex.EncodeToString(hasher.Sum(nil))
+		archive, err := root.Open(name)
+		if err != nil {
+			return nil, fmt.Errorf("reopen release asset %q: %w", name, err)
+		}
+		executableDigest, digestErr := digestExecutable(archive)
+		closeErr := archive.Close()
+		if digestErr != nil {
+			return nil, fmt.Errorf("inspect release executable in %q: %w", name, digestErr)
+		}
+		if closeErr != nil {
+			return nil, fmt.Errorf("close release asset %q: %w", name, closeErr)
+		}
 		sbomName := fmt.Sprintf("golden-path_%s_%s_%s.cdx.json", version, target.OS, target.Architecture)
 		sbomInfo, err := root.Stat(sbomName)
 		if err != nil || !sbomInfo.Mode().IsRegular() {
@@ -257,11 +272,12 @@ func collectAssets(directory, version string, targets []checker.SupportedTarget)
 		}
 		sbomSum := sha256.Sum256(sbomData)
 		assets = append(assets, asset{
-			Name:         name,
-			OS:           target.OS,
-			Architecture: target.Architecture,
-			SHA256:       archiveDigest,
-			Size:         info.Size(),
+			Name:             name,
+			OS:               target.OS,
+			Architecture:     target.Architecture,
+			SHA256:           archiveDigest,
+			ExecutableSHA256: executableDigest,
+			Size:             info.Size(),
 			SBOM: sbom{
 				Name:        sbomName,
 				Format:      "CycloneDX",
@@ -273,6 +289,35 @@ func collectAssets(directory, version string, targets []checker.SupportedTarget)
 	}
 	sort.Slice(assets, func(left, right int) bool { return assets[left].Name < assets[right].Name })
 	return assets, nil
+}
+
+func digestExecutable(reader io.Reader) (string, error) {
+	compressed, err := gzip.NewReader(reader)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = compressed.Close() }()
+	archive := tar.NewReader(compressed)
+	for {
+		header, nextErr := archive.Next()
+		if nextErr == io.EOF {
+			return "", fmt.Errorf("golden-path/golden-path is missing")
+		}
+		if nextErr != nil {
+			return "", nextErr
+		}
+		if header.Name != "golden-path/golden-path" {
+			continue
+		}
+		if header.Typeflag != tar.TypeReg || header.Size <= 0 {
+			return "", fmt.Errorf("golden-path/golden-path is not a regular non-empty file")
+		}
+		hasher := sha256.New()
+		if _, err := io.CopyN(hasher, archive, header.Size); err != nil {
+			return "", err
+		}
+		return hex.EncodeToString(hasher.Sum(nil)), nil
+	}
 }
 
 func validateSBOM(data []byte, archiveName, archiveDigest string) error {

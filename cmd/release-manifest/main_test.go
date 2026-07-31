@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -31,7 +33,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		"golden-path_0.2.0_linux_amd64.tar.gz",
 		"golden-path_0.2.0_linux_arm64.tar.gz",
 	} {
-		archive := []byte("fixture:" + name)
+		archive := fixtureArchive(t, name)
 		if err := root.WriteFile(name, archive, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -88,10 +90,32 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		}
 	}
 	for _, item := range result.Assets {
-		if len(item.SHA256) != 64 || item.Size == 0 || len(item.SBOM.SHA256) != 64 || item.SBOM.Size == 0 {
+		if len(item.SHA256) != 64 || len(item.ExecutableSHA256) != 64 || item.Size == 0 || len(item.SBOM.SHA256) != 64 || item.SBOM.Size == 0 {
 			t.Fatalf("asset identity is incomplete: %+v", item)
 		}
 	}
+}
+
+func fixtureArchive(t *testing.T, name string) []byte {
+	t.Helper()
+	var output bytes.Buffer
+	compressed := gzip.NewWriter(&output)
+	archive := tar.NewWriter(compressed)
+	content := []byte("fixture executable:" + name)
+	header := &tar.Header{Name: "golden-path/golden-path", Mode: 0o755, Size: int64(len(content)), Typeflag: tar.TypeReg}
+	if err := archive.WriteHeader(header); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := archive.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := compressed.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return output.Bytes()
 }
 
 func TestCompatibilityManifestSatisfiesContract(t *testing.T) {

@@ -29,7 +29,7 @@ const (
 
 var (
 	identifierPattern    = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
-	componentPathPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._/-]*$`)
+	componentPathPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$`)
 	fullCommitPattern    = regexp.MustCompile(`^[a-f0-9]{40}$`)
 	exactVersionPattern  = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 )
@@ -51,14 +51,15 @@ type Component struct {
 }
 
 type Bundle struct {
-	SchemaVersion      string            `json:"schemaVersion"`
-	StandardVersion    string            `json:"standardVersion"`
-	ContractVersion    string            `json:"contractVersion"`
-	AssetBundleVersion string            `json:"assetBundleVersion"`
-	MiseMinimumVersion string            `json:"miseMinimumVersion"`
-	Profiles           []string          `json:"profiles"`
-	Tools              map[string]string `json:"tools"`
-	Actions            map[string]string `json:"actions"`
+	SchemaVersion        string            `json:"schemaVersion"`
+	StandardVersion      string            `json:"standardVersion"`
+	ContractVersion      string            `json:"contractVersion"`
+	AssetBundleVersion   string            `json:"assetBundleVersion"`
+	MiseMinimumVersion   string            `json:"miseMinimumVersion"`
+	PNPMArchiveSHA256    string            `json:"pnpmArchiveSHA256"`
+	PNPMExecutableSHA256 string            `json:"pnpmExecutableSHA256"`
+	Profiles             []string          `json:"profiles"`
+	Tools                map[string]string `json:"tools"`
 }
 
 type ReleaseManifest struct {
@@ -77,10 +78,11 @@ type ReleaseSource struct {
 }
 
 type ReleaseAsset struct {
-	Name         string `json:"name"`
-	OS           string `json:"os"`
-	Architecture string `json:"architecture"`
-	SHA256       string `json:"sha256"`
+	Name             string `json:"name"`
+	OS               string `json:"os"`
+	Architecture     string `json:"architecture"`
+	SHA256           string `json:"sha256"`
+	ExecutableSHA256 string `json:"executableSHA256"`
 }
 
 type File struct {
@@ -184,6 +186,9 @@ func LoadBundle() (Bundle, error) {
 	if bundle.MiseMinimumVersion == "" || len(bundle.Profiles) == 0 || len(bundle.Tools) == 0 {
 		return Bundle{}, fmt.Errorf("embedded template bundle is incomplete")
 	}
+	if !fullDigest(bundle.PNPMArchiveSHA256) || !fullDigest(bundle.PNPMExecutableSHA256) {
+		return Bundle{}, fmt.Errorf("embedded template bundle does not bind the pnpm artifact and executable digests")
+	}
 	profileCatalog := stringSet(bundle.Profiles)
 	for _, profile := range []string{
 		"documentation", "go", "node-typescript", "python", "rust", "zig", "zig-toolchain",
@@ -203,11 +208,6 @@ func LoadBundle() (Bundle, error) {
 			return Bundle{}, fmt.Errorf("embedded template bundle does not pin required tool %q", tool)
 		}
 	}
-	for _, action := range []string{"checkout", "mise"} {
-		if !fullCommitPattern.MatchString(bundle.Actions[action]) {
-			return Bundle{}, fmt.Errorf("embedded template bundle does not pin action %q by full commit", action)
-		}
-	}
 	return bundle, nil
 }
 
@@ -219,10 +219,12 @@ func validateRequest(request *Request) error {
 	if !allowedLayouts[request.Layout] {
 		return fmt.Errorf("unsupported layout %q", request.Layout)
 	}
-	request.ProjectName = strings.TrimSpace(request.ProjectName)
+	if request.ProjectName != strings.TrimSpace(request.ProjectName) {
+		return fmt.Errorf("projectName must not have leading or trailing whitespace")
+	}
 	printable := true
 	for _, character := range request.ProjectName {
-		if !unicode.IsPrint(character) {
+		if !unicode.IsGraphic(character) || unicode.Is(unicode.Zl, character) || unicode.Is(unicode.Zp, character) {
 			printable = false
 			break
 		}
@@ -255,8 +257,8 @@ func validateRequest(request *Request) error {
 	seenPaths := map[string]bool{}
 	for index := range request.Components {
 		component := &request.Components[index]
-		if !identifierPattern.MatchString(component.Name) || seenNames[component.Name] {
-			return fmt.Errorf("component name %q must be a unique lowercase kebab-case identifier", component.Name)
+		if !identifierPattern.MatchString(component.Name) || len(component.Name) > 32 || seenNames[component.Name] {
+			return fmt.Errorf("component name %q must be a unique lowercase kebab-case identifier of at most 32 characters", component.Name)
 		}
 		seenNames[component.Name] = true
 		cleanPath, err := cleanRelativePath(component.Path)
@@ -368,7 +370,7 @@ func ValidateRelease(bundle Bundle, release ReleaseManifest) error {
 	}
 	for _, asset := range release.Assets {
 		key := asset.OS + "/" + asset.Architecture
-		if !expected[key] || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(asset.SHA256) {
+		if !expected[key] || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(asset.SHA256) || !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(asset.ExecutableSHA256) {
 			continue
 		}
 		name := fmt.Sprintf("golden-path_%s_%s_%s.tar.gz", release.ReleaseVersion, asset.OS, asset.Architecture)

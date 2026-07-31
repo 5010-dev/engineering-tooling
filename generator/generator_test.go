@@ -6,11 +6,14 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/5010-dev/engineering-tooling/checker"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
@@ -119,6 +122,127 @@ func TestAllAcceptedProfilesCarryNativeAuthorities(t *testing.T) {
 		if !strings.Contains(string(fileContent(t, files, path)), expected) {
 			t.Fatalf("generated artifact contract %q does not contain %q", path, expected)
 		}
+	}
+	pnpmBootstrap := string(fileContent(t, files, "components/node-app/scripts/pnpm"))
+	for _, expected := range []string{
+		"archive_sha256='29c35ca8d2a287988fdee3e0f36e07d9b93783f567b579b7fd5b798a4563dd81'",
+		"executable_sha256='d34a7b439643e7b8680a817387ec3692c7097ae7a85865c2c15ad6211143d506'",
+		`sha256 "$binary"`,
+		`sha256 "$candidate"`,
+	} {
+		if !strings.Contains(pnpmBootstrap, expected) {
+			t.Fatalf("generated pnpm bootstrap does not enforce %q", expected)
+		}
+	}
+	goldenPathBootstrap := string(fileContent(t, files, "scripts/golden-path"))
+	for _, expected := range []string{
+		"expected_executable='1111111111111111111111111111111111111111111111111111111111111111'",
+		`sha256 "$binary"`,
+		`sha256 "$candidate"`,
+	} {
+		if !strings.Contains(goldenPathBootstrap, expected) {
+			t.Fatalf("generated Golden Path bootstrap does not enforce %q", expected)
+		}
+	}
+}
+
+func TestGeneratedPolyglotRepositoryPassesCheckerAndParsesJust(t *testing.T) {
+	request := fixtureRequest(t, "all-profiles.yaml")
+	release := fixtureRelease(t)
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, requestDigest, err := Render(request, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := WriteStaging(repository, files, GeneratePlan(files, requestDigest, bundle, release)); err != nil {
+		t.Fatal(err)
+	}
+	result := checker.Check(checker.Options{
+		Root: repository, EvaluatedAt: time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC), Enforcement: "report-only",
+	})
+	if result.ExitCode != 0 || !result.Complete || result.Summary.Fail != 0 || result.Summary.Error != 0 {
+		t.Fatalf("generated polyglot repository is not conformant: exit=%d complete=%t summary=%+v", result.ExitCode, result.Complete, result.Summary)
+	}
+	// #nosec G204 -- the command and all arguments are fixed except for the test-owned temporary path.
+	command := exec.Command("just", "--justfile", filepath.Join(repository, "justfile"), "--list")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("generated Just graph does not parse: %v\n%s", err, output)
+	}
+	justfile := string(fileContent(t, files, "justfile"))
+	for _, expected := range []string{"_go_service_check", "_python_service_check"} {
+		if !strings.Contains(justfile, expected) {
+			t.Fatalf("root check aggregation omits %q", expected)
+		}
+	}
+	dependabot := string(fileContent(t, files, ".github/dependabot.yml"))
+	if !strings.Contains(dependabot, "package-ecosystem: uv") || strings.Contains(dependabot, "package-ecosystem: pip") {
+		t.Fatal("generated Dependabot configuration does not use the uv ecosystem")
+	}
+}
+
+func TestFormatterPreferredQuotingAndLanguageSafeIdentifiers(t *testing.T) {
+	for _, test := range []struct{ value, expected string }{
+		{value: "Plain Project", expected: `"Plain Project"`},
+		{value: "Acme's Project", expected: `"Acme's Project"`},
+		{value: `Acme "Project"`, expected: `'Acme "Project"'`},
+		{value: `Acme's "Project"`, expected: `'Acme\'s "Project"'`},
+		{value: `Acme \\ Project`, expected: `"Acme \\\\ Project"`},
+	} {
+		if actual := formatterPreferredQuotedString(test.value); actual != test.expected {
+			t.Errorf("formatterPreferredQuotedString(%q) = %q, want %q", test.value, actual, test.expected)
+		}
+	}
+	if safeGoIdentifier("func") != "func_pkg" || safePythonIdentifier("class") != "class_pkg" || zigEnumLiteral("test") != `.@"test"` {
+		t.Fatal("language-specific reserved identifiers are not rendered safely")
+	}
+}
+
+func TestMixedLibraryAndExecutableArtifactsRenderBothSurfaces(t *testing.T) {
+	request, err := DecodeRequest(strings.NewReader(`schemaVersion: golden-path-generator-request/v1
+layout: polyglot
+projectName: Mixed Artifacts
+projectSlug: mixed-artifacts
+components:
+  - name: func
+    path: components/go
+    profiles: [go]
+    artifactTypes: [cli, library]
+  - name: match
+    path: components/rust
+    profiles: [rust]
+    artifactTypes: [cli, library]
+  - name: class
+    path: components/python
+    profiles: [python]
+    artifactTypes: [library]
+  - name: test
+    path: components/zig
+    profiles: [zig]
+    artifactTypes: [cli]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := Render(request, fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"components/go/library.go", "components/go/cmd/func/main.go",
+		"components/rust/src/lib.rs", "components/rust/src/main.rs",
+		"components/python/src/class_pkg/__init__.py",
+	} {
+		_ = fileContent(t, files, name)
+	}
+	if !strings.Contains(string(fileContent(t, files, "components/go/library.go")), "package func_pkg") {
+		t.Fatal("Go keyword component did not receive a safe package identifier")
+	}
+	if !strings.Contains(string(fileContent(t, files, "components/zig/build.zig.zon")), `.name = .@"test"`) {
+		t.Fatal("Zig keyword component did not receive an escaped enum literal")
 	}
 }
 
@@ -499,6 +623,53 @@ func TestPublishedGeneratorSchemasAcceptGeneratedContracts(t *testing.T) {
 	validateAgainstSchema(t, "golden-path-materialization-plan-v1.schema.json", planData)
 }
 
+func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *testing.T) {
+	base := map[string]any{
+		"schemaVersion": "golden-path-generator-request/v1",
+		"layout":        "single",
+		"projectName":   "Schema Boundary",
+		"projectSlug":   "schema-boundary",
+		"components": []any{map[string]any{
+			"name": "app", "path": ".", "profiles": []any{"go"}, "artifactTypes": []any{"service"},
+			"modulePath": "github.com/5010-dev/schema-boundary",
+		}},
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{name: "leading-project-whitespace", mutate: func(document map[string]any) { document["projectName"] = " Schema Boundary" }},
+		{name: "overlong-component-name", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["name"] = strings.Repeat("a", 33)
+		}},
+		{name: "unclean-component-path", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["path"] = "components//app"
+		}},
+		{name: "non-domain-module-path", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["modulePath"] = "local/module"
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			data, err := json.Marshal(base)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document map[string]any
+			if err := json.Unmarshal(data, &document); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(document)
+			candidate, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if schemaValidationError(t, "golden-path-generator-request-v1.schema.json", candidate) == nil {
+				t.Fatal("published request schema accepted an input outside the generator boundary")
+			}
+		})
+	}
+}
+
 func fixtureRequest(t *testing.T, name string) Request {
 	t.Helper()
 	// #nosec G304 -- name is selected from the source-controlled test fixture matrix.
@@ -541,6 +712,13 @@ func fileContent(t *testing.T, files []File, path string) []byte {
 
 func validateAgainstSchema(t *testing.T, name string, documentData []byte) {
 	t.Helper()
+	if err := schemaValidationError(t, name, documentData); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func schemaValidationError(t *testing.T, name string, documentData []byte) error {
+	t.Helper()
 	// #nosec G304 -- name is selected from source-controlled schema fixtures.
 	schemaData, err := os.ReadFile(filepath.Join("schemas", name))
 	if err != nil {
@@ -548,21 +726,19 @@ func validateAgainstSchema(t *testing.T, name string, documentData []byte) {
 	}
 	var schemaDocument any
 	if err := json.Unmarshal(schemaData, &schemaDocument); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	var document any
 	if err := json.Unmarshal(documentData, &document); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	compiler := jsonschema.NewCompiler()
 	if err := compiler.AddResource("urn:test:schema", schemaDocument); err != nil {
-		t.Fatal(err)
+		return err
 	}
 	schema, err := compiler.Compile("urn:test:schema")
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
-	if err := schema.Validate(document); err != nil {
-		t.Fatal(err)
-	}
+	return schema.Validate(document)
 }

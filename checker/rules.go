@@ -39,10 +39,17 @@ var evaluators = map[string]ruleEvaluator{
 	"DT-RELEASE-001": evaluateReleaseVersion,
 }
 
+var componentScopedRules = map[string]bool{
+	"DT-TOOL-002": true, "DT-DEP-001": true, "DT-DEP-004": true, "DT-RUNTIME-001": true,
+	"DT-NODE-001": true, "DT-PY-001": true, "DT-GO-001": true, "DT-GO-002": true,
+	"DT-RUST-001": true, "DT-ZIG-001": true,
+}
+
 func evaluateRule(
 	root string,
 	metadata Metadata,
 	rule Rule,
+	exceptions []Exception,
 	exceptionsPresent bool,
 	evaluatedAt time.Time,
 	compatibility CompatibilityManifest,
@@ -59,6 +66,20 @@ func evaluateRule(
 	if rule.Assessment != "automated" {
 		return baseFinding(rule, "skip", ".", "Rule requires hybrid or manual evidence and was not asserted by the structural checker.")
 	}
+	if componentScopedRules[rule.ID] && len(metadata.Components) > 0 {
+		return evaluateComponentRule(root, metadata, rule, exceptions, exceptionsPresent, evaluatedAt, compatibility)
+	}
+	return evaluateAutomatedRule(root, metadata, rule, exceptionsPresent, evaluatedAt, compatibility)
+}
+
+func evaluateAutomatedRule(
+	root string,
+	metadata Metadata,
+	rule Rule,
+	exceptionsPresent bool,
+	evaluatedAt time.Time,
+	compatibility CompatibilityManifest,
+) Finding {
 	if rule.ID == "DT-RUNTIME-001" {
 		return evaluateRuntimeDisposition(root, metadata, rule, evaluatedAt, compatibility)
 	}
@@ -72,12 +93,98 @@ func evaluateRule(
 	return evaluator(root, metadata, rule, exceptionsPresent)
 }
 
+func evaluateComponentRule(
+	root string,
+	metadata Metadata,
+	rule Rule,
+	exceptions []Exception,
+	exceptionsPresent bool,
+	evaluatedAt time.Time,
+	compatibility CompatibilityManifest,
+) Finding {
+	var selected *Finding
+	selectedWaivable := false
+	for _, component := range metadata.Components {
+		componentMetadata := Metadata{
+			SchemaVersion: metadata.SchemaVersion, ContractVersion: metadata.ContractVersion,
+			StandardVersion: metadata.StandardVersion, AssetBundleVersion: metadata.AssetBundleVersion,
+			Profiles: component.Profiles, ArtifactTypes: component.ArtifactTypes,
+			Capabilities: component.Capabilities, Targets: metadata.Targets, ComponentPath: component.Path,
+		}
+		if !ruleApplies(componentMetadata, rule) {
+			continue
+		}
+		finding := evaluateAutomatedRule(root, componentMetadata, rule, exceptionsPresent, evaluatedAt, compatibility)
+		if finding.Extensions == nil {
+			finding.Extensions = map[string]any{}
+		}
+		finding.Extensions["componentPath"] = component.Path
+		waivable := false
+		if finding.Status == "fail" {
+			if exception, expired := matchingException(exceptions, componentMetadata, finding, rule, evaluatedAt); exception != nil && !expired {
+				waivable = true
+			}
+		}
+		priority := componentFindingPriority(finding.Status)
+		selectedPriority := 0
+		if selected != nil {
+			selectedPriority = componentFindingPriority(selected.Status)
+		}
+		if selected == nil || priority > selectedPriority || priority == selectedPriority && selectedWaivable && !waivable {
+			copyOfFinding := finding
+			selected = &copyOfFinding
+			selectedWaivable = waivable
+		}
+	}
+	if selected == nil {
+		return baseFinding(rule, "skip", ".", "Rule does not apply to any declared component.")
+	}
+	return *selected
+}
+
+func componentFindingPriority(status string) int {
+	switch status {
+	case "error":
+		return 5
+	case "fail":
+		return 4
+	case "warn":
+		return 3
+	case "pass":
+		return 2
+	default:
+		return 1
+	}
+}
+
 type nativeProfileMarker struct {
 	paths    []string
 	profiles []string
 }
 
 func validateProfileDeclarations(root string, metadata Metadata) (string, string) {
+	if len(metadata.Components) == 0 {
+		return validateProfileRoot(root, metadata)
+	}
+	rootMetadata := Metadata{ComponentPath: "."}
+	for _, component := range metadata.Components {
+		if component.Path == "." {
+			rootMetadata.Profiles = component.Profiles
+		}
+	}
+	if findingPath, message := validateProfileRoot(root, rootMetadata); message != "" {
+		return findingPath, message
+	}
+	for _, component := range metadata.Components {
+		componentMetadata := Metadata{Profiles: component.Profiles, ComponentPath: component.Path}
+		if findingPath, message := validateProfileRoot(root, componentMetadata); message != "" {
+			return findingPath, message
+		}
+	}
+	return "", ""
+}
+
+func validateProfileRoot(root string, metadata Metadata) (string, string) {
 	markers := []nativeProfileMarker{
 		{paths: []string{"package.json"}, profiles: []string{"node-typescript"}},
 		{paths: []string{"pyproject.toml"}, profiles: []string{"python"}},
@@ -86,18 +193,37 @@ func validateProfileDeclarations(root string, metadata Metadata) (string, string
 		{paths: []string{"build.zig", "build.zig.zon"}, profiles: []string{"zig", "zig-toolchain"}},
 	}
 	for _, marker := range markers {
-		name, _, err := firstExisting(root, marker.paths...)
+		name, _, err := firstExistingComponent(root, metadata, marker.paths...)
 		if errors.Is(err, errNotFound) {
 			continue
 		}
 		if err != nil {
-			return marker.paths[0], "A native profile marker could not be read safely."
+			return componentFile(metadata, marker.paths[0]), "A native profile marker could not be read safely."
 		}
 		if !intersects(marker.profiles, metadata.Profiles) {
 			return name, "Native marker " + name + " requires one of the declared profiles: " + strings.Join(marker.profiles, ", ") + "."
 		}
 	}
 	return "", ""
+}
+
+func componentFile(metadata Metadata, name string) string {
+	if metadata.ComponentPath == "" || metadata.ComponentPath == "." {
+		return name
+	}
+	return path.Join(metadata.ComponentPath, name)
+}
+
+func firstExistingComponent(root string, metadata Metadata, names ...string) (string, []byte, error) {
+	for _, name := range names {
+		componentName := componentFile(metadata, name)
+		data, err := readRepositoryFile(root, componentName)
+		if errors.Is(err, errNotFound) {
+			continue
+		}
+		return componentName, data, err
+	}
+	return "", nil, errNotFound
 }
 
 func ruleApplies(metadata Metadata, rule Rule) bool {
@@ -238,28 +364,32 @@ func evaluateExactSelectors(root string, metadata Metadata, rule Rule, _ bool) F
 		return inputError(rule, "mise.toml")
 	}
 	if slices.Contains(metadata.Profiles, "python") {
-		data, err := readRepositoryFile(root, ".python-version")
+		name := componentFile(metadata, ".python-version")
+		data, err := readRepositoryFile(root, name)
 		if err == nil {
 			value := strings.TrimSpace(string(data))
 			selectors = append(selectors, "python="+value)
 			if !exactPatchVersion(value) {
-				return baseFinding(rule, deviationStatus(rule), ".python-version", "Python is not pinned to an exact patch release.")
+				return baseFinding(rule, deviationStatus(rule), name, "Python is not pinned to an exact patch release.")
 			}
 		} else if !errors.Is(err, errNotFound) {
-			return inputError(rule, ".python-version")
+			return inputError(rule, name)
 		}
 	}
-	if data, err := readRepositoryFile(root, "rust-toolchain.toml"); err == nil {
-		value, parseErr := rustToolchainVersion(data)
-		if parseErr != nil {
-			return inputError(rule, "rust-toolchain.toml")
+	if slices.Contains(metadata.Profiles, "rust") {
+		rustToolchain := componentFile(metadata, "rust-toolchain.toml")
+		if data, err := readRepositoryFile(root, rustToolchain); err == nil {
+			value, parseErr := rustToolchainVersion(data)
+			if parseErr != nil {
+				return inputError(rule, rustToolchain)
+			}
+			selectors = append(selectors, "rust="+value)
+			if !exactPatchVersion(value) {
+				return baseFinding(rule, deviationStatus(rule), rustToolchain, "Rust is not pinned to an exact release.")
+			}
+		} else if !errors.Is(err, errNotFound) {
+			return inputError(rule, rustToolchain)
 		}
-		selectors = append(selectors, "rust="+value)
-		if !exactPatchVersion(value) {
-			return baseFinding(rule, deviationStatus(rule), "rust-toolchain.toml", "Rust is not pinned to an exact release.")
-		}
-	} else if !errors.Is(err, errNotFound) {
-		return inputError(rule, "rust-toolchain.toml")
 	}
 	if len(selectors) == 0 {
 		return baseFinding(rule, "skip", ".", "No runtime or repository tool selector was detected.")
@@ -329,10 +459,11 @@ func evaluateDependencyRecords(root string, metadata Metadata, rule Rule, _ bool
 		}
 		checked = true
 		for _, name := range requirement.files {
-			if _, err := readRepositoryFile(root, name); errors.Is(err, errNotFound) {
-				return baseFinding(rule, deviationStatus(rule), name, "The "+requirement.profile+" profile is missing a required native manifest or resolution record.")
+			componentName := componentFile(metadata, name)
+			if _, err := readRepositoryFile(root, componentName); errors.Is(err, errNotFound) {
+				return baseFinding(rule, deviationStatus(rule), componentName, "The "+requirement.profile+" profile is missing a required native manifest or resolution record.")
 			} else if err != nil {
-				return inputError(rule, name)
+				return inputError(rule, componentName)
 			}
 		}
 	}
@@ -342,12 +473,13 @@ func evaluateDependencyRecords(root string, metadata Metadata, rule Rule, _ bool
 	return baseFinding(rule, "pass", ".", "Required profile-native manifests and resolution records are present.")
 }
 
-func evaluateDirectDependencies(root string, _ Metadata, rule Rule, _ bool) Finding {
+func evaluateDirectDependencies(root string, metadata Metadata, rule Rule, _ bool) Finding {
 	var detected bool
-	if data, err := readRepositoryFile(root, "package.json"); err == nil {
+	packageJSON := componentFile(metadata, "package.json")
+	if data, err := readRepositoryFile(root, packageJSON); err == nil {
 		var manifest map[string]any
 		if json.Unmarshal(data, &manifest) != nil {
-			return inputError(rule, "package.json")
+			return inputError(rule, packageJSON)
 		}
 		for _, section := range []string{"dependencies", "devDependencies", "optionalDependencies", "peerDependencies"} {
 			dependencies, _ := manifest[section].(map[string]any)
@@ -356,7 +488,7 @@ func evaluateDirectDependencies(root string, _ Metadata, rule Rule, _ bool) Find
 				if isDirectReference(value) {
 					detected = true
 					if !directReferenceIsImmutable(value) {
-						finding := baseFinding(rule, deviationStatus(rule), "package.json", "Direct dependency "+name+" is not pinned to an immutable reference with integrity.")
+						finding := baseFinding(rule, deviationStatus(rule), packageJSON, "Direct dependency "+name+" is not pinned to an immutable reference with integrity.")
 						finding.Secondary = name
 						return finding
 					}
@@ -364,25 +496,26 @@ func evaluateDirectDependencies(root string, _ Metadata, rule Rule, _ bool) Find
 			}
 		}
 	} else if !errors.Is(err, errNotFound) {
-		return inputError(rule, "package.json")
+		return inputError(rule, packageJSON)
 	}
 	for _, name := range []string{"pyproject.toml", "Cargo.toml"} {
-		data, err := readRepositoryFile(root, name)
+		componentName := componentFile(metadata, name)
+		data, err := readRepositoryFile(root, componentName)
 		if errors.Is(err, errNotFound) {
 			continue
 		}
 		if err != nil {
-			return inputError(rule, name)
+			return inputError(rule, componentName)
 		}
 		var document map[string]any
 		if parseErr := toml.Unmarshal(data, &document); parseErr != nil {
-			return inputError(rule, name)
+			return inputError(rule, componentName)
 		}
 		references := collectTOMLDirectReferences(document)
 		for _, reference := range references {
 			detected = true
 			if !reference.immutable {
-				finding := baseFinding(rule, deviationStatus(rule), name, "A direct dependency does not declare an immutable commit or integrity digest.")
+				finding := baseFinding(rule, deviationStatus(rule), componentName, "A direct dependency does not declare an immutable commit or integrity digest.")
 				finding.Secondary = reference.path
 				return finding
 			}
@@ -509,11 +642,12 @@ func evaluateRuntimeDisposition(
 			}
 			version, findingPath = selected, "mise.toml"
 		case "python":
-			data, err := readRepositoryFile(root, ".python-version")
+			name := componentFile(metadata, ".python-version")
+			data, err := readRepositoryFile(root, name)
 			if err != nil {
-				return missingOrInput(rule, ".python-version", err, "Python runtime selector is missing.")
+				return missingOrInput(rule, name, err, "Python runtime selector is missing.")
 			}
-			version, findingPath = strings.TrimSpace(string(data)), ".python-version"
+			version, findingPath = strings.TrimSpace(string(data)), name
 		case "go":
 			selected, finding := miseVersion(root, "go", rule)
 			if finding != nil {
@@ -521,15 +655,16 @@ func evaluateRuntimeDisposition(
 			}
 			version, findingPath = selected, "mise.toml"
 		case "rust":
-			data, err := readRepositoryFile(root, "rust-toolchain.toml")
+			name := componentFile(metadata, "rust-toolchain.toml")
+			data, err := readRepositoryFile(root, name)
 			if err != nil {
-				return missingOrInput(rule, "rust-toolchain.toml", err, "Rust runtime selector is missing.")
+				return missingOrInput(rule, name, err, "Rust runtime selector is missing.")
 			}
 			selected, parseErr := rustToolchainVersion(data)
 			if parseErr != nil {
-				return inputError(rule, "rust-toolchain.toml")
+				return inputError(rule, name)
 			}
-			version, findingPath = selected, "rust-toolchain.toml"
+			version, findingPath = selected, name
 		case "zig", "zig-toolchain":
 			selected, finding := miseVersion(root, "zig", rule)
 			if finding != nil {
@@ -565,38 +700,42 @@ func evaluateRuntimeDisposition(
 	return baseFinding(rule, "pass", ".", "Selected language runtimes match exact allowed releases in the checker compatibility manifest.")
 }
 
-func evaluateNodeProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
+func evaluateNodeProfile(root string, metadata Metadata, rule Rule, _ bool) Finding {
 	if _, finding := miseVersion(root, "node", rule); finding != nil {
 		return *finding
 	}
-	data, err := readRepositoryFile(root, "package.json")
+	packageJSON := componentFile(metadata, "package.json")
+	data, err := readRepositoryFile(root, packageJSON)
 	if err != nil {
-		return missingOrInput(rule, "package.json", err, "Node profile requires package.json.")
+		return missingOrInput(rule, packageJSON, err, "Node profile requires package.json.")
 	}
 	var manifest struct {
 		PackageManager string `json:"packageManager"`
 	}
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return inputError(rule, "package.json")
+		return inputError(rule, packageJSON)
 	}
 	if !pnpmExactPattern.MatchString(manifest.PackageManager) {
-		return baseFinding(rule, deviationStatus(rule), "package.json", "packageManager must pin an exact pnpm version.")
+		return baseFinding(rule, deviationStatus(rule), packageJSON, "packageManager must pin an exact pnpm version.")
 	}
-	if _, err := readRepositoryFile(root, "pnpm-lock.yaml"); err != nil {
-		return missingOrInput(rule, "pnpm-lock.yaml", err, "Node profile requires pnpm-lock.yaml.")
+	pnpmLock := componentFile(metadata, "pnpm-lock.yaml")
+	if _, err := readRepositoryFile(root, pnpmLock); err != nil {
+		return missingOrInput(rule, pnpmLock, err, "Node profile requires pnpm-lock.yaml.")
 	}
-	return baseFinding(rule, "skip", "package.json", "Node.js and pnpm authority is exact and pnpm-lock.yaml is present; frozen-install CI semantics require the repository quality gate.")
+	return baseFinding(rule, "skip", packageJSON, "Node.js and pnpm authority is exact and pnpm-lock.yaml is present; frozen-install CI semantics require the repository quality gate.")
 }
 
-func evaluatePythonProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
+func evaluatePythonProfile(root string, metadata Metadata, rule Rule, _ bool) Finding {
 	for _, name := range []string{"pyproject.toml", "uv.lock", ".python-version"} {
-		if _, err := readRepositoryFile(root, name); err != nil {
-			return missingOrInput(rule, name, err, "Python profile requires "+name+".")
+		componentName := componentFile(metadata, name)
+		if _, err := readRepositoryFile(root, componentName); err != nil {
+			return missingOrInput(rule, componentName, err, "Python profile requires "+name+".")
 		}
 	}
-	data, _ := readRepositoryFile(root, ".python-version")
+	pythonVersion := componentFile(metadata, ".python-version")
+	data, _ := readRepositoryFile(root, pythonVersion)
 	if !exactPatchVersion(strings.TrimSpace(string(data))) {
-		return baseFinding(rule, deviationStatus(rule), ".python-version", "Python must be pinned to an exact patch version.")
+		return baseFinding(rule, deviationStatus(rule), pythonVersion, "Python must be pinned to an exact patch version.")
 	}
 	if miseData, err := readRepositoryFile(root, "mise.toml"); err == nil {
 		config, parseErr := parseMiseConfig(miseData)
@@ -607,61 +746,66 @@ func evaluatePythonProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
 			return baseFinding(rule, deviationStatus(rule), "mise.toml", "Uv, not mise, must own the Python runtime.")
 		}
 	}
-	return baseFinding(rule, "skip", "pyproject.toml", "Uv owns exact Python runtime and dependency records; locked-sync CI semantics require the repository quality gate.")
+	return baseFinding(rule, "skip", componentFile(metadata, "pyproject.toml"), "Uv owns exact Python runtime and dependency records; locked-sync CI semantics require the repository quality gate.")
 }
 
-func evaluateGoAuthority(root string, _ Metadata, rule Rule, _ bool) Finding {
+func evaluateGoAuthority(root string, metadata Metadata, rule Rule, _ bool) Finding {
 	miseGo, finding := miseVersion(root, "go", rule)
 	if finding != nil {
 		return *finding
 	}
-	data, err := readRepositoryFile(root, "go.mod")
+	goMod := componentFile(metadata, "go.mod")
+	data, err := readRepositoryFile(root, goMod)
 	if errors.Is(err, errNotFound) {
-		data, err = readRepositoryFile(root, "go.work")
+		goMod = componentFile(metadata, "go.work")
+		data, err = readRepositoryFile(root, goMod)
 	}
 	if err != nil {
-		return missingOrInput(rule, "go.mod", err, "Go profile requires go.mod or go.work.")
+		return missingOrInput(rule, componentFile(metadata, "go.mod"), err, "Go profile requires go.mod or go.work.")
 	}
 	goLine := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)\s*$`).FindStringSubmatch(string(data))
 	toolchainLine := regexp.MustCompile(`(?m)^toolchain\s+go([0-9]+\.[0-9]+\.[0-9]+)\s*$`).FindStringSubmatch(string(data))
 	parts := versionParts(miseGo)
 	if len(parts) != 3 || len(goLine) < 2 {
-		return baseFinding(rule, deviationStatus(rule), "go.mod", "Go runtime declarations are incomplete.")
+		return baseFinding(rule, deviationStatus(rule), goMod, "Go runtime declarations are incomplete.")
 	}
 	if compareNumericVersions(goLine[1], miseGo) > 0 {
-		return baseFinding(rule, deviationStatus(rule), "go.mod", "The Go directive contradicts the mise-selected runtime.")
+		return baseFinding(rule, deviationStatus(rule), goMod, "The Go directive contradicts the mise-selected runtime.")
 	}
 	if len(toolchainLine) == 2 && toolchainLine[1] != miseGo {
-		return baseFinding(rule, deviationStatus(rule), "go.mod", "The Go toolchain directive contradicts the mise-selected runtime.")
+		return baseFinding(rule, deviationStatus(rule), goMod, "The Go toolchain directive contradicts the mise-selected runtime.")
 	}
-	return baseFinding(rule, "pass", "go.mod", "Mise and native Go runtime declarations align.")
+	return baseFinding(rule, "pass", goMod, "Mise and native Go runtime declarations align.")
 }
 
-func evaluateGoDependencies(root string, _ Metadata, rule Rule, _ bool) Finding {
-	data, err := readRepositoryFile(root, "go.mod")
+func evaluateGoDependencies(root string, metadata Metadata, rule Rule, _ bool) Finding {
+	goMod := componentFile(metadata, "go.mod")
+	data, err := readRepositoryFile(root, goMod)
 	if err != nil {
-		return missingOrInput(rule, "go.mod", err, "Go profile requires go.mod.")
+		return missingOrInput(rule, goMod, err, "Go profile requires go.mod.")
 	}
 	hasThirdParty := regexp.MustCompile(`(?m)^\s*(?:require\s+)?(?:github\.com|gitlab\.com|golang\.org|gopkg\.in)/`).Match(data)
 	if hasThirdParty {
-		if _, err := readRepositoryFile(root, "go.sum"); err != nil {
-			return missingOrInput(rule, "go.sum", err, "Go modules resolve third-party dependencies but go.sum is missing.")
+		goSum := componentFile(metadata, "go.sum")
+		if _, err := readRepositoryFile(root, goSum); err != nil {
+			return missingOrInput(rule, goSum, err, "Go modules resolve third-party dependencies but go.sum is missing.")
 		}
 	}
-	return baseFinding(rule, "skip", "go.mod", "Go dependency authority uses native records; tidy drift and go tool execution require the repository quality gate.")
+	return baseFinding(rule, "skip", goMod, "Go dependency authority uses native records; tidy drift and go tool execution require the repository quality gate.")
 }
 
-func evaluateRustProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
-	data, err := readRepositoryFile(root, "rust-toolchain.toml")
+func evaluateRustProfile(root string, metadata Metadata, rule Rule, _ bool) Finding {
+	rustToolchain := componentFile(metadata, "rust-toolchain.toml")
+	data, err := readRepositoryFile(root, rustToolchain)
 	if err != nil {
-		return missingOrInput(rule, "rust-toolchain.toml", err, "Rust profile requires rust-toolchain.toml.")
+		return missingOrInput(rule, rustToolchain, err, "Rust profile requires rust-toolchain.toml.")
 	}
 	channel, parseErr := rustToolchainVersion(data)
 	if parseErr != nil {
-		return inputError(rule, "rust-toolchain.toml")
+		return inputError(rule, rustToolchain)
 	}
 	if !exactPatchVersion(channel) {
-		return baseFinding(rule, deviationStatus(rule), "rust-toolchain.toml", "Rust toolchain channel must be an exact release.")
+		return baseFinding(rule, deviationStatus(rule), rustToolchain, "Rust toolchain channel must be an exact release.")
 	}
 	if mise, err := readRepositoryFile(root, "mise.toml"); err == nil {
 		config, parseErr := parseMiseConfig(mise)
@@ -672,7 +816,7 @@ func evaluateRustProfile(root string, _ Metadata, rule Rule, _ bool) Finding {
 			return baseFinding(rule, deviationStatus(rule), "mise.toml", "Rustup must be the sole Rust toolchain owner.")
 		}
 	}
-	return baseFinding(rule, "pass", "rust-toolchain.toml", "Rustup owns an exact Rust toolchain release.")
+	return baseFinding(rule, "pass", rustToolchain, "Rustup owns an exact Rust toolchain release.")
 }
 
 func evaluateZigProfile(root string, metadata Metadata, rule Rule, compatibility CompatibilityManifest) Finding {

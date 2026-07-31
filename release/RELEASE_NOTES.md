@@ -33,6 +33,12 @@ shared quality automation to the existing checker.
   provenance-verifying setup action
 - Context-safe project-name rendering, artifact-aware entry points, built
   artifact smoke tests, and repository-local Go binary output
+- Component-aware conformance evaluation for generated polyglot and monorepo
+  layouts, including profile-scoped exception matching
+- Formatter-safe project-name quoting, language-keyword-safe component names,
+  and literal-brace-safe Just interpolation
+- Digest-verified pnpm bootstrap outside generated repositories and
+  archive-to-executable integrity checks for cached Golden Path binaries
 - Exact native Zig and `zig cc` target contracts for Darwin and Linux
   AMD64/ARM64
 - Upgrade conflicts for deleted managed assets and generated mode drift

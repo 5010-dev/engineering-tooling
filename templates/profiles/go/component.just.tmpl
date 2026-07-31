@@ -39,5 +39,5 @@ _[[.RecipePrefix]]_check:
 [private]
 _[[.RecipePrefix]]_ci:
     cd [[.ShellPath]] && GOTOOLCHAIN=local go test -mod=readonly -race ./...
-[[if .GoExecutable]]    cd [[.ShellPath]] && test -x bin/[[.PackageName]] && test "$(bin/[[.PackageName]])" = [[.ProjectNameShellQuoted]]
+[[if .GoExecutable]]    cd [[.ShellPath]] && test -x bin/[[.PackageName]] && test "$(bin/[[.PackageName]])" = [[.ProjectNameJustShellQuoted]]
 [[end]]
