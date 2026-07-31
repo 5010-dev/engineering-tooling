@@ -45,7 +45,26 @@
             "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?\\.[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?(?:/[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?)*$",
             "description": "Go module path syntax is additionally validated with golang.org/x/mod/module.CheckPath."
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "profiles": { "contains": { "enum": ["go", "rust"] } }
+              },
+              "required": ["profiles"]
+            },
+            "then": {
+              "properties": {
+                "artifactTypes": {
+                  "contains": {
+                    "enum": ["application", "service", "library", "cli", "package", "binary", "container", "tooling"]
+                  }
+                }
+              }
+            }
+          }
+        ]
       }
     }
   }

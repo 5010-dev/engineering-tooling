@@ -259,7 +259,8 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 
 func renderComponent(component Component, request Request, bundle Bundle) ([]File, error) {
 	profiles := stringSet(component.Profiles)
-	executable := hasExecutableArtifact(component) && !hasArtifact(component, "infrastructure")
+	executableArtifact := hasExecutableArtifact(component)
+	applicationExecutable := executableArtifact && !hasArtifact(component, "infrastructure")
 	model := componentModel{
 		ProjectName: request.ProjectName, ProjectNameQuoted: strconv.Quote(request.ProjectName),
 		ProjectNameTypeScriptQuoted:     formatterPreferredQuotedString(request.ProjectName),
@@ -287,11 +288,11 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 		AWSCDKVersion: bundle.Tools["aws-cdk"], AWSCDKLibVersion: bundle.Tools["aws-cdk-lib"],
 		ConstructsVersion: bundle.Tools["constructs"], PulumiSDKVersion: bundle.Tools["pulumi-sdk"],
 		AWSCDK: profiles["infrastructure-aws-cdk"], Pulumi: profiles["infrastructure-pulumi"],
-		GoExecutable:               profiles["go"] && executable,
+		GoExecutable:               profiles["go"] && executableArtifact,
 		GoLibrary:                  profiles["go"] && (hasArtifact(component, "library") || hasArtifact(component, "package")),
-		NodeExecutable:             profiles["node-typescript"] && executable,
-		PythonExecutable:           profiles["python"] && executable,
-		RustExecutable:             profiles["rust"] && executable,
+		NodeExecutable:             profiles["node-typescript"] && applicationExecutable,
+		PythonExecutable:           profiles["python"] && applicationExecutable,
+		RustExecutable:             profiles["rust"] && executableArtifact,
 		RustLibrary:                profiles["rust"] && (hasArtifact(component, "library") || hasArtifact(component, "package")),
 		HasNodeRuntimeDependencies: profiles["infrastructure-aws-cdk"] || profiles["infrastructure-pulumi"],
 	}
@@ -794,6 +795,10 @@ func hasExecutableArtifact(component Component) bool {
 		}
 	}
 	return false
+}
+
+func hasSourceArtifact(component Component) bool {
+	return hasExecutableArtifact(component) || hasArtifact(component, "library") || hasArtifact(component, "package")
 }
 
 func sortedKeys(values map[string]bool) []string {
