@@ -129,7 +129,7 @@ func runCheck(arguments []string, stdout, stderr io.Writer) int {
 			}
 			return 2
 		}
-		if !slices.Equal(expected, result.Profiles) {
+		if result.Complete && !slices.Equal(expected, result.Profiles) {
 			result.Findings = append(result.Findings, checker.Finding{
 				RuleID: "DT-META-002", Status: "fail", Severity: "error", Assessment: "automated",
 				Path: ".github/golden-path.yaml", Secondary: "caller-profile-contract",

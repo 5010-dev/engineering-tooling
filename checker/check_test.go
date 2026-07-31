@@ -596,6 +596,26 @@ func TestNativeMarkersRequireMatchingDeclaredProfiles(t *testing.T) {
 	}
 }
 
+func TestComponentRulePrefersAnUnwaivedFailure(t *testing.T) {
+	metadata := Metadata{Components: []MetadataComponent{
+		{Path: "components/waived", Profiles: []string{"go"}, ArtifactTypes: []string{"service"}, Capabilities: []string{"build"}},
+		{Path: "components/unwaived", Profiles: []string{"go"}, ArtifactTypes: []string{"service"}, Capabilities: []string{"build"}},
+	}}
+	rule := Rule{
+		ID: "DT-DEP-001", Level: "MUST", Assessment: "automated", Severity: "error", Waivable: true,
+		Applicability: RuleApplicability{Profiles: []string{"go"}},
+	}
+	exceptions := []Exception{{
+		ID: "EXC-2026-TEST", Rules: []string{"DT-DEP-001"}, ExpiresAt: "2026-08-31",
+		Scope: ExceptionScope{Profiles: []string{"go"}, Paths: []string{"components/waived/go.mod"}},
+	}}
+
+	finding := evaluateComponentRule(t.TempDir(), metadata, rule, exceptions, true, fixtureTime, CompatibilityManifest{})
+	if finding.Status != "fail" || finding.Path != "components/unwaived/go.mod" || finding.Extensions["componentPath"] != "components/unwaived" {
+		t.Fatalf("component selection masked an unwaived failure: %+v", finding)
+	}
+}
+
 func TestUnderDeclaredNativeProfileIsConfigurationError(t *testing.T) {
 	root := copyFixture(t, "positive-go")
 	rootFS, err := os.OpenRoot(root)

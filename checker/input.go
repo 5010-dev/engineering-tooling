@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -17,6 +19,7 @@ import (
 const maxInputBytes = 2 << 20
 
 var errNotFound = errors.New("repository input not found")
+var metadataComponentPathPattern = regexp.MustCompile(`^(?:\.|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*)$`)
 
 func readRepositoryFile(root, name string) ([]byte, error) {
 	cleanRoot, err := filepath.Abs(root)
@@ -184,7 +187,86 @@ func loadMetadata(root string) (Metadata, error) {
 	if err := json.Unmarshal(jsonData, &metadata); err != nil {
 		return Metadata{}, fmt.Errorf("decode metadata: %w", err)
 	}
+	if extension, present := metadata.Extensions["dev.fiftyten.generator"]; present {
+		data, marshalErr := json.Marshal(extension)
+		if marshalErr != nil {
+			return Metadata{}, fmt.Errorf("decode generator metadata extension: %w", marshalErr)
+		}
+		var generatorMetadata struct {
+			Components []MetadataComponent `json:"components"`
+		}
+		if err := json.Unmarshal(data, &generatorMetadata); err != nil {
+			return Metadata{}, fmt.Errorf("decode generator metadata extension: %w", err)
+		}
+		metadata.Components = generatorMetadata.Components
+	}
+	if err := validateComponentMetadata(metadata); err != nil {
+		return Metadata{}, err
+	}
 	return metadata, nil
+}
+
+func validateComponentMetadata(metadata Metadata) error {
+	if len(metadata.Components) == 0 {
+		return nil
+	}
+	paths := map[string]bool{}
+	profiles, artifacts, capabilities := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, component := range metadata.Components {
+		if !metadataComponentPathPattern.MatchString(component.Path) || len(component.Profiles) == 0 || len(component.ArtifactTypes) == 0 ||
+			!uniqueNonEmpty(component.Profiles) || !uniqueNonEmpty(component.ArtifactTypes) || !uniqueNonEmpty(component.Capabilities) {
+			return fmt.Errorf("metadata component declaration is invalid")
+		}
+		if paths[component.Path] {
+			return fmt.Errorf("metadata component paths must be unique")
+		}
+		paths[component.Path] = true
+		for _, profile := range component.Profiles {
+			profiles[profile] = true
+		}
+		for _, artifact := range component.ArtifactTypes {
+			artifacts[artifact] = true
+		}
+		for _, capability := range component.Capabilities {
+			capabilities[capability] = true
+		}
+	}
+	if len(metadata.Components) > 1 && paths["."] {
+		return fmt.Errorf("metadata cannot mix a root component with nested components")
+	}
+	for left := range paths {
+		for right := range paths {
+			if left < right && (strings.HasPrefix(left, right+"/") || strings.HasPrefix(right, left+"/")) {
+				return fmt.Errorf("metadata component paths overlap")
+			}
+		}
+	}
+	if strings.Join(sortedEnabledKeys(profiles), "\x00") != strings.Join(sortedCopy(metadata.Profiles), "\x00") ||
+		strings.Join(sortedEnabledKeys(artifacts), "\x00") != strings.Join(sortedCopy(metadata.ArtifactTypes), "\x00") ||
+		strings.Join(sortedEnabledKeys(capabilities), "\x00") != strings.Join(sortedCopy(metadata.Capabilities), "\x00") {
+		return fmt.Errorf("metadata aggregate declarations must equal the union of component declarations")
+	}
+	return nil
+}
+
+func uniqueNonEmpty(values []string) bool {
+	seen := map[string]bool{}
+	for _, value := range values {
+		if value == "" || seen[value] {
+			return false
+		}
+		seen[value] = true
+	}
+	return true
+}
+
+func sortedEnabledKeys(values map[string]bool) []string {
+	result := make([]string, 0, len(values))
+	for key := range values {
+		result = append(result, key)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func loadExceptions(root string) (ExceptionsFile, bool, error) {

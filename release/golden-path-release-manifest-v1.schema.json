@@ -196,6 +196,7 @@
           "os",
           "architecture",
           "sha256",
+          "executableSHA256",
           "size",
           "sbom"
         ],
@@ -217,6 +218,10 @@
             ]
           },
           "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "executableSHA256": {
             "type": "string",
             "pattern": "^[a-f0-9]{64}$"
           },

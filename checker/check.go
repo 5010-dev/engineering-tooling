@@ -80,9 +80,9 @@ func Check(options Options) Result {
 
 	approachingExceptions := map[string]string{}
 	for _, rule := range catalog.Rules {
-		finding := evaluateRule(options.Root, metadata, rule, exceptionsPresent, options.EvaluatedAt, compatibility)
+		finding := evaluateRule(options.Root, metadata, rule, exceptions.Exceptions, exceptionsPresent, options.EvaluatedAt, compatibility)
 		if finding.Status == "fail" {
-			if exception, expired := matchingException(exceptions.Exceptions, metadata, finding, rule, options.EvaluatedAt); exception != nil {
+			if exception, expired := matchingException(exceptions.Exceptions, exceptionMetadata(metadata, finding), finding, rule, options.EvaluatedAt); exception != nil {
 				if expired {
 					finding.Message += " Matching exception " + exception.ID + " expired before the evaluation time."
 				} else {
@@ -123,6 +123,22 @@ func Check(options Options) Result {
 		result.ExitCode = 1
 	}
 	return result
+}
+
+func exceptionMetadata(metadata Metadata, finding Finding) Metadata {
+	componentPath, _ := finding.Extensions["componentPath"].(string)
+	if componentPath == "" {
+		return metadata
+	}
+	for _, component := range metadata.Components {
+		if component.Path == componentPath {
+			return Metadata{
+				Profiles: component.Profiles, ArtifactTypes: component.ArtifactTypes,
+				Capabilities: component.Capabilities, ComponentPath: component.Path,
+			}
+		}
+	}
+	return metadata
 }
 
 func configurationResult(result Result, ruleID, findingPath, message string) Result {

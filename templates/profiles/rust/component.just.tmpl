@@ -29,5 +29,5 @@ _[[.RecipePrefix]]_build:
 [private]
 _[[.RecipePrefix]]_ci:
     cd [[.ShellPath]] && RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked
-[[if .RustExecutable]]    cd [[.ShellPath]] && test -x target/release/[[.PackageName]] && test "$(target/release/[[.PackageName]])" = [[.ProjectNameShellQuoted]]
+[[if .RustExecutable]]    cd [[.ShellPath]] && test -x target/release/[[.PackageName]] && test "$(target/release/[[.PackageName]])" = [[.ProjectNameJustShellQuoted]]
 [[end]]

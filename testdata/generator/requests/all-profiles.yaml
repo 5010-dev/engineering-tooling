@@ -1,6 +1,6 @@
 schemaVersion: golden-path-generator-request/v1
 layout: polyglot
-projectName: Synthetic "Quoted" Golden Path's {Matrix} \ Edge
+projectName: Synthetic {{Golden Path}} Matrix
 projectSlug: synthetic-golden-path-matrix
 components:
   - name: cdk

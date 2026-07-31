@@ -46,7 +46,7 @@ type componentModel struct {
 	ProjectNameQuoted               string
 	ProjectNameTypeScriptQuoted     string
 	ProjectNamePythonQuoted         string
-	ProjectNameShellQuoted          string
+	ProjectNameJustShellQuoted      string
 	StarterDescriptionQuoted        string
 	StarterDescriptionPythonQuoted  string
 	InfrastructureDescriptionQuoted string
@@ -71,6 +71,8 @@ type componentModel struct {
 	Engine                          string
 	EngineVersion                   string
 	PNPMVersion                     string
+	PNPMArchiveSHA256               string
+	PNPMExecutableSHA256            string
 	ESLintJSVersion                 string
 	NodeTypesVersion                string
 	ESLintVersion                   string
@@ -89,21 +91,27 @@ type componentModel struct {
 	AWSCDK                          bool
 	Pulumi                          bool
 	GoExecutable                    bool
+	GoLibrary                       bool
 	NodeExecutable                  bool
 	PythonExecutable                bool
 	RustExecutable                  bool
+	RustLibrary                     bool
 	HasNodeRuntimeDependencies      bool
 }
 
 type automationModel struct {
-	AutomationSourceCommit string
-	CheckerVersion         string
-	GitHubCLIVersion       string
-	ProfilesJSON           string
-	DarwinAMD64SHA256      string
-	DarwinARM64SHA256      string
-	LinuxAMD64SHA256       string
-	LinuxARM64SHA256       string
+	AutomationSourceCommit      string
+	CheckerVersion              string
+	GitHubCLIVersion            string
+	ProfilesJSON                string
+	DarwinAMD64SHA256           string
+	DarwinAMD64ExecutableSHA256 string
+	DarwinARM64SHA256           string
+	DarwinARM64ExecutableSHA256 string
+	LinuxAMD64SHA256            string
+	LinuxAMD64ExecutableSHA256  string
+	LinuxARM64SHA256            string
+	LinuxARM64ExecutableSHA256  string
 }
 
 type dependabotEntry struct {
@@ -133,6 +141,13 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 	}
 	requestDigest := digest(requestData)
 	profiles, artifactTypes, capabilities := aggregateMetadata(request)
+	componentMetadata := make([]map[string]any, 0, len(request.Components))
+	for _, component := range request.Components {
+		componentMetadata = append(componentMetadata, map[string]any{
+			"path": component.Path, "profiles": component.Profiles, "artifactTypes": component.ArtifactTypes,
+			"capabilities": metadataCapabilities(component),
+		})
+	}
 	automation, err := buildAutomationModel(release, profiles)
 	if err != nil {
 		return nil, "", err
@@ -200,6 +215,7 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 			"dev.fiftyten.generator": map[string]any{
 				"layout":        request.Layout,
 				"requestSHA256": requestDigest,
+				"components":    componentMetadata,
 			},
 		},
 	}
@@ -246,22 +262,23 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 	executable := hasExecutableArtifact(component) && !hasArtifact(component, "infrastructure")
 	model := componentModel{
 		ProjectName: request.ProjectName, ProjectNameQuoted: strconv.Quote(request.ProjectName),
-		ProjectNameTypeScriptQuoted:     singleQuotedString(request.ProjectName),
-		ProjectNamePythonQuoted:         singleQuotedString(request.ProjectName),
-		ProjectNameShellQuoted:          shellQuote(request.ProjectName),
+		ProjectNameTypeScriptQuoted:     formatterPreferredQuotedString(request.ProjectName),
+		ProjectNamePythonQuoted:         formatterPreferredQuotedString(request.ProjectName),
+		ProjectNameJustShellQuoted:      justInterpolationSafe(shellQuote(request.ProjectName)),
 		StarterDescriptionQuoted:        strconv.Quote("Generated Golden Path starter for " + request.ProjectName),
-		StarterDescriptionPythonQuoted:  singleQuotedString("Generated Golden Path starter for " + request.ProjectName),
+		StarterDescriptionPythonQuoted:  formatterPreferredQuotedString("Generated Golden Path starter for " + request.ProjectName),
 		InfrastructureDescriptionQuoted: strconv.Quote(request.ProjectName + " infrastructure"),
 		ProjectSlug:                     request.ProjectSlug, PackageName: component.Name,
-		GoPackage: strings.ReplaceAll(component.Name, "-", "_"), PythonModule: strings.ReplaceAll(component.Name, "-", "_"),
+		GoPackage: safeGoIdentifier(component.Name), PythonModule: safePythonIdentifier(component.Name),
 		PythonVersion: bundle.Tools["python"], GoVersion: bundle.Tools["go"],
 		GoLanguageVersion: majorMinor(bundle.Tools["go"]), GoImportsVersion: bundle.Tools["goimports"],
 		NodeVersion: bundle.Tools["node"], NodeNextMajor: nextMajor(bundle.Tools["node"]),
 		RustVersion: bundle.Tools["rust"], ZigVersion: bundle.Tools["zig"], ModulePath: component.ModulePath,
 		RecipePrefix: strings.ReplaceAll(component.Name, "-", "_"), ShellPath: component.Path,
-		ZigPackageName: strings.ReplaceAll(component.Name, "-", "_"), ZigFingerprint: zigFingerprint(component.Name),
+		ZigPackageName: zigEnumLiteral(component.Name), ZigFingerprint: zigFingerprint(component.Name),
 		StackName:   strings.Join(titleWords(component.Name), ""),
-		PNPMVersion: bundle.Tools["pnpm"], ESLintJSVersion: bundle.Tools["eslint-js"],
+		PNPMVersion: bundle.Tools["pnpm"], PNPMArchiveSHA256: bundle.PNPMArchiveSHA256,
+		PNPMExecutableSHA256: bundle.PNPMExecutableSHA256, ESLintJSVersion: bundle.Tools["eslint-js"],
 		NodeTypesVersion: bundle.Tools["node-types"], ESLintVersion: bundle.Tools["eslint"],
 		PrettierVersion: bundle.Tools["prettier"], TypeScriptVersion: bundle.Tools["typescript"],
 		TypeScriptESLintVersion: bundle.Tools["typescript-eslint"], VitestVersion: bundle.Tools["vitest"],
@@ -271,9 +288,11 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 		ConstructsVersion: bundle.Tools["constructs"], PulumiSDKVersion: bundle.Tools["pulumi-sdk"],
 		AWSCDK: profiles["infrastructure-aws-cdk"], Pulumi: profiles["infrastructure-pulumi"],
 		GoExecutable:               profiles["go"] && executable,
+		GoLibrary:                  profiles["go"] && (hasArtifact(component, "library") || hasArtifact(component, "package")),
 		NodeExecutable:             profiles["node-typescript"] && executable,
 		PythonExecutable:           profiles["python"] && executable,
 		RustExecutable:             profiles["rust"] && executable,
+		RustLibrary:                profiles["rust"] && (hasArtifact(component, "library") || hasArtifact(component, "package")),
 		HasNodeRuntimeDependencies: profiles["infrastructure-aws-cdk"] || profiles["infrastructure-pulumi"],
 	}
 	prefix := func(relative string) string {
@@ -321,14 +340,15 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 				return nil, err
 			}
 		}
-		if hasArtifact(component, "library") || hasArtifact(component, "package") {
+		if model.GoLibrary {
 			if err := add("library.go", "profiles/go/library.go.tmpl", 0o644); err != nil {
 				return nil, err
 			}
 			if err := add("library_test.go", "profiles/go/library_test.go.tmpl", 0o644); err != nil {
 				return nil, err
 			}
-		} else {
+		}
+		if model.GoExecutable {
 			if err := add(path.Join("cmd", component.Name, "main.go"), "profiles/go/main.go.tmpl", 0o644); err != nil {
 				return nil, err
 			}
@@ -382,14 +402,15 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 				return nil, err
 			}
 		}
-		source := "profiles/rust/main.rs.tmpl"
-		target := "src/main.rs"
-		if hasArtifact(component, "library") || hasArtifact(component, "package") {
-			source = "profiles/rust/lib.rs.tmpl"
-			target = "src/lib.rs"
+		if model.RustLibrary {
+			if err := add("src/lib.rs", "profiles/rust/lib.rs.tmpl", 0o644); err != nil {
+				return nil, err
+			}
 		}
-		if err := add(target, source, 0o644); err != nil {
-			return nil, err
+		if model.RustExecutable {
+			if err := add("src/main.rs", "profiles/rust/main.rs.tmpl", 0o644); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if profiles["zig"] {
@@ -505,6 +526,9 @@ func buildRecipeModel(request Request) recipeModel {
 			model.BuildRecipes = append(model.BuildRecipes, prefix+"_build")
 			model.HasBuild = true
 		}
+		if flags["check"] {
+			model.CheckRecipes = append(model.CheckRecipes, prefix+"_check")
+		}
 		if flags["iac-check"] {
 			model.CheckRecipes = append(model.CheckRecipes, prefix+"_iac_check")
 		}
@@ -522,6 +546,9 @@ func componentCapabilities(component Component) map[string]bool {
 		flags["init"] = true
 		for _, capability := range []string{"format", "format-check", "lint", "typecheck", "test", "build", "ci"} {
 			flags[capability] = true
+		}
+		if profiles["go"] || profiles["python"] {
+			flags["check"] = true
 		}
 	}
 	if profiles["zig"] {
@@ -561,14 +588,22 @@ func aggregateMetadata(request Request) ([]string, []string, []string) {
 		for _, artifact := range component.ArtifactTypes {
 			artifactSet[artifact] = true
 		}
-		flags := componentCapabilities(component)
-		for _, capability := range []string{"format", "lint", "typecheck", "test", "build"} {
-			if flags[capability] || capability == "format" && flags["format-check"] {
-				capabilitySet[capability] = true
-			}
+		for _, capability := range metadataCapabilities(component) {
+			capabilitySet[capability] = true
 		}
 	}
 	return sortedKeys(profileSet), sortedKeys(artifactSet), sortedKeys(capabilitySet)
+}
+
+func metadataCapabilities(component Component) []string {
+	flags := componentCapabilities(component)
+	capabilities := map[string]bool{"dependency-automation": true, "cache": true}
+	for _, capability := range []string{"format", "lint", "typecheck", "test", "build"} {
+		if flags[capability] || capability == "format" && flags["format-check"] {
+			capabilities[capability] = true
+		}
+	}
+	return sortedKeys(capabilities)
 }
 
 func buildAutomationModel(release ReleaseManifest, profiles []string) (automationModel, error) {
@@ -585,12 +620,16 @@ func buildAutomationModel(release ReleaseManifest, profiles []string) (automatio
 		switch asset.OS + "/" + asset.Architecture {
 		case "darwin/amd64":
 			model.DarwinAMD64SHA256 = asset.SHA256
+			model.DarwinAMD64ExecutableSHA256 = asset.ExecutableSHA256
 		case "darwin/arm64":
 			model.DarwinARM64SHA256 = asset.SHA256
+			model.DarwinARM64ExecutableSHA256 = asset.ExecutableSHA256
 		case "linux/amd64":
 			model.LinuxAMD64SHA256 = asset.SHA256
+			model.LinuxAMD64ExecutableSHA256 = asset.ExecutableSHA256
 		case "linux/arm64":
 			model.LinuxARM64SHA256 = asset.SHA256
+			model.LinuxARM64ExecutableSHA256 = asset.ExecutableSHA256
 		}
 	}
 	return model, nil
@@ -605,8 +644,8 @@ func buildDependabotModel(request Request) dependabotModel {
 		if component.Path != "." {
 			directory += component.Path
 		}
-		for _, ecosystem := range []string{"cargo", "gomod", "npm", "pip", "terraform"} {
-			selected := ecosystem == "cargo" && profiles["rust"] || ecosystem == "gomod" && profiles["go"] || ecosystem == "npm" && profiles["node-typescript"] || ecosystem == "pip" && profiles["python"] || ecosystem == "terraform" && (profiles["infrastructure-terraform"] || profiles["infrastructure-opentofu"])
+		for _, ecosystem := range []string{"cargo", "gomod", "npm", "terraform", "uv"} {
+			selected := ecosystem == "cargo" && profiles["rust"] || ecosystem == "gomod" && profiles["go"] || ecosystem == "npm" && profiles["node-typescript"] || ecosystem == "uv" && profiles["python"] || ecosystem == "terraform" && (profiles["infrastructure-terraform"] || profiles["infrastructure-opentofu"])
 			key := ecosystem + "\x00" + directory
 			if selected && !seen[key] {
 				result.Dependabot = append(result.Dependabot, dependabotEntry{Ecosystem: ecosystem, Directory: directory})
@@ -812,8 +851,56 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }
 
-func singleQuotedString(value string) string {
-	value = strings.ReplaceAll(value, "\\", "\\\\")
-	value = strings.ReplaceAll(value, "'", "\\'")
-	return "'" + value + "'"
+func formatterPreferredQuotedString(value string) string {
+	delimiter := byte('"')
+	if strings.Count(value, "'") < strings.Count(value, `"`) {
+		delimiter = '\''
+	}
+	var output strings.Builder
+	output.WriteByte(delimiter)
+	for _, character := range value {
+		switch character {
+		case '\\':
+			output.WriteString(`\\`)
+		case rune(delimiter):
+			output.WriteByte('\\')
+			output.WriteRune(character)
+		default:
+			output.WriteRune(character)
+		}
+	}
+	output.WriteByte(delimiter)
+	return output.String()
 }
+
+func justInterpolationSafe(value string) string {
+	return strings.NewReplacer("{{", `{{"{{"}}`, "}}", `{{"}}"}}`).Replace(value)
+}
+
+func safeGoIdentifier(value string) string {
+	identifier := strings.ReplaceAll(value, "-", "_")
+	if goKeywords[identifier] {
+		return identifier + "_pkg"
+	}
+	return identifier
+}
+
+func safePythonIdentifier(value string) string {
+	identifier := strings.ReplaceAll(value, "-", "_")
+	if pythonKeywords[identifier] {
+		return identifier + "_pkg"
+	}
+	return identifier
+}
+
+func zigEnumLiteral(value string) string {
+	identifier := strings.ReplaceAll(value, "-", "_")
+	if zigKeywords[identifier] {
+		return `.@"` + identifier + `"`
+	}
+	return "." + identifier
+}
+
+var goKeywords = stringSet(strings.Fields("break default func interface select case defer go map struct chan else goto package switch const fallthrough if range type continue for import return var"))
+var pythonKeywords = stringSet(strings.Fields("False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield match case type"))
+var zigKeywords = stringSet(strings.Fields("addrspace align allowzero and anyframe anytype asm async await break callconv catch comptime const continue defer else enum errdefer error export extern fn for if inline linksection noalias noinline nosuspend opaque or orelse packed pub resume return struct suspend switch test threadlocal try union unreachable usingnamespace var volatile while"))

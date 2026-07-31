@@ -57,16 +57,25 @@ type Finding struct {
 }
 
 type Metadata struct {
-	SchemaVersion      string         `json:"schemaVersion"`
-	ContractVersion    string         `json:"contractVersion"`
-	StandardVersion    string         `json:"standardVersion"`
-	AssetBundleVersion string         `json:"assetBundleVersion"`
-	Applicability      Applicability  `json:"applicability,omitempty"`
-	Profiles           []string       `json:"profiles"`
-	ArtifactTypes      []string       `json:"artifactTypes"`
-	Capabilities       []string       `json:"capabilities"`
-	Targets            []Target       `json:"targets,omitempty"`
-	Extensions         map[string]any `json:"extensions,omitempty"`
+	SchemaVersion      string              `json:"schemaVersion"`
+	ContractVersion    string              `json:"contractVersion"`
+	StandardVersion    string              `json:"standardVersion"`
+	AssetBundleVersion string              `json:"assetBundleVersion"`
+	Applicability      Applicability       `json:"applicability,omitempty"`
+	Profiles           []string            `json:"profiles"`
+	ArtifactTypes      []string            `json:"artifactTypes"`
+	Capabilities       []string            `json:"capabilities"`
+	Targets            []Target            `json:"targets,omitempty"`
+	Components         []MetadataComponent `json:"-"`
+	Extensions         map[string]any      `json:"extensions,omitempty"`
+	ComponentPath      string              `json:"-"`
+}
+
+type MetadataComponent struct {
+	Path          string   `json:"path"`
+	Profiles      []string `json:"profiles"`
+	ArtifactTypes []string `json:"artifactTypes"`
+	Capabilities  []string `json:"capabilities"`
 }
 
 type Applicability struct {
