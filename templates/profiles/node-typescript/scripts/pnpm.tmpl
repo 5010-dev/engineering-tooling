@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+set -eu
+
+exec npm exec --yes --package=pnpm@[[.PNPMVersion]] -- pnpm "$@"

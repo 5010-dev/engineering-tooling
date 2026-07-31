@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:5010-dev:golden-path:schema:release-manifest:v1",
-  "title": "Golden Path checker release manifest v1",
+  "title": "Golden Path tooling release manifest v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,6 +16,7 @@
     "compatibilityManifest",
     "standardSnapshotManifest",
     "runtimeSelections",
+    "components",
     "assets",
     "build",
     "provenance"
@@ -145,6 +146,44 @@
         }
       }
     },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checker", "templateBundle", "automation"],
+      "properties": {
+        "checker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "executable", "lifecycle"],
+          "properties": {
+            "version": { "$ref": "#/$defs/semver" },
+            "executable": { "const": "golden-path" },
+            "lifecycle": { "const": "report-only" }
+          }
+        },
+        "templateBundle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "requestSchema", "generatedAssetsSchema", "planSchema"],
+          "properties": {
+            "version": { "$ref": "#/$defs/semver" },
+            "requestSchema": { "const": "golden-path-generator-request/v1" },
+            "generatedAssetsSchema": { "const": "golden-path-generated-assets/v1" },
+            "planSchema": { "const": "golden-path-materialization-plan/v1" }
+          }
+        },
+        "automation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "reusableWorkflow", "setupAction"],
+          "properties": {
+            "version": { "$ref": "#/$defs/semver" },
+            "reusableWorkflow": { "const": ".github/workflows/golden-path-quality.yml" },
+            "setupAction": { "const": "actions/setup-golden-path/action.yml" }
+          }
+        }
+      }
+    },
     "assets": {
       "type": "array",
       "minItems": 1,
@@ -263,6 +302,12 @@
           "minLength": 3
         }
       }
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
     }
   }
 }

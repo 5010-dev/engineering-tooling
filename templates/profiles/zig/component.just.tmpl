@@ -1,0 +1,27 @@
+[private]
+_[[.RecipePrefix]]_init:
+    cd [[.ShellPath]] && zig version | grep -Fx '[[.ZigVersion]]' && zig build --fetch
+
+[private]
+_[[.RecipePrefix]]_format:
+    cd [[.ShellPath]] && zig fmt build.zig src
+
+[private]
+_[[.RecipePrefix]]_format_check:
+    cd [[.ShellPath]] && zig fmt --check build.zig src
+
+[private]
+_[[.RecipePrefix]]_typecheck:
+    cd [[.ShellPath]] && zig build check --summary all
+
+[private]
+_[[.RecipePrefix]]_test:
+    cd [[.ShellPath]] && zig build test --summary all
+
+[private]
+_[[.RecipePrefix]]_build:
+    cd [[.ShellPath]] && zig build -Doptimize=ReleaseSafe --summary all
+
+[private]
+_[[.RecipePrefix]]_ci:
+    cd [[.ShellPath]] && test -x zig-out/bin/[[.PackageName]]

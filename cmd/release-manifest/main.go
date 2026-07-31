@@ -27,6 +27,7 @@ type manifest struct {
 	Compatibility     string                     `json:"compatibilityManifest"`
 	Snapshot          string                     `json:"standardSnapshotManifest"`
 	RuntimeSelections []checker.RuntimeSelection `json:"runtimeSelections"`
+	Components        releaseComponents          `json:"components"`
 	Assets            []asset                    `json:"assets"`
 	Build             buildEvidence              `json:"build"`
 	Provenance        provenance                 `json:"provenance"`
@@ -64,6 +65,31 @@ type provenance struct {
 	Provider string `json:"provider"`
 	Workflow string `json:"workflow"`
 	Subject  string `json:"subject"`
+}
+
+type releaseComponents struct {
+	Checker        checkerComponent    `json:"checker"`
+	TemplateBundle templateComponent   `json:"templateBundle"`
+	Automation     automationComponent `json:"automation"`
+}
+
+type checkerComponent struct {
+	Version    string `json:"version"`
+	Executable string `json:"executable"`
+	Lifecycle  string `json:"lifecycle"`
+}
+
+type templateComponent struct {
+	Version               string `json:"version"`
+	RequestSchema         string `json:"requestSchema"`
+	GeneratedAssetsSchema string `json:"generatedAssetsSchema"`
+	PlanSchema            string `json:"planSchema"`
+}
+
+type automationComponent struct {
+	Version          string `json:"version"`
+	ReusableWorkflow string `json:"reusableWorkflow"`
+	SetupAction      string `json:"setupAction"`
 }
 
 func main() {
@@ -123,6 +149,9 @@ func run(arguments []string, stderr io.Writer) error {
 			"golden-path-checker-output/v1",
 			"golden-path-rule-catalog/v1",
 			"runtime-support/v1",
+			"golden-path-generator-request/v1",
+			"golden-path-generated-assets/v1",
+			"golden-path-materialization-plan/v1",
 		},
 		Source: source{
 			Repository: "https://github.com/5010-dev/engineering-tooling",
@@ -134,7 +163,18 @@ func run(arguments []string, stderr io.Writer) error {
 		Compatibility:     "compatibility-manifest.json",
 		Snapshot:          "standard-snapshot-manifest.json",
 		RuntimeSelections: compatibility.RuntimeSelections,
-		Assets:            assets,
+		Components: releaseComponents{
+			Checker: checkerComponent{Version: checker.Version, Executable: "golden-path", Lifecycle: "report-only"},
+			TemplateBundle: templateComponent{
+				Version: checker.Version, RequestSchema: "golden-path-generator-request/v1",
+				GeneratedAssetsSchema: "golden-path-generated-assets/v1", PlanSchema: "golden-path-materialization-plan/v1",
+			},
+			Automation: automationComponent{
+				Version: checker.Version, ReusableWorkflow: ".github/workflows/golden-path-quality.yml",
+				SetupAction: "actions/setup-golden-path/action.yml",
+			},
+		},
+		Assets: assets,
 		Build: buildEvidence{
 			Toolchain: "go" + goVersion,
 			Commands: []string{

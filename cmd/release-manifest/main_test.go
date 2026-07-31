@@ -26,10 +26,10 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	}()
 
 	for _, name := range []string{
-		"golden-path_0.1.0_darwin_amd64.tar.gz",
-		"golden-path_0.1.0_darwin_arm64.tar.gz",
-		"golden-path_0.1.0_linux_amd64.tar.gz",
-		"golden-path_0.1.0_linux_arm64.tar.gz",
+		"golden-path_0.2.0_darwin_amd64.tar.gz",
+		"golden-path_0.2.0_darwin_arm64.tar.gz",
+		"golden-path_0.2.0_linux_amd64.tar.gz",
+		"golden-path_0.2.0_linux_arm64.tar.gz",
 	} {
 		archive := []byte("fixture:" + name)
 		if err := root.WriteFile(name, archive, 0o600); err != nil {
@@ -50,7 +50,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	var stderr bytes.Buffer
 	if err := run([]string{
 		"--dist", directory,
-		"--tag", "v0.1.0",
+		"--tag", "v0.2.0",
 		"--source-commit", "0123456789abcdef0123456789abcdef01234567",
 		"--output", output,
 	}, &stderr); err != nil {
@@ -79,7 +79,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateDocument(t, releaseSchema, data)
-	if result.ReleaseVersion != "0.1.0" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 {
+	if result.ReleaseVersion != "0.2.0" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.TemplateBundle.Version != "0.2.0" || result.Components.Automation.Version != "0.2.0" {
 		t.Fatalf("unexpected manifest: %+v", result)
 	}
 	for index := 1; index < len(result.Assets); index++ {
@@ -118,7 +118,7 @@ func TestCompatibilityManifestSatisfiesContract(t *testing.T) {
 func TestRunRejectsTagVersionMismatch(t *testing.T) {
 	var stderr bytes.Buffer
 	err := run([]string{
-		"--tag", "v0.2.0",
+		"--tag", "v0.1.0",
 		"--source-commit", strings.Repeat("a", 40),
 		"--output", filepath.Join(t.TempDir(), "release-manifest.json"),
 	}, &stderr)

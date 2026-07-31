@@ -1,0 +1,7 @@
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - "@types/node"
+  - "typescript"[[if .AWSCDK]]
+  - "constructs@[[.ConstructsVersion]]"[[end]][[if .Pulumi]]
+allowBuilds:
+  "protobufjs@7.6.5": true[[end]]

@@ -1,0 +1,10 @@
+package [[.GoPackage]]
+
+import "testing"
+
+func TestName(t *testing.T) {
+	t.Parallel()
+	if Name == "" {
+		t.Fatal("Name is empty")
+	}
+}

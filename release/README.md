@@ -16,6 +16,9 @@ Each release must contain:
 - `checksums.txt`
 - `compatibility-manifest.json`
 - `golden-path-checker-compatibility-v1.schema.json`
+- `golden-path-generated-assets-v1.schema.json`
+- `golden-path-generator-request-v1.schema.json`
+- `golden-path-materialization-plan-v1.schema.json`
 - `golden-path-release-manifest-v1.schema.json`
 - `release-manifest.json`
 - `standard-snapshot-manifest.json`

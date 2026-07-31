@@ -1,0 +1,19 @@
+[private]
+_[[.RecipePrefix]]_init:
+    cd [[.ShellPath]] && zig version | grep -Fx '[[.ZigVersion]]'
+
+[private]
+_[[.RecipePrefix]]_typecheck:
+    cd [[.ShellPath]] && zig cc -fsyntax-only src/main.c
+
+[private]
+_[[.RecipePrefix]]_test:
+    cd [[.ShellPath]] && tmp="$$(mktemp -d)" && trap 'rm -rf "$$tmp"' EXIT HUP INT TERM && zig cc src/main.c -o "$$tmp/[[.PackageName]]" && "$$tmp/[[.PackageName]]"
+
+[private]
+_[[.RecipePrefix]]_build:
+    cd [[.ShellPath]] && mkdir -p zig-out/bin && zig cc src/main.c -o zig-out/bin/[[.PackageName]]
+
+[private]
+_[[.RecipePrefix]]_ci:
+    cd [[.ShellPath]] && test -x zig-out/bin/[[.PackageName]]

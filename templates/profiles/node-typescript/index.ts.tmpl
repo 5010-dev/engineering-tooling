@@ -1,0 +1,10 @@
+[[if .AWSCDK]]import { App, Stack } from "aws-cdk-lib";
+
+const app = new App();
+new Stack(app, "[[.StackName]]");
+[[else if .Pulumi]]import * as pulumi from "@pulumi/pulumi";
+
+export const pulumiProject = pulumi.getProject();
+[[end]]export function projectName(): string {
+  return "[[.ProjectName]]";
+}

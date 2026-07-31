@@ -1,0 +1,78 @@
+#!/usr/bin/env sh
+set -eu
+
+version='[[.CheckerVersion]]'
+repository='5010-dev/engineering-tooling'
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repository_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
+cache_directory=${GOLDEN_PATH_CACHE_DIR:-"$repository_root/.cache/golden-path"}
+
+verify_version() {
+  "$1" --version 2>/dev/null | grep -Fx "golden-path $version" >/dev/null
+}
+
+if [ -n "${GOLDEN_PATH_BIN:-}" ]; then
+  if [ ! -x "$GOLDEN_PATH_BIN" ] || ! verify_version "$GOLDEN_PATH_BIN"; then
+    printf '%s\n' 'GOLDEN_PATH_BIN is not the expected executable release.' >&2
+    exit 2
+  fi
+  binary=$GOLDEN_PATH_BIN
+else
+  binary="$cache_directory/$version/golden-path"
+  if [ ! -x "$binary" ] || ! verify_version "$binary"; then
+    os=$(uname -s)
+    architecture=$(uname -m)
+    case "$os" in
+      Darwin) os=darwin ;;
+      Linux) os=linux ;;
+      *) printf '%s\n' 'Unsupported Golden Path host operating system.' >&2; exit 2 ;;
+    esac
+    case "$architecture" in
+      x86_64|amd64) architecture=amd64 ;;
+      arm64|aarch64) architecture=arm64 ;;
+      *) printf '%s\n' 'Unsupported Golden Path host architecture.' >&2; exit 2 ;;
+    esac
+    case "$os/$architecture" in
+      darwin/amd64) expected='[[.DarwinAMD64SHA256]]' ;;
+      darwin/arm64) expected='[[.DarwinARM64SHA256]]' ;;
+      linux/amd64) expected='[[.LinuxAMD64SHA256]]' ;;
+      linux/arm64) expected='[[.LinuxARM64SHA256]]' ;;
+    esac
+    archive="golden-path_${version}_${os}_${architecture}.tar.gz"
+    url="https://github.com/$repository/releases/download/v$version/$archive"
+    staging=$(mktemp -d "${TMPDIR:-/tmp}/golden-path.XXXXXX")
+    trap 'rm -rf "$staging"' EXIT HUP INT TERM
+    curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --max-time 120 --output "$staging/$archive" "$url"
+    if command -v shasum >/dev/null 2>&1; then
+      actual=$(shasum -a 256 "$staging/$archive" | awk '{print $1}')
+    elif command -v sha256sum >/dev/null 2>&1; then
+      actual=$(sha256sum "$staging/$archive" | awk '{print $1}')
+    else
+      printf '%s\n' 'A SHA-256 verification command is required.' >&2
+      exit 2
+    fi
+    if [ "$actual" != "$expected" ]; then
+      printf '%s\n' 'Golden Path archive checksum mismatch.' >&2
+      exit 2
+    fi
+    mkdir -p "$staging/unpacked" "$cache_directory/$version"
+    tar -xzf "$staging/$archive" -C "$staging/unpacked"
+    candidate="$staging/unpacked/golden-path/golden-path"
+    chmod 0755 "$candidate"
+    if ! verify_version "$candidate"; then
+      printf '%s\n' 'Golden Path archive contains an unexpected executable version.' >&2
+      exit 2
+    fi
+    mv "$candidate" "$cache_directory/$version/golden-path.tmp"
+    mv "$cache_directory/$version/golden-path.tmp" "$binary"
+    trap - EXIT HUP INT TERM
+    rm -rf "$staging"
+  fi
+fi
+
+if [ "${1:-}" = '--install-only' ]; then
+  [ "$#" -eq 1 ] || { printf '%s\n' 'Unexpected arguments after --install-only.' >&2; exit 2; }
+  exit 0
+fi
+
+exec "$binary" "$@"
