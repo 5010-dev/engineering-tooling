@@ -28,7 +28,9 @@ _[[.RecipePrefix]]_test:
 
 [private]
 _[[.RecipePrefix]]_build:
-    cd [[.ShellPath]] && GOTOOLCHAIN=local go build -mod=readonly -trimpath ./...
+[[if .GoExecutable]]    cd [[.ShellPath]] && mkdir -p bin && GOTOOLCHAIN=local CGO_ENABLED=0 go build -mod=readonly -trimpath -o bin/[[.PackageName]] ./cmd/[[.PackageName]]
+[[else]]    cd [[.ShellPath]] && GOTOOLCHAIN=local go build -mod=readonly -trimpath ./...
+[[end]]
 
 [private]
 _[[.RecipePrefix]]_check:
@@ -37,3 +39,5 @@ _[[.RecipePrefix]]_check:
 [private]
 _[[.RecipePrefix]]_ci:
     cd [[.ShellPath]] && GOTOOLCHAIN=local go test -mod=readonly -race ./...
+[[if .GoExecutable]]    cd [[.ShellPath]] && test -x bin/[[.PackageName]] && test "$(bin/[[.PackageName]])" = [[.ProjectNameShellQuoted]]
+[[end]]

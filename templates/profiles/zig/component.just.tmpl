@@ -1,6 +1,11 @@
 [private]
 _[[.RecipePrefix]]_init:
-    cd [[.ShellPath]] && zig version | grep -Fx '[[.ZigVersion]]' && zig build --fetch
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    zig version | grep -Fx '[[.ZigVersion]]'
+    mkdir -p .cache/zig-global
+    ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global" zig build --fetch
 
 [private]
 _[[.RecipePrefix]]_format:
@@ -12,16 +17,31 @@ _[[.RecipePrefix]]_format_check:
 
 [private]
 _[[.RecipePrefix]]_typecheck:
-    cd [[.ShellPath]] && zig build check --summary all
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    target="$(./scripts/zig-target)"
+    mkdir -p .cache/zig-global
+    ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global" zig build check -Dtarget="$target" --summary all
 
 [private]
 _[[.RecipePrefix]]_test:
-    cd [[.ShellPath]] && zig build test --summary all
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    target="$(./scripts/zig-target)"
+    mkdir -p .cache/zig-global
+    ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global" zig build test -Dtarget="$target" --summary all
 
 [private]
 _[[.RecipePrefix]]_build:
-    cd [[.ShellPath]] && zig build -Doptimize=ReleaseSafe --summary all
+    #!/usr/bin/env sh
+    set -eu
+    cd [[.ShellPath]]
+    target="$(./scripts/zig-target)"
+    mkdir -p .cache/zig-global
+    ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global" zig build -Dtarget="$target" -Doptimize=ReleaseSafe --summary all
 
 [private]
 _[[.RecipePrefix]]_ci:
-    cd [[.ShellPath]] && test -x zig-out/bin/[[.PackageName]]
+    cd [[.ShellPath]] && test -x zig-out/bin/[[.PackageName]] && test "$(zig-out/bin/[[.PackageName]])" = [[.ProjectNameShellQuoted]]

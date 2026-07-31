@@ -8,7 +8,7 @@
   "properties": {
     "schemaVersion": { "const": "golden-path-generator-request/v1" },
     "layout": { "enum": ["single", "monorepo", "polyglot", "documentation"] },
-    "projectName": { "type": "string", "minLength": 2, "maxLength": 100 },
+    "projectName": { "type": "string", "minLength": 2, "maxLength": 100, "pattern": "^[^\\p{Cc}]+$" },
     "projectSlug": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
     "components": {
       "type": "array",
@@ -39,7 +39,11 @@
               "enum": ["application", "service", "library", "cli", "package", "binary", "container", "infrastructure", "tooling", "documentation"]
             }
           },
-          "modulePath": { "type": "string", "minLength": 3 }
+          "modulePath": {
+            "type": "string",
+            "minLength": 3,
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?(?:/[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?)*$"
+          }
         }
       }
     }

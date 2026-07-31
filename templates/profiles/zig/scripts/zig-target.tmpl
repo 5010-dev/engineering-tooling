@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -eu
+
+case "$(uname -s)/$(uname -m)" in
+  Darwin/arm64) printf '%s\n' 'aarch64-macos' ;;
+  Darwin/x86_64|Darwin/amd64) printf '%s\n' 'x86_64-macos' ;;
+  Linux/aarch64|Linux/arm64) printf '%s\n' 'aarch64-linux-musl' ;;
+  Linux/x86_64|Linux/amd64) printf '%s\n' 'x86_64-linux-musl' ;;
+  *) printf '%s\n' 'Unsupported Golden Path Zig host target.' >&2; exit 2 ;;
+esac

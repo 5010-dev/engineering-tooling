@@ -21,6 +21,14 @@ on:
         description: Exact Golden Path release version.
         required: true
         type: string
+      source-commit:
+        description: Full source commit bound by the release provenance.
+        required: true
+        type: string
+      github-cli-version:
+        description: Exact GitHub CLI version used for attestation verification.
+        required: true
+        type: string
       darwin-amd64-sha256:
         required: true
         type: string
@@ -52,6 +60,8 @@ jobs:
         shell: bash
         env:
           CHECKER_VERSION: ${{ inputs.checker-version }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
           DARWIN_AMD64_SHA256: ${{ inputs.darwin-amd64-sha256 }}
           DARWIN_ARM64_SHA256: ${{ inputs.darwin-arm64-sha256 }}
           LINUX_AMD64_SHA256: ${{ inputs.linux-amd64-sha256 }}
@@ -59,17 +69,28 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$CHECKER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
+          [[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$GITHUB_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           for checksum in \
             "$DARWIN_AMD64_SHA256" "$DARWIN_ARM64_SHA256" \
             "$LINUX_AMD64_SHA256" "$LINUX_ARM64_SHA256"; do
             [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
           done
 
+      - name: Install consumer-pinned toolchain and verifier
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        with:
+          install: true
+          cache: true
+
       - name: Set up verified Golden Path executable
         id: golden-path
         shell: bash
         env:
           CHECKER_VERSION: ${{ inputs.checker-version }}
+          SOURCE_COMMIT: ${{ inputs.source-commit }}
+          GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
+          GH_TOKEN: ${{ github.token }}
           DARWIN_AMD64_SHA256: ${{ inputs.darwin-amd64-sha256 }}
           DARWIN_ARM64_SHA256: ${{ inputs.darwin-arm64-sha256 }}
           LINUX_AMD64_SHA256: ${{ inputs.linux-amd64-sha256 }}
@@ -91,6 +112,14 @@ jobs:
             "https://github.com/5010-dev/engineering-tooling/releases/download/v${CHECKER_VERSION}/$archive"
           actual="$(shasum -a 256 "$staging/$archive" | awk '{print $1}')"
           test "$actual" = "$expected"
+          test "$(gh version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"
+          gh attestation verify "$staging/$archive" \
+            --repo 5010-dev/engineering-tooling \
+            --signer-workflow 5010-dev/engineering-tooling/.github/workflows/release.yml \
+            --source-digest "$SOURCE_COMMIT" \
+            --signer-digest "$SOURCE_COMMIT" \
+            --source-ref "refs/tags/v$CHECKER_VERSION" \
+            --deny-self-hosted-runners >/dev/null
           mkdir "$staging/unpacked"
           tar -xzf "$staging/$archive" -C "$staging/unpacked"
           candidate="$staging/unpacked/golden-path/golden-path"
@@ -100,12 +129,6 @@ jobs:
           mkdir -p "$install_directory"
           install -m 0755 "$candidate" "$install_directory/golden-path"
           printf 'binary-path=%s\n' "$install_directory/golden-path" >> "$GITHUB_OUTPUT"
-
-      - name: Install consumer-pinned toolchain
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
-        with:
-          install: true
-          cache: true
 
       - name: Select one evaluation time
         shell: bash

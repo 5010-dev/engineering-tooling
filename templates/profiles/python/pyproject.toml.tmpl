@@ -5,9 +5,13 @@ build-backend = "uv_build"
 [project]
 name = "[[.PackageName]]"
 version = "0.1.0"
-description = "Generated Golden Path starter for [[.ProjectName]]"
+description = [[.StarterDescriptionQuoted]]
 requires-python = ">=3.14,<3.15"
 dependencies = []
+[[if .PythonExecutable]]
+[project.scripts]
+[[.PackageName]] = "[[.PythonModule]]:main"
+[[end]]
 
 [dependency-groups]
 dev = [

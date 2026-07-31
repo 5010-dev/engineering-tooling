@@ -1,6 +1,14 @@
-"""Generated Golden Path starter for [[.ProjectName]]."""
+[[.StarterDescriptionPythonQuoted]][[if .PythonExecutable]]
+
+import sys[[end]]
 
 
 def project_name() -> str:
     """Return the generated project name."""
-    return "[[.ProjectName]]"
+    return [[.ProjectNamePythonQuoted]][[if .PythonExecutable]]
+
+
+def main() -> int:
+    """Run the generated application entry point."""
+    sys.stdout.write(f"{project_name()}\n")
+    return 0[[end]]

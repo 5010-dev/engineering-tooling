@@ -103,3 +103,106 @@ jobs:
             --root testdata/positive-go \
             --evaluated-at 2026-07-31T00:00:00Z \
             --json-output "$RUNNER_TEMP/native-result.json"
+
+  generated-profile:
+    name: Generated profile / ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: full/linux/amd64
+            request: all-profiles.yaml
+          - runner: ubuntu-24.04-arm
+            target: zig/linux/arm64
+            request: zig-profiles.yaml
+          - runner: macos-26-intel
+            target: zig/darwin/amd64
+            request: zig-profiles.yaml
+          - runner: macos-26
+            target: zig/darwin/arm64
+            request: zig-profiles.yaml
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install generator toolchain
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        with:
+          install: true
+          cache: true
+
+      - name: Materialize generated repository
+        env:
+          REQUEST: ${{ matrix.request }}
+        run: |
+          set -euo pipefail
+          go build -mod=readonly -trimpath -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
+          "$RUNNER_TEMP/golden-path-under-test" generate \
+            --request "testdata/generator/requests/$REQUEST" \
+            --release-manifest testdata/generator/release-manifest.json \
+            --write \
+            --output "$RUNNER_TEMP/generated"
+          git -C "$RUNNER_TEMP/generated" init -b main
+          git -C "$RUNNER_TEMP/generated" config user.name golden-path-ci
+          git -C "$RUNNER_TEMP/generated" config user.email golden-path-ci@users.noreply.github.com
+          git -C "$RUNNER_TEMP/generated" add .
+          git -C "$RUNNER_TEMP/generated" commit -m "test: materialize fixture"
+
+      - name: Execute generated project contract
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/generated"
+          mise trust
+          mise install --locked
+          GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" just init
+          GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" just ci
+          test -z "$(git status --short)"
+
+  setup-action:
+    name: Setup action / released provenance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install pinned verifier
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        with:
+          install: true
+          cache: true
+
+      - name: Set up verified release
+        id: golden-path
+        uses: ./actions/setup-golden-path
+        with:
+          checker-version: 0.1.0
+          source-commit: 196663d731f2159034a698e1778bb24857c3556a
+          github-cli-version: 2.96.0
+          darwin-amd64-sha256: 2b1209bcab223d61ce38011f0591591befc22956daf26cbcd9d48a67bd26fb83
+          darwin-arm64-sha256: 34d460ba7820a577b891caacfecf5268dcac0b406a50cbf40d0d33ef5f8c67ed
+          linux-amd64-sha256: c761f03f33e827b5d9e47c7e4a47b7d5b06b0eef1ec3fafeae7f538a7706a029
+          linux-arm64-sha256: 174c5e85ce836185287938761d551d33956003973217a0864d0899d2715cae42
+
+      - name: Execute verified release
+        env:
+          GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
+        run: test "$("$GOLDEN_PATH_BIN" --version)" = "golden-path 0.1.0"
+
+  reusable-quality:
+    name: Reusable quality / released provenance
+    permissions:
+      contents: read
+    uses: ./.github/workflows/golden-path-quality.yml
+    with:
+      profiles: '["go"]'
+      checker-version: 0.1.0
+      source-commit: 196663d731f2159034a698e1778bb24857c3556a
+      github-cli-version: 2.96.0
+      darwin-amd64-sha256: 2b1209bcab223d61ce38011f0591591befc22956daf26cbcd9d48a67bd26fb83
+      darwin-arm64-sha256: 34d460ba7820a577b891caacfecf5268dcac0b406a50cbf40d0d33ef5f8c67ed
+      linux-amd64-sha256: c761f03f33e827b5d9e47c7e4a47b7d5b06b0eef1ec3fafeae7f538a7706a029
+      linux-arm64-sha256: 174c5e85ce836185287938761d551d33956003973217a0864d0899d2715cae42

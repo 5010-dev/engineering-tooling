@@ -3,7 +3,7 @@
 /// Returns the project identity.
 #[must_use]
 pub const fn project_name() -> &'static str {
-    "[[.ProjectName]]"
+    [[.ProjectNameQuoted]]
 }
 
 #[cfg(test)]
@@ -12,6 +12,6 @@ mod tests {
 
     #[test]
     fn exposes_the_project_identity() {
-        assert_eq!(project_name(), "[[.ProjectName]]");
+        assert_eq!(project_name(), [[.ProjectNameQuoted]]);
     }
 }

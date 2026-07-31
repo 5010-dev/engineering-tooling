@@ -1,0 +1,13 @@
+schemaVersion: golden-path-generator-request/v1
+layout: polyglot
+projectName: Native Zig Golden Path
+projectSlug: native-zig-golden-path
+components:
+  - name: zig-cli
+    path: components/zig-cli
+    profiles: [zig]
+    artifactTypes: [cli]
+  - name: zig-cc
+    path: components/zig-cc
+    profiles: [zig-toolchain]
+    artifactTypes: [binary]

@@ -42,51 +42,63 @@ type recipeComponent struct {
 }
 
 type componentModel struct {
-	ProjectName                string
-	ProjectSlug                string
-	PackageName                string
-	GoPackage                  string
-	PythonModule               string
-	PythonVersion              string
-	GoVersion                  string
-	GoLanguageVersion          string
-	GoImportsVersion           string
-	NodeVersion                string
-	NodeNextMajor              string
-	RustVersion                string
-	ZigVersion                 string
-	ModulePath                 string
-	RecipePrefix               string
-	ShellPath                  string
-	ZigPackageName             string
-	ZigFingerprint             string
-	StackName                  string
-	Engine                     string
-	EngineVersion              string
-	PNPMVersion                string
-	ESLintJSVersion            string
-	NodeTypesVersion           string
-	ESLintVersion              string
-	PrettierVersion            string
-	TypeScriptVersion          string
-	TypeScriptESLintVersion    string
-	VitestVersion              string
-	UVBuildVersion             string
-	MypyVersion                string
-	PytestVersion              string
-	RuffVersion                string
-	AWSCDKVersion              string
-	AWSCDKLibVersion           string
-	ConstructsVersion          string
-	PulumiSDKVersion           string
-	AWSCDK                     bool
-	Pulumi                     bool
-	HasNodeRuntimeDependencies bool
+	ProjectName                     string
+	ProjectNameQuoted               string
+	ProjectNameTypeScriptQuoted     string
+	ProjectNamePythonQuoted         string
+	ProjectNameShellQuoted          string
+	StarterDescriptionQuoted        string
+	StarterDescriptionPythonQuoted  string
+	InfrastructureDescriptionQuoted string
+	ProjectSlug                     string
+	PackageName                     string
+	GoPackage                       string
+	PythonModule                    string
+	PythonVersion                   string
+	GoVersion                       string
+	GoLanguageVersion               string
+	GoImportsVersion                string
+	NodeVersion                     string
+	NodeNextMajor                   string
+	RustVersion                     string
+	ZigVersion                      string
+	ModulePath                      string
+	RecipePrefix                    string
+	ShellPath                       string
+	ZigPackageName                  string
+	ZigFingerprint                  string
+	StackName                       string
+	Engine                          string
+	EngineVersion                   string
+	PNPMVersion                     string
+	ESLintJSVersion                 string
+	NodeTypesVersion                string
+	ESLintVersion                   string
+	PrettierVersion                 string
+	TypeScriptVersion               string
+	TypeScriptESLintVersion         string
+	VitestVersion                   string
+	UVBuildVersion                  string
+	MypyVersion                     string
+	PytestVersion                   string
+	RuffVersion                     string
+	AWSCDKVersion                   string
+	AWSCDKLibVersion                string
+	ConstructsVersion               string
+	PulumiSDKVersion                string
+	AWSCDK                          bool
+	Pulumi                          bool
+	GoExecutable                    bool
+	NodeExecutable                  bool
+	PythonExecutable                bool
+	RustExecutable                  bool
+	HasNodeRuntimeDependencies      bool
 }
 
 type automationModel struct {
 	AutomationSourceCommit string
 	CheckerVersion         string
+	GitHubCLIVersion       string
 	ProfilesJSON           string
 	DarwinAMD64SHA256      string
 	DarwinARM64SHA256      string
@@ -231,8 +243,16 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 
 func renderComponent(component Component, request Request, bundle Bundle) ([]File, error) {
 	profiles := stringSet(component.Profiles)
+	executable := hasExecutableArtifact(component) && !hasArtifact(component, "infrastructure")
 	model := componentModel{
-		ProjectName: request.ProjectName, ProjectSlug: request.ProjectSlug, PackageName: component.Name,
+		ProjectName: request.ProjectName, ProjectNameQuoted: strconv.Quote(request.ProjectName),
+		ProjectNameTypeScriptQuoted:     singleQuotedString(request.ProjectName),
+		ProjectNamePythonQuoted:         singleQuotedString(request.ProjectName),
+		ProjectNameShellQuoted:          shellQuote(request.ProjectName),
+		StarterDescriptionQuoted:        strconv.Quote("Generated Golden Path starter for " + request.ProjectName),
+		StarterDescriptionPythonQuoted:  singleQuotedString("Generated Golden Path starter for " + request.ProjectName),
+		InfrastructureDescriptionQuoted: strconv.Quote(request.ProjectName + " infrastructure"),
+		ProjectSlug:                     request.ProjectSlug, PackageName: component.Name,
 		GoPackage: strings.ReplaceAll(component.Name, "-", "_"), PythonModule: strings.ReplaceAll(component.Name, "-", "_"),
 		PythonVersion: bundle.Tools["python"], GoVersion: bundle.Tools["go"],
 		GoLanguageVersion: majorMinor(bundle.Tools["go"]), GoImportsVersion: bundle.Tools["goimports"],
@@ -250,6 +270,10 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 		AWSCDKVersion: bundle.Tools["aws-cdk"], AWSCDKLibVersion: bundle.Tools["aws-cdk-lib"],
 		ConstructsVersion: bundle.Tools["constructs"], PulumiSDKVersion: bundle.Tools["pulumi-sdk"],
 		AWSCDK: profiles["infrastructure-aws-cdk"], Pulumi: profiles["infrastructure-pulumi"],
+		GoExecutable:               profiles["go"] && executable,
+		NodeExecutable:             profiles["node-typescript"] && executable,
+		PythonExecutable:           profiles["python"] && executable,
+		RustExecutable:             profiles["rust"] && executable,
 		HasNodeRuntimeDependencies: profiles["infrastructure-aws-cdk"] || profiles["infrastructure-pulumi"],
 	}
 	prefix := func(relative string) string {
@@ -305,10 +329,10 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 				return nil, err
 			}
 		} else {
-			if err := add("main.go", "profiles/go/main.go.tmpl", 0o644); err != nil {
+			if err := add(path.Join("cmd", component.Name, "main.go"), "profiles/go/main.go.tmpl", 0o644); err != nil {
 				return nil, err
 			}
-			if err := add("main_test.go", "profiles/go/main_test.go.tmpl", 0o644); err != nil {
+			if err := add(path.Join("cmd", component.Name, "main_test.go"), "profiles/go/main_test.go.tmpl", 0o644); err != nil {
 				return nil, err
 			}
 		}
@@ -369,14 +393,28 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 		}
 	}
 	if profiles["zig"] {
-		for _, item := range []struct{ target, source string }{{"build.zig", "profiles/zig/build.zig.tmpl"}, {"build.zig.zon", "profiles/zig/build.zig.zon.tmpl"}, {"src/main.zig", "profiles/zig/main.zig.tmpl"}} {
+		for _, item := range []struct{ target, source string }{
+			{"build.zig", "profiles/zig/build.zig.tmpl"}, {"build.zig.zon", "profiles/zig/build.zig.zon.tmpl"},
+			{"zig-targets.json", "profiles/zig/zig-targets.json.tmpl"}, {"src/main.zig", "profiles/zig/main.zig.tmpl"},
+		} {
 			if err := add(item.target, item.source, 0o644); err != nil {
 				return nil, err
 			}
 		}
+		if err := add("scripts/zig-target", "profiles/zig/scripts/zig-target.tmpl", 0o755); err != nil {
+			return nil, err
+		}
 	}
 	if profiles["zig-toolchain"] {
-		if err := add("src/main.c", "profiles/zig-toolchain/main.c.tmpl", 0o644); err != nil {
+		for _, item := range []struct{ target, source string }{
+			{"src/main.c", "profiles/zig-toolchain/main.c.tmpl"},
+			{"zig-toolchain.json", "profiles/zig-toolchain/zig-toolchain.json.tmpl"},
+		} {
+			if err := add(item.target, item.source, 0o644); err != nil {
+				return nil, err
+			}
+		}
+		if err := add("scripts/zig-target", "profiles/zig/scripts/zig-target.tmpl", 0o755); err != nil {
 			return nil, err
 		}
 	}
@@ -535,7 +573,14 @@ func aggregateMetadata(request Request) ([]string, []string, []string) {
 
 func buildAutomationModel(release ReleaseManifest, profiles []string) (automationModel, error) {
 	profileData, _ := json.Marshal(profiles)
-	model := automationModel{AutomationSourceCommit: release.Source.Commit, CheckerVersion: release.ReleaseVersion, ProfilesJSON: string(profileData)}
+	bundle, err := LoadBundle()
+	if err != nil {
+		return automationModel{}, err
+	}
+	model := automationModel{
+		AutomationSourceCommit: release.Source.Commit, CheckerVersion: release.ReleaseVersion,
+		GitHubCLIVersion: bundle.Tools["github-cli"], ProfilesJSON: string(profileData),
+	}
 	for _, asset := range release.Assets {
 		switch asset.OS + "/" + asset.Architecture {
 		case "darwin/amd64":
@@ -579,7 +624,7 @@ func buildDependabotModel(request Request) dependabotModel {
 }
 
 func selectedMiseTools(profiles []string) []string {
-	selected := map[string]bool{"actionlint": true, "just": true}
+	selected := map[string]bool{"actionlint": true, "github-cli": true, "just": true}
 	set := stringSet(profiles)
 	if set["go"] {
 		selected["go"] = true
@@ -702,6 +747,16 @@ func hasArtifact(component Component, artifact string) bool {
 	return stringSet(component.ArtifactTypes)[artifact]
 }
 
+func hasExecutableArtifact(component Component) bool {
+	artifacts := stringSet(component.ArtifactTypes)
+	for _, artifact := range []string{"application", "service", "cli", "binary", "container", "tooling"} {
+		if artifacts[artifact] {
+			return true
+		}
+	}
+	return false
+}
+
 func sortedKeys(values map[string]bool) []string {
 	result := make([]string, 0, len(values))
 	for key, enabled := range values {
@@ -751,4 +806,14 @@ func majorMinor(version string) string {
 func nextMajor(version string) string {
 	major, _ := strconv.Atoi(strings.Split(version, ".")[0])
 	return strconv.Itoa(major + 1)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
+func singleQuotedString(value string) string {
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	value = strings.ReplaceAll(value, "'", "\\'")
+	return "'" + value + "'"
 }

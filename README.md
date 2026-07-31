@@ -58,17 +58,31 @@ golden-path upgrade \
 ```
 
 Generation records the standard, asset bundle, release source commit, request
-digest, canonical request, and every generated file digest. Upgrade reads that
-inventory to distinguish unchanged generated files from consumer customization.
-It writes a separate candidate and `golden-path-plan.json`; it never writes to
-the source repository or a default branch.
+digest, canonical request, and every generated file digest and mode. Upgrade
+reads that inventory to distinguish unchanged generated files from consumer
+customization. A deleted managed file or changed executable mode is a conflict,
+not an implicit create or update. Upgrade writes a separate candidate and
+`golden-path-plan.json`; it never writes to the source repository or a default
+branch.
 
 The generated caller owns events, permissions, concurrency, runner, working
 directory, selected profiles, immutable automation source, and release
-checksums. The reusable workflow owns only stable quality orchestration and
-calls the repository's root `just init` and `just ci`. It does not require
-GitHub Environments, protected branches, paid rulesets, deployment credentials,
-or secrets, so private consumers on GitHub Free retain the baseline outcome.
+checksums and provenance identity. Before execution, bootstrap paths require the
+exact GitHub CLI pinned by the generated `mise.toml`, verify the archive
+checksum, and verify the GitHub artifact attestation against the release
+workflow, source commit, signer commit, and tag. The reusable workflow owns only
+stable quality orchestration and calls the repository's root `just init` and
+`just ci`. It does not require GitHub Environments, protected branches, paid
+rulesets, deployment credentials, or consumer secrets, so private consumers on
+GitHub Free retain the baseline outcome.
+
+Executable artifact types receive native entry points and post-build runtime
+smoke checks for Go, Node.js, Python, Rust, and Zig. Zig and `zig cc` profiles
+map each supported Darwin or Linux AMD64/ARM64 host to an exact target and keep
+their global cache repository-local. CI materializes the full profile matrix,
+runs generated setup and quality commands, validates both automation entry
+points against a released attested artifact, and repeats the Zig contract on
+all four native runners.
 
 Every catalog rule is represented in output. Fully evaluated structural rules
 can pass or fail; non-applicable, hybrid, manual, or only partially evaluated
@@ -94,7 +108,7 @@ than passing without the required evidence.
 - `checker/`: checker library and stable result contract
 - `generator/`: deterministic materialization and conflict-aware upgrade logic
 - `templates/`: versioned common, profile, lock, and thin-caller assets
-- `actions/`: reusable checksum-verifying setup action
+- `actions/`: reusable checksum- and provenance-verifying setup action
 - `compatibility/`: supported standard and schema compatibility
 - `standards/snapshots/`: immutable normative source snapshots
 - `testdata/`: positive, negative, exception, and malformed fixtures

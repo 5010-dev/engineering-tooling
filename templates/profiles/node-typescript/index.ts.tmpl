@@ -1,4 +1,6 @@
-[[if .AWSCDK]]import { App, Stack } from "aws-cdk-lib";
+[[if .NodeExecutable]]import { pathToFileURL } from "node:url";
+
+[[end]][[if .AWSCDK]]import { App, Stack } from "aws-cdk-lib";
 
 const app = new App();
 new Stack(app, "[[.StackName]]");
@@ -6,5 +8,13 @@ new Stack(app, "[[.StackName]]");
 
 export const pulumiProject = pulumi.getProject();
 [[end]]export function projectName(): string {
-  return "[[.ProjectName]]";
+  return [[.ProjectNameTypeScriptQuoted]];
+}[[if .NodeExecutable]]
+
+export function main(): void {
+  process.stdout.write(`${projectName()}\n`);
 }
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}[[end]]
