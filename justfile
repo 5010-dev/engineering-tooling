@@ -35,7 +35,16 @@ build:
 package-check source_commit:
     go run -mod=readonly ./cmd/release-package --source . --dist dist
     version="$(go run -mod=readonly ./cmd/golden-path --version)"; version="${version#golden-path }"; test -n "$version"; \
-    go run -mod=readonly ./cmd/release-manifest --dist dist --tag "v$version" --source-commit "{{ source_commit }}" --output dist/release-manifest.json
+    cp compatibility/manifest.json dist/compatibility-manifest.json; \
+    cp compatibility/golden-path-checker-compatibility-v1.schema.json dist/; \
+    cp standards/snapshots/2026.07/manifest.json dist/standard-snapshot-manifest.json; \
+    cp release/RELEASE_NOTES.md dist/RELEASE_NOTES.md; \
+    cp release/golden-path-release-manifest-v1.schema.json dist/; \
+    cp release/golden-path-release-manifest-v2.schema.json dist/; \
+    cp release/golden-path-tooling-cutoff-v1.schema.json dist/; \
+    cp release/tooling-cutoff-2026-08-01.json dist/tooling-cutoff.json; \
+    cp generator/schemas/*.json dist/; \
+    go run -mod=readonly ./cmd/release-manifest --source . --dist dist --tag "v$version" --source-commit "{{ source_commit }}" --output dist/release-manifest.json
 
 conformance evaluated_at=default_evaluated_at:
     test -n "{{ evaluated_at }}"

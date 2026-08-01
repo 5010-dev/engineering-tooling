@@ -35,8 +35,10 @@ output and text to standard error. CI callers can additionally select
 complete record. File outputs must resolve outside the checked repository,
 including through symbolic-link parents.
 
-The checker is intentionally `0.x` and report-only while its compatibility,
-rollback, platform, and migration fixtures are being completed.
+The `1.x` compatibility contract is stable. Conformance remains report-only:
+the CLI preserves exit codes and evidence, while the reusable workflow does not
+establish or claim a merge policy. A later enforcement decision is independent
+of implementation stability.
 
 ## Golden Path materialization
 
@@ -96,7 +98,7 @@ exact release. The resolved patch must still appear in the immutable runtime
 mapping; the checker never infers runtime support from a broad selector.
 
 The same versioned manifest defines the checker release's 30-day
-exception-expiry warning window. Golden Path `0.2.0` intentionally does not
+exception-expiry warning window. Golden Path `1.0.0` intentionally does not
 admit Zig's previous-tagged-stable compatibility-only tier: the normative
 standard requires a bounded reason, owner, and review date, while the v1
 repository metadata contract does not yet define that evidence. Until a future
@@ -117,6 +119,10 @@ than passing without the required evidence.
 Every public Darwin and Linux AMD64/ARM64 target is built and executed on a
 matching native GitHub-hosted runner. Each archive has a deterministic
 CycloneDX 1.6 SBOM whose root component is bound to the archive SHA-256 digest.
+The stable release also publishes the exact normative source, external-tool
+cutoff, compatibility and schema evidence, checker, generator, asset-bundle and
+automation tree digests, migration notes, release lifecycle, and report-only
+enforcement state.
 
 ## Security and disclosure boundary
 

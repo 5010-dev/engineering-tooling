@@ -20,12 +20,12 @@ jobs:
       source_commit: ${{ steps.source.outputs.source_commit }}
     steps:
       - name: Check out tagged source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Install pinned toolchain
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
@@ -38,6 +38,15 @@ jobs:
             +refs/heads/main:refs/remotes/origin/main
           source_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
           git merge-base --is-ancestor "$source_commit" origin/main
+          version="${GITHUB_REF_NAME#v}"
+          major="${version%%.*}"
+          lifecycle="$(jq -r .lifecycle compatibility/manifest.json)"
+          if [[ "$major" -eq 0 ]]; then
+            test "$lifecycle" = prerelease
+          else
+            test "$lifecycle" = stable
+          fi
+          test "$(jq -r '.enforcement | join(",")' compatibility/manifest.json)" = report-only
           printf 'source_commit=%s\n' "$source_commit" >> "$GITHUB_OUTPUT"
 
       - name: Select explicit evaluation time
@@ -71,12 +80,12 @@ jobs:
             artifact: target-darwin-arm64
     steps:
       - name: Check out verified source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.verify-source.outputs.source_commit }}
 
       - name: Install pinned toolchain
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
@@ -121,12 +130,12 @@ jobs:
       contents: read
     steps:
       - name: Check out verified source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.verify-source.outputs.source_commit }}
 
       - name: Install pinned assembly toolchain
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
@@ -147,10 +156,17 @@ jobs:
           cp compatibility/golden-path-checker-compatibility-v1.schema.json \
             dist/golden-path-checker-compatibility-v1.schema.json
           cp standards/snapshots/2026.07/manifest.json dist/standard-snapshot-manifest.json
+          cp release/RELEASE_NOTES.md dist/RELEASE_NOTES.md
           cp release/golden-path-release-manifest-v1.schema.json \
             dist/golden-path-release-manifest-v1.schema.json
+          cp release/golden-path-release-manifest-v2.schema.json \
+            dist/golden-path-release-manifest-v2.schema.json
+          cp release/golden-path-tooling-cutoff-v1.schema.json \
+            dist/golden-path-tooling-cutoff-v1.schema.json
+          cp release/tooling-cutoff-2026-08-01.json dist/tooling-cutoff.json
           cp generator/schemas/*.json dist/
           go run -mod=readonly ./cmd/release-manifest \
+            --source . \
             --dist dist \
             --tag "$GITHUB_REF_NAME" \
             --source-commit "$SOURCE_COMMIT" \
@@ -162,8 +178,10 @@ jobs:
               golden-path_*.cdx.json \
               golden-path_*.tar.gz \
               golden-path-*.schema.json \
+              RELEASE_NOTES.md \
               release-manifest.json \
-              standard-snapshot-manifest.json > checksums.txt
+              standard-snapshot-manifest.json \
+              tooling-cutoff.json > checksums.txt
           )
           mkdir publisher-tools
           cp "$(mise which gh)" publisher-tools/gh
@@ -175,7 +193,6 @@ jobs:
           name: release-bundle
           path: |
             dist
-            release/RELEASE_NOTES.md
           if-no-files-found: error
 
       - name: Upload pinned publisher
@@ -215,17 +232,22 @@ jobs:
           test -x publisher/bin/gh
 
       - name: Attest release subjects
-        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: bundle/dist/*
 
-      - name: Publish immutable prerelease
+      - name: Publish immutable release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          publisher/bin/gh release create "$GITHUB_REF_NAME" bundle/dist/*
-          --repo "$GITHUB_REPOSITORY"
-          --verify-tag
-          --prerelease
-          --title "Golden Path tooling $GITHUB_REF_NAME"
-          --notes-file bundle/release/RELEASE_NOTES.md
+        run: |
+          set -euo pipefail
+          channel_arguments=()
+          if [[ "$GITHUB_REF_NAME" == v0.* ]]; then
+            channel_arguments+=(--prerelease)
+          fi
+          publisher/bin/gh release create "$GITHUB_REF_NAME" bundle/dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            "${channel_arguments[@]}" \
+            --title "Golden Path tooling $GITHUB_REF_NAME" \
+            --notes-file bundle/dist/RELEASE_NOTES.md

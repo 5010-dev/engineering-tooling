@@ -98,7 +98,7 @@ func TestAllAcceptedProfilesCarryNativeAuthorities(t *testing.T) {
 		_ = fileContent(t, files, path)
 	}
 	mise := string(fileContent(t, files, "mise.toml"))
-	for _, pin := range []string{"github-cli = \"2.96.0\"", "go = \"1.26.5\"", "node = \"24.18.1\"", "uv = \"0.12.0\"", "zig = \"0.16.0\"", "terraform = \"1.15.8\"", "opentofu = \"1.12.5\"", "pulumi = \"3.255.0\""} {
+	for _, pin := range []string{"github-cli = \"2.97.0\"", "go = \"1.26.5\"", "node = \"24.18.1\"", "uv = \"0.12.1\"", "zig = \"0.16.0\"", "terraform = \"1.15.8\"", "opentofu = \"1.12.5\"", "pulumi = \"3.255.0\""} {
 		if !strings.Contains(mise, pin) {
 			t.Errorf("mise.toml missing %s", pin)
 		}
@@ -537,7 +537,7 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"source-commit: '" + commit + "'",
-		"github-cli-version: '2.96.0'",
+		"github-cli-version: '2.97.0'",
 	} {
 		if !strings.Contains(workflow, expected) {
 			t.Fatalf("generated caller does not contain %q", expected)
@@ -584,7 +584,7 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		}
 	}
 	script := string(fileContent(t, files, "scripts/golden-path"))
-	for _, expected := range []string{"github_cli_version='2.96.0'", "gh attestation verify", "--source-digest \"$source_commit\"", "--deny-self-hosted-runners"} {
+	for _, expected := range []string{"github_cli_version='2.97.0'", "gh attestation verify", "--source-digest \"$source_commit\"", "--deny-self-hosted-runners"} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("generated bootstrap does not enforce %q", expected)
 		}

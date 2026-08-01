@@ -48,8 +48,8 @@ func Check(options Options) Result {
 	if !validEnforcement[options.Enforcement] {
 		return configurationResult(result, "DT-CONF-001", ".", "Enforcement must be report-only, policy-required, or platform-enforced.")
 	}
-	if options.Enforcement != "report-only" {
-		return configurationResult(result, "DT-CONF-001", ".", "Checker 0.x supports report-only enforcement only.")
+	if !slices.Contains(compatibility.Enforcement, options.Enforcement) {
+		return configurationResult(result, "DT-CONF-001", ".", "The selected enforcement state is not supported by this checker release.")
 	}
 
 	metadata, err := loadMetadata(options.Root)

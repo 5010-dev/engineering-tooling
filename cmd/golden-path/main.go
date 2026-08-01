@@ -52,7 +52,7 @@ func runCheck(arguments []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	root := flags.String("root", ".", "repository root")
 	evaluatedAtInput := flags.String("evaluated-at", "", "explicit RFC3339 UTC evaluation time")
-	enforcement := flags.String("enforcement", "report-only", "report-only enforcement for 0.x")
+	enforcement := flags.String("enforcement", "report-only", "enforcement state declared by the release compatibility manifest")
 	jsonOutput := flags.String("json-output", "-", "JSON output path outside the repository, or - for standard output")
 	githubSummaryOutput := flags.String("github-summary-output", "", "GitHub step summary path outside the repository")
 	githubAnnotations := flags.Bool("github-annotations", false, "emit bounded GitHub workflow annotations")

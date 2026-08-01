@@ -1,37 +1,39 @@
 {
-  "schemaVersion": "golden-path-release-manifest/v1",
-  "releaseVersion": "0.2.0",
+  "schemaVersion": "golden-path-release-manifest/v2",
+  "releaseVersion": "1.0.0",
+  "lifecycle": "stable",
+  "enforcement": ["report-only"],
   "standardVersion": "2026.07",
   "contractVersion": "golden-path/v1",
   "source": {
     "repository": "https://github.com/5010-dev/engineering-tooling",
     "commit": "0123456789abcdef0123456789abcdef01234567",
-    "tag": "v0.2.0"
+    "tag": "v1.0.0"
   },
   "assets": [
     {
-      "name": "golden-path_0.2.0_darwin_amd64.tar.gz",
+      "name": "golden-path_1.0.0_darwin_amd64.tar.gz",
       "os": "darwin",
       "architecture": "amd64",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "executableSHA256": "1111111111111111111111111111111111111111111111111111111111111111"
     },
     {
-      "name": "golden-path_0.2.0_darwin_arm64.tar.gz",
+      "name": "golden-path_1.0.0_darwin_arm64.tar.gz",
       "os": "darwin",
       "architecture": "arm64",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "executableSHA256": "2222222222222222222222222222222222222222222222222222222222222222"
     },
     {
-      "name": "golden-path_0.2.0_linux_amd64.tar.gz",
+      "name": "golden-path_1.0.0_linux_amd64.tar.gz",
       "os": "linux",
       "architecture": "amd64",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "executableSHA256": "3333333333333333333333333333333333333333333333333333333333333333"
     },
     {
-      "name": "golden-path_0.2.0_linux_arm64.tar.gz",
+      "name": "golden-path_1.0.0_linux_arm64.tar.gz",
       "os": "linux",
       "architecture": "arm64",
       "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",

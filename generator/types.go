@@ -65,6 +65,8 @@ type Bundle struct {
 type ReleaseManifest struct {
 	SchemaVersion   string         `json:"schemaVersion"`
 	ReleaseVersion  string         `json:"releaseVersion"`
+	Lifecycle       string         `json:"lifecycle"`
+	Enforcement     []string       `json:"enforcement"`
 	StandardVersion string         `json:"standardVersion"`
 	ContractVersion string         `json:"contractVersion"`
 	Source          ReleaseSource  `json:"source"`
@@ -361,7 +363,12 @@ func validateRequest(request *Request) error {
 }
 
 func ValidateRelease(bundle Bundle, release ReleaseManifest) error {
-	if release.SchemaVersion != "golden-path-release-manifest/v1" || release.ReleaseVersion != bundle.AssetBundleVersion || release.StandardVersion != bundle.StandardVersion || release.ContractVersion != bundle.ContractVersion {
+	if release.SchemaVersion != "golden-path-release-manifest/v2" ||
+		release.ReleaseVersion != bundle.AssetBundleVersion ||
+		release.Lifecycle != "stable" ||
+		len(release.Enforcement) != 1 || release.Enforcement[0] != "report-only" ||
+		release.StandardVersion != bundle.StandardVersion ||
+		release.ContractVersion != bundle.ContractVersion {
 		return fmt.Errorf("release manifest is incompatible with embedded template bundle")
 	}
 	if release.Source.Repository != "https://github.com/5010-dev/engineering-tooling" || !fullCommitPattern.MatchString(release.Source.Commit) || release.Source.Tag != "v"+release.ReleaseVersion {

@@ -77,7 +77,7 @@ func TestDeterministicSBOMBindsArchiveDigest(t *testing.T) {
 	digest := hex.EncodeToString(sum[:])
 	first, err := deterministicSBOM(
 		binary,
-		"golden-path_0.2.0_linux_amd64.tar.gz",
+		"golden-path_1.0.0_linux_amd64.tar.gz",
 		digest,
 		target{os: "linux", architecture: "amd64"},
 	)
@@ -86,7 +86,7 @@ func TestDeterministicSBOMBindsArchiveDigest(t *testing.T) {
 	}
 	second, err := deterministicSBOM(
 		binary,
-		"golden-path_0.2.0_linux_amd64.tar.gz",
+		"golden-path_1.0.0_linux_amd64.tar.gz",
 		digest,
 		target{os: "linux", architecture: "amd64"},
 	)
