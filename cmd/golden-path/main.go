@@ -259,6 +259,17 @@ func runMaterialization(operation string, arguments []string, stdout, stderr io.
 		}
 	}
 	generator.SortPlan(&plan)
+	if plan.ConflictCount != 0 {
+		planData, marshalErr := json.MarshalIndent(plan, "", "  ")
+		if marshalErr != nil {
+			return materializationError(stderr, "encode materialization plan", marshalErr)
+		}
+		planData = append(planData, '\n')
+		if _, writeErr := stdout.Write(planData); writeErr != nil {
+			return 3
+		}
+		return 1
+	}
 	if *write {
 		if err := generator.WriteStaging(*output, files, plan); err != nil {
 			return materializationError(stderr, "write Golden Path staging output", err)
@@ -271,9 +282,6 @@ func runMaterialization(operation string, arguments []string, stdout, stderr io.
 	planData = append(planData, '\n')
 	if _, err := stdout.Write(planData); err != nil {
 		return 3
-	}
-	if plan.ConflictCount != 0 {
-		return 1
 	}
 	return 0
 }

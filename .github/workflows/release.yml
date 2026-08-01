@@ -166,6 +166,7 @@ jobs:
           cp release/tooling-cutoff-2026-08-01.json dist/tooling-cutoff.json
           cp generator/schemas/*.json dist/
           go run -mod=readonly ./cmd/release-manifest \
+            --require-clean-checkout \
             --source . \
             --dist dist \
             --tag "$GITHUB_REF_NAME" \
@@ -191,8 +192,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-bundle
-          path: |
-            dist
+          path: dist
           if-no-files-found: error
 
       - name: Upload pinned publisher
@@ -234,7 +234,7 @@ jobs:
       - name: Attest release subjects
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
-          subject-path: bundle/dist/*
+          subject-path: bundle/*
 
       - name: Publish immutable release
         env:
@@ -245,9 +245,9 @@ jobs:
           if [[ "$GITHUB_REF_NAME" == v0.* ]]; then
             channel_arguments+=(--prerelease)
           fi
-          publisher/bin/gh release create "$GITHUB_REF_NAME" bundle/dist/* \
+          publisher/bin/gh release create "$GITHUB_REF_NAME" bundle/* \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             "${channel_arguments[@]}" \
             --title "Golden Path tooling $GITHUB_REF_NAME" \
-            --notes-file bundle/dist/RELEASE_NOTES.md
+            --notes-file bundle/RELEASE_NOTES.md

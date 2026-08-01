@@ -78,6 +78,8 @@ selections without changing normative rule semantics.
    setup-action full commits, and generated asset inventory as one change.
 
 The upgrader never modifies the source repository or its default branch.
+When a plan contains unresolved conflicts, `--write` returns exit `1` without
+creating the requested candidate directory.
 Repositories without a prior generated asset inventory use the separately
 owned adoption workflow rather than inferring a migration.
 

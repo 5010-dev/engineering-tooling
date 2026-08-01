@@ -138,6 +138,9 @@ func WriteStaging(output string, files []File, plan Plan) error {
 	if err := validateRenderedFiles(files); err != nil {
 		return fmt.Errorf("validate staged files: %w", err)
 	}
+	if plan.ConflictCount != 0 {
+		return fmt.Errorf("refuse to write a candidate with %d unresolved conflicts", plan.ConflictCount)
+	}
 	absoluteOutput, err := filepath.Abs(output)
 	if err != nil {
 		return fmt.Errorf("resolve staging output: %w", err)

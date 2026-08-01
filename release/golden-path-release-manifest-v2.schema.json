@@ -249,7 +249,7 @@
       "required": ["toolchain", "cleanCheckout", "validationWorkflow", "commands"],
       "properties": {
         "toolchain": { "type": "string", "pattern": "^go[0-9]+\\.[0-9]+\\.[0-9]+$" },
-        "cleanCheckout": { "const": true },
+        "cleanCheckout": { "type": "boolean" },
         "validationWorkflow": { "const": ".github/workflows/release.yml" },
         "commands": { "type": "array", "minItems": 3, "items": { "type": "string", "minLength": 3 } }
       }

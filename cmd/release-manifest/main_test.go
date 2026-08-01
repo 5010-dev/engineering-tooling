@@ -107,8 +107,11 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	if result.ReleaseVersion != "1.0.0" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.0.0" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.0.0" || result.Components.Automation.Digest == "" {
 		t.Fatalf("unexpected manifest: %+v", result)
 	}
-	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree == "" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 7 || !result.Build.CleanCheckout {
+	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree == "" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 7 {
 		t.Fatalf("release evidence is incomplete: %+v", result)
+	}
+	if result.Build.CleanCheckout {
+		t.Fatal("mismatched source commit was represented as a clean checkout")
 	}
 	for index := 1; index < len(result.Assets); index++ {
 		if result.Assets[index-1].Name >= result.Assets[index].Name {
@@ -177,6 +180,20 @@ func TestRunRejectsTagVersionMismatch(t *testing.T) {
 	}
 }
 
+func TestRunRequiresExactCleanCheckoutWhenRequested(t *testing.T) {
+	var stderr bytes.Buffer
+	err := run([]string{
+		"--source", filepath.Join("..", ".."),
+		"--tag", "v1.0.0",
+		"--source-commit", strings.Repeat("a", 40),
+		"--output", filepath.Join(t.TempDir(), "release-manifest.json"),
+		"--require-clean-checkout",
+	}, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "release source must be a clean checkout") {
+		t.Fatalf("required mismatched checkout error = %v", err)
+	}
+}
+
 func TestMatchingEvidenceRejectsReleaseDrift(t *testing.T) {
 	sourceDirectory := t.TempDir()
 	distDirectory := t.TempDir()
@@ -198,6 +215,95 @@ func TestMatchingEvidenceRejectsReleaseDrift(t *testing.T) {
 	}
 	if _, _, err := matchingEvidence(sourceRoot, distRoot, "evidence.json", "evidence.json"); err == nil {
 		t.Fatal("accepted release evidence that did not match source")
+	}
+}
+
+func TestDigestSourceTreeNormalizesCheckoutPermissions(t *testing.T) {
+	directory := t.TempDir()
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.WriteFile("plain.txt", []byte("plain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.WriteFile("script.sh", []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := digestSourceTree(root, []string{"."}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Chmod("plain.txt", 0o664); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Chmod("script.sh", 0o775); err != nil {
+		t.Fatal(err)
+	}
+	nonDefaultUmask, err := digestSourceTree(root, []string{"."}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline != nonDefaultUmask {
+		t.Fatalf("digest changed with clone umask: %s != %s", baseline, nonDefaultUmask)
+	}
+	if err := root.Chmod("script.sh", 0o664); err != nil {
+		t.Fatal(err)
+	}
+	nonExecutable, err := digestSourceTree(root, []string{"."}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if baseline == nonExecutable {
+		t.Fatal("digest ignored the Git executable bit")
+	}
+}
+
+func TestCleanSourceCheckoutBindsHeadAndWorktree(t *testing.T) {
+	repository := t.TempDir()
+	for _, arguments := range [][]string{
+		{"init", "-b", "main"},
+		{"config", "user.name", "golden-path-test"},
+		{"config", "user.email", "golden-path-test@users.noreply.github.com"},
+		{"config", "commit.gpgsign", "false"},
+	} {
+		if _, err := gitOutput(repository, arguments...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := os.OpenRoot(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+	if err := root.WriteFile("evidence.txt", []byte("committed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, arguments := range [][]string{{"add", "evidence.txt"}, {"commit", "-m", "test: add evidence"}} {
+		if _, err := gitOutput(repository, arguments...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	head, err := gitOutput(repository, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := strings.TrimSpace(string(head))
+	clean, err := cleanSourceCheckout(repository, commit)
+	if err != nil || !clean {
+		t.Fatalf("clean checkout = %v, err=%v", clean, err)
+	}
+	clean, err = cleanSourceCheckout(repository, strings.Repeat("a", 40))
+	if err != nil || clean {
+		t.Fatalf("mismatched commit checkout = %v, err=%v", clean, err)
+	}
+	if err := root.WriteFile("untracked.txt", []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	clean, err = cleanSourceCheckout(repository, commit)
+	if err != nil || clean {
+		t.Fatalf("dirty checkout = %v, err=%v", clean, err)
 	}
 }
 

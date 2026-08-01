@@ -63,9 +63,10 @@ Generation records the standard, asset bundle, release source commit, request
 digest, canonical request, and every generated file digest and mode. Upgrade
 reads that inventory to distinguish unchanged generated files from consumer
 customization. A deleted managed file or changed executable mode is a conflict,
-not an implicit create or update. Upgrade writes a separate candidate and
-`golden-path-plan.json`; it never writes to the source repository or a default
-branch.
+not an implicit create or update. An unresolved conflict returns exit `1` and
+never materializes a candidate. A conflict-free upgrade writes a separate
+candidate and `golden-path-plan.json`; it never writes to the source repository
+or a default branch.
 
 The generated caller owns events, permissions, concurrency, runner, working
 directory, selected profiles, immutable automation source, and release
