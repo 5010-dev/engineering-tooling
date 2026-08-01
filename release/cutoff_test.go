@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"gopkg.in/yaml.v3"
 )
 
 type cutoffManifest struct {
@@ -49,6 +52,20 @@ type workflowAction struct {
 	Repository string `json:"repository"`
 	Version    string `json:"version"`
 	Commit     string `json:"commit"`
+}
+
+type workflowDocument struct {
+	Jobs map[string]workflowJob `yaml:"jobs"`
+}
+
+type workflowJob struct {
+	Steps []workflowStep `yaml:"steps"`
+}
+
+type workflowStep struct {
+	Name string         `yaml:"name"`
+	With map[string]any `yaml:"with"`
+	Run  string         `yaml:"run"`
 }
 
 type templateBundle struct {
@@ -159,6 +176,56 @@ func TestStableToolingCutoffIsCompleteAndConsistent(t *testing.T) {
 	}
 
 	assertWorkflowActionPins(t, root, cutoff.WorkflowActions)
+}
+
+func TestReleaseWorkflowPublishesTheFlatDownloadedBundle(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workflow workflowDocument
+	if err := yaml.Unmarshal(data, &workflow); err != nil {
+		t.Fatal(err)
+	}
+	upload := namedStep(t, workflow.Jobs["assemble"], "Upload release bundle")
+	if path, ok := upload.With["path"].(string); !ok || path != "dist" {
+		t.Fatalf("release bundle upload path = %#v, want flat dist root", upload.With["path"])
+	}
+	download := namedStep(t, workflow.Jobs["publish"], "Download release bundle")
+	if path, ok := download.With["path"].(string); !ok || path != "bundle" {
+		t.Fatalf("release bundle download path = %#v, want bundle", download.With["path"])
+	}
+	attest := namedStep(t, workflow.Jobs["publish"], "Attest release subjects")
+	if subjects, ok := attest.With["subject-path"].(string); !ok || subjects != "bundle/*" {
+		t.Fatalf("attestation subjects = %#v, want bundle/*", attest.With["subject-path"])
+	}
+	publish := namedStep(t, workflow.Jobs["publish"], "Publish immutable release")
+	for _, required := range []string{
+		`gh release create "$GITHUB_REF_NAME" bundle/*`,
+		`--notes-file bundle/RELEASE_NOTES.md`,
+	} {
+		if !strings.Contains(publish.Run, required) {
+			t.Errorf("publish step does not contain %q", required)
+		}
+	}
+	if strings.Contains(publish.Run, "bundle/dist/") {
+		t.Fatal("publish step assumes the removed dist directory prefix")
+	}
+	assemble := namedStep(t, workflow.Jobs["assemble"], "Assemble release evidence")
+	if !strings.Contains(assemble.Run, "--require-clean-checkout") {
+		t.Fatal("release manifest publication does not require a clean exact source checkout")
+	}
+}
+
+func namedStep(t *testing.T, job workflowJob, name string) workflowStep {
+	t.Helper()
+	for _, step := range job.Steps {
+		if step.Name == name {
+			return step
+		}
+	}
+	t.Fatalf("workflow step %q is missing", name)
+	return workflowStep{}
 }
 
 func assertWorkflowActionPins(t *testing.T, root *os.Root, actions []workflowAction) {

@@ -97,6 +97,50 @@ func TestRunGeneratesOnlyIntoExplicitStaging(t *testing.T) {
 	}
 }
 
+func TestRunDoesNotWriteUpgradeCandidateWithConflicts(t *testing.T) {
+	request := filepath.Join("..", "..", "testdata", "generator", "requests", "single-go.yaml")
+	release := filepath.Join("..", "..", "testdata", "generator", "release-manifest.json")
+	repository := filepath.Join(t.TempDir(), "repository")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"generate", "--request", request, "--release-manifest", release,
+		"--write", "--output", repository,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("generate exit = %d; stderr=%s", code, stderr.String())
+	}
+	customized := []byte("# consumer-owned customization\n")
+	// #nosec G306 -- the test intentionally models a conventional repository file.
+	if err := os.WriteFile(filepath.Join(repository, "justfile"), customized, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	candidate := filepath.Join(t.TempDir(), "candidate")
+	stdout.Reset()
+	stderr.Reset()
+	code = run([]string{
+		"upgrade", "--root", repository,
+		"--request", request, "--release-manifest", release,
+		"--write", "--output", candidate,
+	}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("conflicted upgrade exit = %d, want 1; stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"conflictCount": 1`) {
+		t.Fatalf("conflicted upgrade plan is missing: %s", stdout.String())
+	}
+	if _, err := os.Stat(candidate); !os.IsNotExist(err) {
+		t.Fatalf("conflicted upgrade materialized candidate: %v", err)
+	}
+	// #nosec G304 -- repository is a test-owned temporary directory.
+	after, err := os.ReadFile(filepath.Join(repository, "justfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, customized) {
+		t.Fatal("conflicted upgrade mutated the source repository")
+	}
+}
+
 func TestRunRejectsRepositoryOutputPath(t *testing.T) {
 	root := filepath.Join("..", "..", "testdata", "positive-go")
 	var stdout, stderr bytes.Buffer

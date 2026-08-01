@@ -431,11 +431,11 @@ func TestUpgradeClassifiesLocalCustomizationWithoutMutatingSource(t *testing.T) 
 	if err := ValidateSeparateOutput(repository, staging); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteStaging(staging, files, plan); err != nil {
-		t.Fatal(err)
+	if err := WriteStaging(staging, files, plan); err == nil {
+		t.Fatal("materialized a candidate with unresolved conflicts")
 	}
-	if _, err := os.Stat(filepath.Join(staging, "golden-path-plan.json")); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(staging); !os.IsNotExist(err) {
+		t.Fatalf("conflicted staging directory exists: %v", err)
 	}
 }
 

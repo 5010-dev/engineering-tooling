@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"runtime"
 	"sort"
 	"strings"
@@ -182,6 +183,7 @@ func run(arguments []string, stderr io.Writer) error {
 	tag := flags.String("tag", "", "exact release tag")
 	commit := flags.String("source-commit", "", "full source commit SHA")
 	output := flags.String("output", "", "manifest output path")
+	requireCleanCheckout := flags.Bool("require-clean-checkout", false, "require source HEAD and worktree to match source-commit")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -193,6 +195,13 @@ func run(arguments []string, stderr io.Writer) error {
 	}
 	if *output == "" {
 		return fmt.Errorf("output path is required")
+	}
+	cleanCheckout, err := cleanSourceCheckout(*sourceRoot, *commit)
+	if err != nil {
+		return fmt.Errorf("inspect release source state: %w", err)
+	}
+	if *requireCleanCheckout && !cleanCheckout {
+		return fmt.Errorf("release source must be a clean checkout of %s", *commit)
 	}
 
 	compatibility, err := checker.BundledCompatibility()
@@ -348,7 +357,7 @@ func run(arguments []string, stderr io.Writer) error {
 		},
 		Assets: assets,
 		Build: buildEvidence{
-			Toolchain: "go" + goVersion, CleanCheckout: true,
+			Toolchain: "go" + goVersion, CleanCheckout: cleanCheckout,
 			ValidationWorkflow: ".github/workflows/release.yml",
 			Commands: []string{
 				"just ci",
@@ -448,7 +457,7 @@ func digestSourceTree(root *os.Root, roots []string, excluded map[string]bool) (
 		if err != nil {
 			return "", err
 		}
-		if _, err := fmt.Fprintf(hasher, "%s\x00%04o\x00%d\x00", name, info.Mode().Perm(), info.Size()); err != nil {
+		if _, err := fmt.Fprintf(hasher, "%s\x00%04o\x00%d\x00", name, normalizedSourceMode(info.Mode()), info.Size()); err != nil {
 			return "", err
 		}
 		file, err := root.Open(name)
@@ -468,6 +477,36 @@ func digestSourceTree(root *os.Root, roots []string, excluded map[string]bool) (
 		}
 	}
 	return "sha256:" + hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func normalizedSourceMode(mode fs.FileMode) fs.FileMode {
+	if mode.Perm()&0o111 != 0 {
+		return 0o755
+	}
+	return 0o644
+}
+
+func cleanSourceCheckout(root, expectedCommit string) (bool, error) {
+	head, err := gitOutput(root, "rev-parse", "HEAD")
+	if err != nil {
+		return false, err
+	}
+	status, err := gitOutput(root, "status", "--porcelain=v1", "--untracked-files=all")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(head)) == expectedCommit && len(bytes.TrimSpace(status)) == 0, nil
+}
+
+func gitOutput(root string, arguments ...string) ([]byte, error) {
+	commandArguments := append([]string{"-C", root}, arguments...)
+	// #nosec G204 -- git is fixed and arguments are passed without shell evaluation.
+	command := exec.Command("git", commandArguments...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(arguments, " "), err, strings.TrimSpace(string(output)))
+	}
+	return output, nil
 }
 
 func preferredRuntimeVersion(selections []checker.RuntimeSelection, profile string) (string, error) {
