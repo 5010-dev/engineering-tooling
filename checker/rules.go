@@ -524,7 +524,7 @@ func evaluateDirectDependencies(root string, metadata Metadata, rule Rule, _ boo
 	if !detected {
 		return baseFinding(rule, "skip", ".", "No direct VCS, URL, archive, binary, or generated-source dependency was detected.")
 	}
-	return baseFinding(rule, "skip", ".", "Detected direct references are immutable, but ecosystem integrity-record correlation is not yet complete in checker 0.x.")
+	return baseFinding(rule, "skip", ".", "Detected direct references are immutable, but ecosystem integrity-record correlation is outside this structural check.")
 }
 
 func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Finding {
@@ -570,7 +570,7 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 		rule,
 		"skip",
 		".github/workflows",
-		"Detected workflow action and container references are immutable; archive, binary, VCS, generated-source, and script correlation remains outside checker 0.x.",
+		"Detected workflow action and container references are immutable; archive, binary, VCS, generated-source, and script correlation remains outside this structural check.",
 	)
 }
 

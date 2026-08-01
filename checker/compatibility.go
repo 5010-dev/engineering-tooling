@@ -17,7 +17,7 @@ func loadCompatibility() (CompatibilityManifest, error) {
 	}
 	if manifest.SchemaVersion != "golden-path-checker-compatibility/v1" ||
 		manifest.CheckerVersion != Version ||
-		manifest.Lifecycle != "prerelease" ||
+		manifest.Lifecycle != "stable" ||
 		!slices.Equal(manifest.Enforcement, []string{"report-only"}) {
 		return CompatibilityManifest{}, fmt.Errorf("bundled checker compatibility identity mismatch")
 	}

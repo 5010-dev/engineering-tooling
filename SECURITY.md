@@ -11,6 +11,13 @@ material beyond what is strictly necessary to reproduce the issue.
 
 ## Supported versions
 
-Until the first stable release, only the latest published `0.x` prerelease is
-eligible for security fixes. The project is report-only and is not yet a
-required organization control.
+The latest `1.x` stable line is supported. Releases `0.1.x` and `0.2.x` are
+deprecated through 2027-01-28 following the 2026-08-01 stable-release
+announcement. `0.2.0` is the verified rollback and migration source; the
+successor path for `0.1.x` is `0.2.0` and then the latest `1.x`. Deprecated
+`0.x` receives only critical security or integrity fixes. A critical integrity
+or security issue may shorten that window when the source, replacement,
+migration path, and exception policy are published.
+
+Implementation stability does not change enforcement. The project remains
+report-only and is not a required organization control.

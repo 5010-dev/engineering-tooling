@@ -1,9 +1,9 @@
-min_version = "2026.7.17"
+min_version = "2026.7.18"
 
 [tools]
 actionlint = "1.7.12"
 go = "1.26.5"
-github-cli = "2.96.0"
+github-cli = "2.97.0"
 golangci-lint = "2.12.2"
 just = "1.57.0"
 

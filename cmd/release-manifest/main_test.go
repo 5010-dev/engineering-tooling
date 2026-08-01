@@ -28,10 +28,10 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	}()
 
 	for _, name := range []string{
-		"golden-path_0.2.0_darwin_amd64.tar.gz",
-		"golden-path_0.2.0_darwin_arm64.tar.gz",
-		"golden-path_0.2.0_linux_amd64.tar.gz",
-		"golden-path_0.2.0_linux_arm64.tar.gz",
+		"golden-path_1.0.0_darwin_amd64.tar.gz",
+		"golden-path_1.0.0_darwin_arm64.tar.gz",
+		"golden-path_1.0.0_linux_amd64.tar.gz",
+		"golden-path_1.0.0_linux_arm64.tar.gz",
 	} {
 		archive := fixtureArchive(t, name)
 		if err := root.WriteFile(name, archive, 0o600); err != nil {
@@ -48,11 +48,34 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	repository := filepath.Join("..", "..")
+	for sourceName, distName := range map[string]string{
+		"compatibility/manifest.json":                                       "compatibility-manifest.json",
+		"compatibility/golden-path-checker-compatibility-v1.schema.json":    "golden-path-checker-compatibility-v1.schema.json",
+		"standards/snapshots/2026.07/manifest.json":                         "standard-snapshot-manifest.json",
+		"release/RELEASE_NOTES.md":                                          "RELEASE_NOTES.md",
+		"release/golden-path-release-manifest-v1.schema.json":               "golden-path-release-manifest-v1.schema.json",
+		"release/golden-path-release-manifest-v2.schema.json":               "golden-path-release-manifest-v2.schema.json",
+		"release/golden-path-tooling-cutoff-v1.schema.json":                 "golden-path-tooling-cutoff-v1.schema.json",
+		"release/tooling-cutoff-2026-08-01.json":                            "tooling-cutoff.json",
+		"generator/schemas/golden-path-generated-assets-v1.schema.json":     "golden-path-generated-assets-v1.schema.json",
+		"generator/schemas/golden-path-generator-request-v1.schema.json":    "golden-path-generator-request-v1.schema.json",
+		"generator/schemas/golden-path-materialization-plan-v1.schema.json": "golden-path-materialization-plan-v1.schema.json",
+	} {
+		data, readErr := os.ReadFile(filepath.Join(repository, filepath.FromSlash(sourceName))) // #nosec G304 -- fixed test-owned source inventory.
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if err := root.WriteFile(distName, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	output := filepath.Join(directory, "release-manifest.json")
 	var stderr bytes.Buffer
 	if err := run([]string{
+		"--source", repository,
 		"--dist", directory,
-		"--tag", "v0.2.0",
+		"--tag", "v1.0.0",
 		"--source-commit", "0123456789abcdef0123456789abcdef01234567",
 		"--output", output,
 	}, &stderr); err != nil {
@@ -76,13 +99,16 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	releaseSchema, err := repositoryRoot.ReadFile("release/golden-path-release-manifest-v1.schema.json")
+	releaseSchema, err := repositoryRoot.ReadFile("release/golden-path-release-manifest-v2.schema.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	validateDocument(t, releaseSchema, data)
-	if result.ReleaseVersion != "0.2.0" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.TemplateBundle.Version != "0.2.0" || result.Components.Automation.Version != "0.2.0" {
+	if result.ReleaseVersion != "1.0.0" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.0.0" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.0.0" || result.Components.Automation.Digest == "" {
 		t.Fatalf("unexpected manifest: %+v", result)
+	}
+	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree == "" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 7 || !result.Build.CleanCheckout {
+		t.Fatalf("release evidence is incomplete: %+v", result)
 	}
 	for index := 1; index < len(result.Assets); index++ {
 		if result.Assets[index-1].Name >= result.Assets[index].Name {
@@ -142,12 +168,36 @@ func TestCompatibilityManifestSatisfiesContract(t *testing.T) {
 func TestRunRejectsTagVersionMismatch(t *testing.T) {
 	var stderr bytes.Buffer
 	err := run([]string{
-		"--tag", "v0.1.0",
+		"--tag", "v0.2.0",
 		"--source-commit", strings.Repeat("a", 40),
 		"--output", filepath.Join(t.TempDir(), "release-manifest.json"),
 	}, &stderr)
 	if err == nil {
 		t.Fatal("run succeeded with a mismatched tag")
+	}
+}
+
+func TestMatchingEvidenceRejectsReleaseDrift(t *testing.T) {
+	sourceDirectory := t.TempDir()
+	distDirectory := t.TempDir()
+	sourceRoot, err := os.OpenRoot(sourceDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sourceRoot.Close() }()
+	distRoot, err := os.OpenRoot(distDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = distRoot.Close() }()
+	if err := sourceRoot.WriteFile("evidence.json", []byte("source\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := distRoot.WriteFile("evidence.json", []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := matchingEvidence(sourceRoot, distRoot, "evidence.json", "evidence.json"); err == nil {
+		t.Fatal("accepted release evidence that did not match source")
 	}
 }
 

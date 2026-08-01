@@ -24,10 +24,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install pinned toolchain
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
@@ -76,10 +76,10 @@ jobs:
             target: darwin/arm64
     steps:
       - name: Check out source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install pinned toolchain
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
@@ -126,10 +126,10 @@ jobs:
             request: zig-profiles.yaml
     steps:
       - name: Check out source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install generator toolchain
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
@@ -162,15 +162,17 @@ jobs:
           test -z "$(git status --short)"
 
   setup-action:
-    name: Setup action / released provenance
+    name: Setup action / rollback and migration
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - name: Check out source
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install pinned verifier
-        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           install: true
           cache: true
@@ -179,18 +181,127 @@ jobs:
         id: golden-path
         uses: ./actions/setup-golden-path
         with:
-          checker-version: 0.1.0
-          source-commit: 196663d731f2159034a698e1778bb24857c3556a
-          github-cli-version: 2.96.0
-          darwin-amd64-sha256: 2b1209bcab223d61ce38011f0591591befc22956daf26cbcd9d48a67bd26fb83
-          darwin-arm64-sha256: 34d460ba7820a577b891caacfecf5268dcac0b406a50cbf40d0d33ef5f8c67ed
-          linux-amd64-sha256: c761f03f33e827b5d9e47c7e4a47b7d5b06b0eef1ec3fafeae7f538a7706a029
-          linux-arm64-sha256: 174c5e85ce836185287938761d551d33956003973217a0864d0899d2715cae42
+          checker-version: 0.2.0
+          source-commit: 1c590b377dfc38047a1c9766ab0ea3ac9b954d3b
+          github-cli-version: 2.97.0
+          darwin-amd64-sha256: a0fc3b227c9bc492f72f04dd2b5f13368708f9a40abf79740bf8e42e1ff83c69
+          darwin-arm64-sha256: 381272c9e817fb1619316e52360911f4f4a5fd441982517476bff3fe994adcd8
+          linux-amd64-sha256: 780ae580fe76011e8d8933efa3a34aee26931158c4f298eee0ea16306e73b9cf
+          linux-arm64-sha256: 320a19bbb8a3b77df04aeb5cc0103f839e34b1705cffa7c2824138aec23e69ca
 
       - name: Execute verified release
         env:
           GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
-        run: test "$("$GOLDEN_PATH_BIN" --version)" = "golden-path 0.1.0"
+        run: test "$("$GOLDEN_PATH_BIN" --version)" = "golden-path 0.2.0"
+
+      - name: Verify deprecated release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROLLBACK_COMMIT: 1c590b377dfc38047a1c9766ab0ea3ac9b954d3b
+          ROLLBACK_VERSION: 0.2.0
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/rollback-release"
+          gh release download "v$ROLLBACK_VERSION" \
+            --repo 5010-dev/engineering-tooling \
+            --pattern release-manifest.json \
+            --dir "$RUNNER_TEMP/rollback-release"
+          gh attestation verify "$RUNNER_TEMP/rollback-release/release-manifest.json" \
+            --repo 5010-dev/engineering-tooling \
+            --signer-workflow 5010-dev/engineering-tooling/.github/workflows/release.yml \
+            --source-digest "$ROLLBACK_COMMIT" \
+            --signer-digest "$ROLLBACK_COMMIT" \
+            --source-ref "refs/tags/v$ROLLBACK_VERSION" \
+            --deny-self-hosted-runners >/dev/null
+
+      - name: Exercise stable migration and rollback without source mutation
+        env:
+          ROLLBACK_BIN: ${{ steps.golden-path.outputs.binary-path }}
+        run: |
+          set -euo pipefail
+          go build -mod=readonly -trimpath \
+            -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
+          "$ROLLBACK_BIN" generate \
+            --request testdata/generator/requests/single-go.yaml \
+            --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
+            --write \
+            --output "$RUNNER_TEMP/rollback-repository"
+          git -C "$RUNNER_TEMP/rollback-repository" init -b main
+          git -C "$RUNNER_TEMP/rollback-repository" config user.name golden-path-ci
+          git -C "$RUNNER_TEMP/rollback-repository" config user.email golden-path-ci@users.noreply.github.com
+          git -C "$RUNNER_TEMP/rollback-repository" add .
+          git -C "$RUNNER_TEMP/rollback-repository" commit -m "test: materialize rollback fixture"
+          source_tree="$(git -C "$RUNNER_TEMP/rollback-repository" write-tree)"
+          "$RUNNER_TEMP/golden-path-under-test" upgrade \
+            --root "$RUNNER_TEMP/rollback-repository" \
+            --request testdata/generator/requests/single-go.yaml \
+            --release-manifest testdata/generator/release-manifest.json \
+            > "$RUNNER_TEMP/stable-migration-preview.json"
+          "$RUNNER_TEMP/golden-path-under-test" upgrade \
+            --root "$RUNNER_TEMP/rollback-repository" \
+            --request testdata/generator/requests/single-go.yaml \
+            --release-manifest testdata/generator/release-manifest.json \
+            --write \
+            --output "$RUNNER_TEMP/stable-migration-candidate" \
+            > "$RUNNER_TEMP/stable-migration-write.json"
+          cmp "$RUNNER_TEMP/stable-migration-preview.json" \
+            "$RUNNER_TEMP/stable-migration-write.json"
+          cmp "$RUNNER_TEMP/stable-migration-preview.json" \
+            "$RUNNER_TEMP/stable-migration-candidate/golden-path-plan.json"
+          jq -e '
+            .operation == "upgrade" and
+            .releaseVersion == "1.0.0" and
+            .conflictCount == 0 and
+            any(.changes[]; .status == "update")
+          ' "$RUNNER_TEMP/stable-migration-preview.json" >/dev/null
+          test "$(git -C "$RUNNER_TEMP/rollback-repository" write-tree)" = "$source_tree"
+          test -z "$(git -C "$RUNNER_TEMP/rollback-repository" status --short)"
+          git -C "$RUNNER_TEMP/stable-migration-candidate" init -b main
+          git -C "$RUNNER_TEMP/stable-migration-candidate" config user.name golden-path-ci
+          git -C "$RUNNER_TEMP/stable-migration-candidate" config user.email golden-path-ci@users.noreply.github.com
+          git -C "$RUNNER_TEMP/stable-migration-candidate" add .
+          git -C "$RUNNER_TEMP/stable-migration-candidate" commit -m "test: materialize stable migration candidate"
+          rollback_source_tree="$(git -C "$RUNNER_TEMP/stable-migration-candidate" write-tree)"
+          "$ROLLBACK_BIN" upgrade \
+            --root "$RUNNER_TEMP/stable-migration-candidate" \
+            --request testdata/generator/requests/single-go.yaml \
+            --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
+            > "$RUNNER_TEMP/rollback-preview.json"
+          "$ROLLBACK_BIN" upgrade \
+            --root "$RUNNER_TEMP/stable-migration-candidate" \
+            --request testdata/generator/requests/single-go.yaml \
+            --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
+            --write \
+            --output "$RUNNER_TEMP/rollback-candidate" \
+            > "$RUNNER_TEMP/rollback-write.json"
+          cmp "$RUNNER_TEMP/rollback-preview.json" \
+            "$RUNNER_TEMP/rollback-write.json"
+          cmp "$RUNNER_TEMP/rollback-preview.json" \
+            "$RUNNER_TEMP/rollback-candidate/golden-path-plan.json"
+          jq -e '
+            .operation == "upgrade" and
+            .releaseVersion == "0.2.0" and
+            .conflictCount == 0 and
+            any(.changes[]; .status == "update")
+          ' "$RUNNER_TEMP/rollback-preview.json" >/dev/null
+          test "$("$ROLLBACK_BIN" --version)" = "golden-path 0.2.0"
+          test "$(git -C "$RUNNER_TEMP/stable-migration-candidate" write-tree)" = "$rollback_source_tree"
+          test -z "$(git -C "$RUNNER_TEMP/stable-migration-candidate" status --short)"
+          git -C "$RUNNER_TEMP/rollback-candidate" init -b main
+          git -C "$RUNNER_TEMP/rollback-candidate" config user.name golden-path-ci
+          git -C "$RUNNER_TEMP/rollback-candidate" config user.email golden-path-ci@users.noreply.github.com
+          git -C "$RUNNER_TEMP/rollback-candidate" add .
+          git -C "$RUNNER_TEMP/rollback-candidate" commit -m "test: materialize rollback candidate"
+          rollback_candidate_tree="$(git -C "$RUNNER_TEMP/rollback-candidate" write-tree)"
+          (
+            cd "$RUNNER_TEMP/rollback-candidate"
+            mise trust
+            mise install --locked
+            GOLDEN_PATH_BIN="$ROLLBACK_BIN" just init
+            GOLDEN_PATH_BIN="$ROLLBACK_BIN" just ci
+          )
+          test "$(git -C "$RUNNER_TEMP/rollback-candidate" write-tree)" = "$rollback_candidate_tree"
+          test -z "$(git -C "$RUNNER_TEMP/rollback-candidate" status --short)"
 
   reusable-quality:
     name: Reusable quality / released provenance
@@ -199,10 +310,10 @@ jobs:
     uses: ./.github/workflows/golden-path-quality.yml
     with:
       profiles: '["go"]'
-      checker-version: 0.1.0
-      source-commit: 196663d731f2159034a698e1778bb24857c3556a
-      github-cli-version: 2.96.0
-      darwin-amd64-sha256: 2b1209bcab223d61ce38011f0591591befc22956daf26cbcd9d48a67bd26fb83
-      darwin-arm64-sha256: 34d460ba7820a577b891caacfecf5268dcac0b406a50cbf40d0d33ef5f8c67ed
-      linux-amd64-sha256: c761f03f33e827b5d9e47c7e4a47b7d5b06b0eef1ec3fafeae7f538a7706a029
-      linux-arm64-sha256: 174c5e85ce836185287938761d551d33956003973217a0864d0899d2715cae42
+      checker-version: 0.2.0
+      source-commit: 1c590b377dfc38047a1c9766ab0ea3ac9b954d3b
+      github-cli-version: 2.97.0
+      darwin-amd64-sha256: a0fc3b227c9bc492f72f04dd2b5f13368708f9a40abf79740bf8e42e1ff83c69
+      darwin-arm64-sha256: 381272c9e817fb1619316e52360911f4f4a5fd441982517476bff3fe994adcd8
+      linux-amd64-sha256: 780ae580fe76011e8d8933efa3a34aee26931158c4f298eee0ea16306e73b9cf
+      linux-arm64-sha256: 320a19bbb8a3b77df04aeb5cc0103f839e34b1705cffa7c2824138aec23e69ca
