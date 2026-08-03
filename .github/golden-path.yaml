@@ -1,7 +1,7 @@
 schemaVersion: golden-path-metadata/v1
 contractVersion: golden-path/v1
 standardVersion: "2026.07"
-assetBundleVersion: 1.0.0
+assetBundleVersion: 1.0.1
 applicability:
   status: applicable
 profiles:

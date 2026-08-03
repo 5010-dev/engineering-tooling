@@ -564,10 +564,15 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		"--deny-self-hosted-runners",
 		"check_help=\"$(\"$GOLDEN_PATH_BIN\" check --help 2>&1 || true)\"",
 		"check_arguments+=(--expected-profiles \"$EXPECTED_PROFILES\")",
+		"if: ${{ always() && steps.golden-path.outcome == 'success' }}",
 	} {
 		if !strings.Contains(string(reusable), expected) {
 			t.Fatalf("reusable workflow does not enforce %q", expected)
 		}
+	}
+	commonJust := string(fileContent(t, files, "just/common.just"))
+	if !strings.Contains(commonJust, "MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --locked") {
+		t.Fatal("generated init does not isolate developer-global mise tools")
 	}
 	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
 		if strings.Contains(string(reusable), forbidden) {
@@ -588,6 +593,21 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("generated bootstrap does not enforce %q", expected)
 		}
+	}
+}
+
+func TestGeneratorReleaseFixtureMatchesPublishedSchema(t *testing.T) {
+	t.Parallel()
+	fixture, err := os.ReadFile(filepath.Join("..", "testdata", "generator", "release-manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaData, err := os.ReadFile(filepath.Join("..", "release", "golden-path-release-manifest-v2.schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateJSONDocument(schemaData, fixture); err != nil {
+		t.Fatalf("generator release fixture does not satisfy the published v2 schema: %v", err)
 	}
 }
 
@@ -807,6 +827,10 @@ func schemaValidationError(t *testing.T, name string, documentData []byte) error
 	if err != nil {
 		t.Fatal(err)
 	}
+	return validateJSONDocument(schemaData, documentData)
+}
+
+func validateJSONDocument(schemaData, documentData []byte) error {
 	var schemaDocument any
 	if err := json.Unmarshal(schemaData, &schemaDocument); err != nil {
 		return err
