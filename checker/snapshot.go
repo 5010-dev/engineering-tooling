@@ -14,6 +14,8 @@ import (
 
 const snapshotRoot = "snapshots/2026.07"
 
+const snapshotAggregateDefinition = "SHA-256 of UTF-8 lines sorted by snapshot-relative path, each formatted as <file-sha256>  standards/snapshots/2026.07/<snapshot-relative-path>\\n, excluding manifest.json"
+
 type snapshotManifest struct {
 	SchemaVersion   string `json:"schemaVersion"`
 	StandardVersion string `json:"standardVersion"`
@@ -55,8 +57,8 @@ func loadSnapshot() (Catalog, string, error) {
 		manifest.Source.Commit != SnapshotSourceCommit {
 		return Catalog{}, "", fmt.Errorf("bundled snapshot compatibility mismatch")
 	}
-	if manifest.Aggregate.Algorithm != "sha256" {
-		return Catalog{}, "", fmt.Errorf("bundled snapshot aggregate algorithm mismatch")
+	if manifest.Aggregate.Algorithm != "sha256" || manifest.Aggregate.Definition != snapshotAggregateDefinition {
+		return Catalog{}, "", fmt.Errorf("bundled snapshot aggregate contract mismatch")
 	}
 
 	inventory := make(map[string]struct{}, len(manifest.Files))

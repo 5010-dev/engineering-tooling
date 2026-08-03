@@ -1,8 +1,24 @@
-# Golden Path tooling 1.0.0
+# Golden Path tooling 1.0.1
 
-First stable implementation release for the `2026.07` Developer Tooling
-Standard. Stability applies to compatibility, distribution, materialization,
-and rollback contracts; conformance remains report-only.
+Patch release for the `2026.07` Developer Tooling Standard. This release changes
+implementation behavior and evidence only; the normative standard, contract,
+runtime selections, and report-only enforcement state are unchanged.
+
+## Changes from 1.0.0
+
+- Generated `just init` ignores developer-global mise tool declarations while
+  retaining the repository-local `mise.toml` and locked tool resolution.
+- The reusable quality workflow publishes bounded checker evidence after
+  repository initialization or `just ci` failures whenever verified checker
+  setup completed.
+- Generated-profile CI injects a hostile global mise tool to prevent regression
+  of the isolated initialization contract.
+- The generator release fixture now satisfies the published v2 release-manifest
+  schema and is continuously schema-validated.
+- Release documentation states the tag-invisible checkout context required for
+  byte-for-byte Go artifact reproduction.
+- The standard snapshot manifest now specifies the exact aggregate line format,
+  and the checker validates that definition as part of snapshot loading.
 
 ## Compatibility
 
@@ -17,71 +33,44 @@ and rollback contracts; conformance remains report-only.
 - Release manifest: `golden-path-release-manifest/v2`
 - Enforcement: `report-only`
 
-## Stable readiness
+## External-tool cutoff
 
-- Exact 2026-08-01 external-tool cutoff with official sources, support status,
-  native integrity authority, and workflow-action commit identities
-- Deterministic offline checker with stable text, JSON, and exit-code contracts
-- Preview-first generation and conflict-aware upgrade into a separate candidate
-- Compatibility, migration, rollback, exception, false-positive, and malformed
-  input fixtures
-- Native execution on Darwin and Linux AMD64/ARM64 runners
-- GitHub Free private-consumer path without protected branches, required
-  checks, Environments, Dependency Review, or private artifact attestations
-- Public generic release assets with no dependency on a restricted tooling
-  channel; any future restricted implementation requires a separate trust and
-  release boundary
-- Digest-bound CycloneDX 1.6 SBOMs and GitHub artifact attestations for all
-  released assets
-- Release manifest source and component digests for the checker, generator,
-  asset bundle, shared automation, schemas, cutoff, and migration notes
-
-## Tooling cutoff changes from 0.2.0
-
-- GitHub CLI `2.97.0`
-- mise minimum `2026.7.18`
-- uv and uv-build `0.12.1`
-- aws-cdk-lib remains `2.262.2`; `2.263.0` had not satisfied pnpm's
-  minimum-release-age policy at the cutoff
-- actions/checkout `v7.0.1`, mise-action `v4.2.4`, and actions/attest
-  `v4.2.1`, all pinned to full commits
-- TypeScript remains `6.0.3`: the observed `7.0.2` release is outside
-  typescript-eslint `8.65.0`'s supported peer range
+The exact external tools, runtimes, native locks, package locks, and workflow
+action commits remain unchanged from the 2026-08-01 cutoff used by `1.0.0`.
+Updated integrity evidence binds the `1.0.1` template-bundle identity.
 
 ## Support and deprecation
-
-This release announces the following lifecycle state on 2026-08-01:
 
 | Line | Status | Support deadline | Successor and migration path |
 | --- | --- | --- | --- |
 | `1.x` | Supported | — | Latest compatible `1.x` |
-| `0.2.x` | Deprecated | 2027-01-28 | Verified direct migration and rollback with `0.2.0` and `1.0.0` |
-| `0.1.x` | Deprecated | 2027-01-28 | Advance to `0.2.0`, then use the verified `1.0.0` migration |
+| `0.2.x` | Deprecated | 2027-01-28 | Verified direct migration through `0.2.0` |
+| `0.1.x` | Deprecated | 2027-01-28 | Advance to `0.2.0`, then migrate to supported `1.x` |
 
 Deprecated `0.x` receives only critical security or integrity fixes. Standard
-`2026.07` remains preferred because this release changes exact implementation
-selections without changing normative rule semantics.
+`2026.07` remains preferred because this patch changes no normative rule
+semantics.
 
-## Migration from 0.2.0
+## Migration from 1.0.0 or 0.2.0
 
-1. Download the exact `1.0.0` archive and `release-manifest.json`, then verify
-   the archive checksum and both artifact attestations against the `v1.0.0`
-   tag, source commit, signer commit, and release workflow.
+1. Download the exact `1.0.1` archive and `release-manifest.json`, then verify
+   the archive checksum and both artifact attestations against the `v1.0.1` tag,
+   source commit, signer commit, and release workflow.
 2. Run `golden-path upgrade` without `--write` against the existing repository,
-   its recorded request, and the verified `1.0.0` release manifest.
+   its recorded request, and the verified `1.0.1` release manifest.
 3. Resolve any reported conflict before running the same command with `--write`
    and a separate empty candidate directory.
 4. Review `golden-path-plan.json` and the complete candidate diff, then run the
    candidate's `just init` and `just ci`.
 5. Adopt the candidate through the consumer repository's normal review. Update
-   the binary version, archive and executable checksums, reusable-workflow and
+   binary version, archive and executable checksums, reusable-workflow and
    setup-action full commits, and generated asset inventory as one change.
 
-The upgrader never modifies the source repository or its default branch.
-When a plan contains unresolved conflicts, `--write` returns exit `1` without
-creating the requested candidate directory.
-Repositories without a prior generated asset inventory use the separately
-owned adoption workflow rather than inferring a migration.
+The upgrader never modifies the source repository or its default branch. When a
+plan contains unresolved conflicts, `--write` returns exit `1` without creating
+the requested candidate directory. Repositories without a prior generated asset
+inventory use the separately owned adoption workflow rather than inferring a
+migration.
 
 ## Limitations
 
@@ -93,7 +82,9 @@ owned repository work.
 
 ## Rollback
 
-Restore the exact `0.2.0` binary, release manifest, archive checksum, and
-full-commit workflow/action pin. Re-materialize or upgrade only in a separate
-candidate directory and review the resulting diff. Do not move a tag, replace
-an asset, overwrite a consumer repository, or infer rollback from `latest`.
+Restore the exact immutable `1.0.0` release identity: binary, release manifest,
+archive and executable checksums, generated asset inventory, and full-commit
+workflow/action pins. `0.2.0` remains the verified legacy fallback. Re-materialize
+or upgrade only in a separate candidate directory and review the resulting diff.
+Do not move a tag, replace an asset, overwrite a consumer repository, or infer
+rollback from `latest`.

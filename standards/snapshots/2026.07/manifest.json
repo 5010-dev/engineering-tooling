@@ -10,7 +10,7 @@
   },
   "aggregate": {
     "algorithm": "sha256",
-    "definition": "SHA-256 of sorted shasum lines for every snapshot file except manifest.json",
+    "definition": "SHA-256 of UTF-8 lines sorted by snapshot-relative path, each formatted as <file-sha256>  standards/snapshots/2026.07/<snapshot-relative-path>\\n, excluding manifest.json",
     "digest": "e62a016975a65b0e085c999891032400ea6e8b0dd8ef25f64cef978191319e52"
   },
   "files": {

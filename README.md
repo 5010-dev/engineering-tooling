@@ -99,7 +99,7 @@ exact release. The resolved patch must still appear in the immutable runtime
 mapping; the checker never infers runtime support from a broad selector.
 
 The same versioned manifest defines the checker release's 30-day
-exception-expiry warning window. Golden Path `1.0.0` intentionally does not
+exception-expiry warning window. Golden Path `1.x` intentionally does not
 admit Zig's previous-tagged-stable compatibility-only tier: the normative
 standard requires a bounded reason, owner, and review date, while the v1
 repository metadata contract does not yet define that evidence. Until a future

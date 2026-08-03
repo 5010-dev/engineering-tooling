@@ -157,16 +157,35 @@ jobs:
           cd "$RUNNER_TEMP/generated"
           mise trust
           mise install --locked
-          GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" just init
+          printf '%s\n' '[tools]' 'node = "999.0.0"' > "$RUNNER_TEMP/hostile-global-mise.toml"
+          MISE_GLOBAL_CONFIG_FILE="$RUNNER_TEMP/hostile-global-mise.toml" \
+            GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" \
+            just init
           GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" just ci
           test -z "$(git status --short)"
 
   setup-action:
-    name: Setup action / rollback and migration
+    name: Setup action / migration and rollback / ${{ matrix.prior_version }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - prior_version: 0.2.0
+            prior_commit: 1c590b377dfc38047a1c9766ab0ea3ac9b954d3b
+            darwin_amd64_sha256: a0fc3b227c9bc492f72f04dd2b5f13368708f9a40abf79740bf8e42e1ff83c69
+            darwin_arm64_sha256: 381272c9e817fb1619316e52360911f4f4a5fd441982517476bff3fe994adcd8
+            linux_amd64_sha256: 780ae580fe76011e8d8933efa3a34aee26931158c4f298eee0ea16306e73b9cf
+            linux_arm64_sha256: 320a19bbb8a3b77df04aeb5cc0103f839e34b1705cffa7c2824138aec23e69ca
+          - prior_version: 1.0.0
+            prior_commit: ce66d80e5a18d76d8094af9c481a31a656fa881b
+            darwin_amd64_sha256: 1c9088632c17bc7c30baf573bed6c294c73f3d2e65f821885cdd7b1542859712
+            darwin_arm64_sha256: bf878d3d4033934865f0e7e0d2dbfa42cbbaa79cfa43185c42672f451c93847e
+            linux_amd64_sha256: 6dcfb6d480942e96554da81f6f254791859fa4614197cbf5edf2d5bb318f08b6
+            linux_arm64_sha256: ee35378fa39c60720ab4b1d804aacf0ad71263b3aabbb2cf669912f56428b5e7
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -181,24 +200,25 @@ jobs:
         id: golden-path
         uses: ./actions/setup-golden-path
         with:
-          checker-version: 0.2.0
-          source-commit: 1c590b377dfc38047a1c9766ab0ea3ac9b954d3b
+          checker-version: ${{ matrix.prior_version }}
+          source-commit: ${{ matrix.prior_commit }}
           github-cli-version: 2.97.0
-          darwin-amd64-sha256: a0fc3b227c9bc492f72f04dd2b5f13368708f9a40abf79740bf8e42e1ff83c69
-          darwin-arm64-sha256: 381272c9e817fb1619316e52360911f4f4a5fd441982517476bff3fe994adcd8
-          linux-amd64-sha256: 780ae580fe76011e8d8933efa3a34aee26931158c4f298eee0ea16306e73b9cf
-          linux-arm64-sha256: 320a19bbb8a3b77df04aeb5cc0103f839e34b1705cffa7c2824138aec23e69ca
+          darwin-amd64-sha256: ${{ matrix.darwin_amd64_sha256 }}
+          darwin-arm64-sha256: ${{ matrix.darwin_arm64_sha256 }}
+          linux-amd64-sha256: ${{ matrix.linux_amd64_sha256 }}
+          linux-arm64-sha256: ${{ matrix.linux_arm64_sha256 }}
 
       - name: Execute verified release
         env:
           GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
-        run: test "$("$GOLDEN_PATH_BIN" --version)" = "golden-path 0.2.0"
+          PRIOR_VERSION: ${{ matrix.prior_version }}
+        run: test "$("$GOLDEN_PATH_BIN" --version)" = "golden-path $PRIOR_VERSION"
 
-      - name: Verify deprecated release manifest
+      - name: Verify prior release manifest
         env:
           GH_TOKEN: ${{ github.token }}
-          ROLLBACK_COMMIT: 1c590b377dfc38047a1c9766ab0ea3ac9b954d3b
-          ROLLBACK_VERSION: 0.2.0
+          ROLLBACK_COMMIT: ${{ matrix.prior_commit }}
+          ROLLBACK_VERSION: ${{ matrix.prior_version }}
         run: |
           set -euo pipefail
           mkdir "$RUNNER_TEMP/rollback-release"
@@ -217,10 +237,14 @@ jobs:
       - name: Exercise stable migration and rollback without source mutation
         env:
           ROLLBACK_BIN: ${{ steps.golden-path.outputs.binary-path }}
+          PRIOR_VERSION: ${{ matrix.prior_version }}
         run: |
           set -euo pipefail
           go build -mod=readonly -trimpath \
             -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
+          candidate_version="$("$RUNNER_TEMP/golden-path-under-test" --version)"
+          candidate_version="${candidate_version#golden-path }"
+          test "$candidate_version" = "1.0.1"
           "$ROLLBACK_BIN" generate \
             --request testdata/generator/requests/single-go.yaml \
             --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
@@ -248,9 +272,9 @@ jobs:
             "$RUNNER_TEMP/stable-migration-write.json"
           cmp "$RUNNER_TEMP/stable-migration-preview.json" \
             "$RUNNER_TEMP/stable-migration-candidate/golden-path-plan.json"
-          jq -e '
+          jq -e --arg candidate "$candidate_version" '
             .operation == "upgrade" and
-            .releaseVersion == "1.0.0" and
+            .releaseVersion == $candidate and
             .conflictCount == 0 and
             any(.changes[]; .status == "update")
           ' "$RUNNER_TEMP/stable-migration-preview.json" >/dev/null
@@ -278,13 +302,13 @@ jobs:
             "$RUNNER_TEMP/rollback-write.json"
           cmp "$RUNNER_TEMP/rollback-preview.json" \
             "$RUNNER_TEMP/rollback-candidate/golden-path-plan.json"
-          jq -e '
+          jq -e --arg prior "$PRIOR_VERSION" '
             .operation == "upgrade" and
-            .releaseVersion == "0.2.0" and
+            .releaseVersion == $prior and
             .conflictCount == 0 and
             any(.changes[]; .status == "update")
           ' "$RUNNER_TEMP/rollback-preview.json" >/dev/null
-          test "$("$ROLLBACK_BIN" --version)" = "golden-path 0.2.0"
+          test "$("$ROLLBACK_BIN" --version)" = "golden-path $PRIOR_VERSION"
           test "$(git -C "$RUNNER_TEMP/stable-migration-candidate" write-tree)" = "$rollback_source_tree"
           test -z "$(git -C "$RUNNER_TEMP/stable-migration-candidate" status --short)"
           git -C "$RUNNER_TEMP/rollback-candidate" init -b main

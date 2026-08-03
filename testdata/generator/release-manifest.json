@@ -1,43 +1,229 @@
 {
   "schemaVersion": "golden-path-release-manifest/v2",
-  "releaseVersion": "1.0.0",
+  "releaseVersion": "1.0.1",
   "lifecycle": "stable",
   "enforcement": ["report-only"],
   "standardVersion": "2026.07",
   "contractVersion": "golden-path/v1",
+  "schemaVersions": [
+    "golden-path-metadata/v1",
+    "golden-path-exceptions/v1",
+    "golden-path-checker-output/v1",
+    "golden-path-rule-catalog/v1",
+    "runtime-support/v1",
+    "golden-path-generator-request/v1",
+    "golden-path-generated-assets/v1",
+    "golden-path-materialization-plan/v1"
+  ],
   "source": {
     "repository": "https://github.com/5010-dev/engineering-tooling",
     "commit": "0123456789abcdef0123456789abcdef01234567",
-    "tag": "v1.0.0"
+    "tag": "v1.0.1"
+  },
+  "catalogDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshotAggregateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "compatibility": {
+    "file": {
+      "name": "compatibility-manifest.json",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "supportedStandards": [
+      {
+        "standardVersion": "2026.07",
+        "contractVersion": "golden-path/v1",
+        "schemaVersions": [
+          "golden-path-metadata/v1",
+          "golden-path-exceptions/v1",
+          "golden-path-checker-output/v1",
+          "golden-path-rule-catalog/v1",
+          "runtime-support/v1"
+        ],
+        "snapshot": "standards/snapshots/2026.07/manifest.json",
+        "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+        "catalogDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "snapshotAggregateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ]
+  },
+  "standardSnapshot": {
+    "file": {
+      "name": "standard-snapshot-manifest.json",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "source": {
+      "repository": "https://github.com/5010-dev/.github",
+      "commit": "0123456789abcdef0123456789abcdef01234567",
+      "path": "docs/standards/developer-tooling",
+      "gitTree": "89abcdef0123456789abcdef0123456789abcdef"
+    },
+    "aggregateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "schemas": [
+    {
+      "id": "golden-path-checker-compatibility/v1",
+      "name": "golden-path-checker-compatibility-v1.schema.json",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "id": "golden-path-generated-assets/v1",
+      "name": "golden-path-generated-assets-v1.schema.json",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    {
+      "id": "golden-path-generator-request/v1",
+      "name": "golden-path-generator-request-v1.schema.json",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    {
+      "id": "golden-path-materialization-plan/v1",
+      "name": "golden-path-materialization-plan-v1.schema.json",
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    {
+      "id": "golden-path-release-manifest/v1",
+      "name": "golden-path-release-manifest-v1.schema.json",
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    {
+      "id": "golden-path-release-manifest/v2",
+      "name": "golden-path-release-manifest-v2.schema.json",
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "id": "golden-path-tooling-cutoff/v1",
+      "name": "golden-path-tooling-cutoff-v1.schema.json",
+      "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+    }
+  ],
+  "releaseNotes": {
+    "file": {
+      "name": "RELEASE_NOTES.md",
+      "sha256": "8888888888888888888888888888888888888888888888888888888888888888"
+    },
+    "provides": ["changelog", "migration", "rollback"]
+  },
+  "toolingCutoff": {
+    "manifest": "tooling-cutoff.json",
+    "schema": "golden-path-tooling-cutoff-v1.schema.json",
+    "checkedAt": "2026-08-01T11:21:19Z",
+    "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+  },
+  "runtimeSelections": [
+    {
+      "profile": "go",
+      "tool": "go",
+      "versions": [
+        {
+          "version": "1.26.5",
+          "disposition": "preferred"
+        }
+      ]
+    }
+  ],
+  "components": {
+    "checker": {
+      "version": "1.0.1",
+      "executable": "golden-path",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "lifecycle": "stable",
+      "enforcement": ["report-only"]
+    },
+    "generator": {
+      "version": "1.0.1",
+      "executable": "golden-path",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "lifecycle": "stable",
+      "enforcement": ["report-only"]
+    },
+    "assetBundle": {
+      "version": "1.0.1",
+      "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "requestSchema": "golden-path-generator-request/v1",
+      "generatedAssetsSchema": "golden-path-generated-assets/v1",
+      "planSchema": "golden-path-materialization-plan/v1"
+    },
+    "automation": {
+      "version": "1.0.1",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "reusableWorkflow": ".github/workflows/golden-path-quality.yml",
+      "setupAction": "actions/setup-golden-path/action.yml"
+    }
   },
   "assets": [
     {
-      "name": "golden-path_1.0.0_darwin_amd64.tar.gz",
+      "name": "golden-path_1.0.1_darwin_amd64.tar.gz",
       "os": "darwin",
       "architecture": "amd64",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "executableSHA256": "1111111111111111111111111111111111111111111111111111111111111111"
+      "executableSHA256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size": 1,
+      "sbom": {
+        "name": "golden-path_1.0.1_darwin_amd64.cdx.json",
+        "format": "CycloneDX",
+        "specVersion": "1.6",
+        "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "size": 1
+      }
     },
     {
-      "name": "golden-path_1.0.0_darwin_arm64.tar.gz",
+      "name": "golden-path_1.0.1_darwin_arm64.tar.gz",
       "os": "darwin",
       "architecture": "arm64",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "executableSHA256": "2222222222222222222222222222222222222222222222222222222222222222"
+      "executableSHA256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "size": 1,
+      "sbom": {
+        "name": "golden-path_1.0.1_darwin_arm64.cdx.json",
+        "format": "CycloneDX",
+        "specVersion": "1.6",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "size": 1
+      }
     },
     {
-      "name": "golden-path_1.0.0_linux_amd64.tar.gz",
+      "name": "golden-path_1.0.1_linux_amd64.tar.gz",
       "os": "linux",
       "architecture": "amd64",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "executableSHA256": "3333333333333333333333333333333333333333333333333333333333333333"
+      "executableSHA256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "size": 1,
+      "sbom": {
+        "name": "golden-path_1.0.1_linux_amd64.cdx.json",
+        "format": "CycloneDX",
+        "specVersion": "1.6",
+        "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "size": 1
+      }
     },
     {
-      "name": "golden-path_1.0.0_linux_arm64.tar.gz",
+      "name": "golden-path_1.0.1_linux_arm64.tar.gz",
       "os": "linux",
       "architecture": "arm64",
       "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-      "executableSHA256": "4444444444444444444444444444444444444444444444444444444444444444"
+      "executableSHA256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "size": 1,
+      "sbom": {
+        "name": "golden-path_1.0.1_linux_arm64.cdx.json",
+        "format": "CycloneDX",
+        "specVersion": "1.6",
+        "sha256": "89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+        "size": 1
+      }
     }
-  ]
+  ],
+  "build": {
+    "toolchain": "go1.26.5",
+    "cleanCheckout": true,
+    "validationWorkflow": ".github/workflows/release.yml",
+    "commands": [
+      "just ci",
+      "go run ./cmd/release-package",
+      "deterministic package assembly"
+    ]
+  },
+  "provenance": {
+    "provider": "GitHub artifact attestations",
+    "workflow": ".github/workflows/release.yml",
+    "subject": "all published dist assets"
+  }
 }

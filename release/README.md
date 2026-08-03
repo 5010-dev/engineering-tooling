@@ -11,6 +11,14 @@ executes every artifact on a matching native runner, generates per-asset
 SHA-256 checksums and CycloneDX SBOMs, attests build provenance, and publishes
 an immutable GitHub prerelease for `0.x` or stable release for `1.x` and later.
 
+Byte-for-byte reproduction MUST mirror the native build job's tag-invisible
+source context. Native jobs check out the exact source commit without tag refs,
+so Go records a pseudo-version for the main module in build information. A
+tag-visible clone records the release tag instead and therefore produces a
+different executable and archive digest. Reproduce published bytes from a
+clean, tag-invisible checkout of the exact source commit with the pinned
+toolchain and release commands.
+
 Each release must contain:
 
 - `golden-path_<version>_<os>_<architecture>.tar.gz`
