@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "golden-path-generator-request/v1",
+  "layout": "single",
+  "projectName": "Example Go Service",
+  "projectSlug": "example-go-service",
+  "components": [
+    {
+      "name": "example-go-service",
+      "path": ".",
+      "profiles": [
+        "go"
+      ],
+      "artifactTypes": [
+        "service"
+      ],
+      "modulePath": "github.com/5010-dev/example-go-service"
+    }
+  ]
+}

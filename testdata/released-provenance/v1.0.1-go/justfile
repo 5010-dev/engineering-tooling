@@ -1,0 +1,37 @@
+set dotenv-load := false
+
+import 'just/common.just'
+import 'just/components/example_go_service.just'
+
+default:
+    @just --list
+
+init: _common-init _example_go_service_init
+
+
+format: _example_go_service_format
+
+
+
+format-check: _example_go_service_format_check
+
+
+
+lint: _example_go_service_lint
+
+
+
+typecheck: _example_go_service_typecheck
+
+
+
+test: _example_go_service_test
+
+
+
+build: _example_go_service_build
+
+
+check: _common-check format-check lint typecheck test _example_go_service_check
+
+ci: check _common-ci build _example_go_service_ci
