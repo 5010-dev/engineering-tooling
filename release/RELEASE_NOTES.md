@@ -23,6 +23,9 @@ the `golden-path/v1` compatibility epoch and report-only enforcement.
 - Keeps existing source, entry points, native manifests and locks, Mise and
   Just configuration, dependency automation, build and smoke behavior, and
   release or deployment contracts outside the adoption asset set.
+- Rejects an explicitly empty materialization mode instead of silently treating
+  it as an omitted legacy field, and validates derived Go module paths in both
+  decoded CLI requests and direct generator API calls.
 - Accepts only capabilities defined by the normative metadata contract and
   rejects duplicate or unknown values. Bootstrap rejects an explicitly empty
   declaration; adoption preserves it as an exact truthful set.
@@ -68,6 +71,9 @@ command, include list, or exclude list. The consumer integrates the generated
 control-plane assets into its existing tree and keeps product and operational
 authority repository-local. Once the generated-asset baseline is committed,
 normal conflict-aware `upgrade` applies to that fixed asset set.
+Changing a generated bootstrap baseline to adoption produces explicit retirement
+plan entries for the no-longer-managed starter assets; consumer customization
+turns the affected retirement into a conflict and prevents candidate staging.
 
 ## Compatibility
 

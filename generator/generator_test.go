@@ -197,6 +197,15 @@ func TestAdoptionMaterializesOnlyFixedControlPlaneAssets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	result := checker.Check(checker.Options{
+		Root: repository, EvaluatedAt: time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC), Enforcement: "report-only",
+	})
+	if !result.Complete || result.Summary.Error != 0 {
+		t.Fatalf("adoption output produced incomplete checker evaluation: complete=%t summary=%+v", result.Complete, result.Summary)
+	}
+	if finding := findingByRuleID(t, result, "DT-META-001"); finding.Status != "pass" {
+		t.Fatalf("adoption metadata did not pass schema validation: %+v", finding)
+	}
 	plan, err := UpgradePlan(repository, files, requestDigest, bundle, fixtureRelease(t))
 	if err != nil {
 		t.Fatal(err)
@@ -353,6 +362,58 @@ components:
 `))
 	if err == nil || !strings.Contains(err.Error(), "same platform identity") {
 		t.Fatalf("repeated target identity error = %v", err)
+	}
+}
+
+func TestAdoptionAggregatesExactCapabilitiesAcrossComponents(t *testing.T) {
+	t.Parallel()
+	request, err := DecodeRequest(strings.NewReader(`schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: polyglot
+projectName: Existing Polyglot Repository
+projectSlug: existing-polyglot-repository
+targets:
+  - os: linux
+    architecture: amd64
+    tier: primary
+components:
+  - name: api
+    path: services/api
+    profiles: [go]
+    artifactTypes: [service]
+    capabilities: [test, build]
+  - name: web
+    path: apps/web
+    profiles: [node-typescript]
+    artifactTypes: [application]
+    capabilities: [format, lint, test]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := Render(request, fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		Capabilities []string `json:"capabilities"`
+		Extensions   map[string]struct {
+			Components []struct {
+				Path         string   `json:"path"`
+				Capabilities []string `json:"capabilities"`
+			} `json:"components"`
+		} `json:"extensions"`
+	}
+	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path.yaml"), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"build", "format", "lint", "test"}; !reflect.DeepEqual(metadata.Capabilities, want) {
+		t.Fatalf("aggregate adoption capabilities = %v, want %v", metadata.Capabilities, want)
+	}
+	components := metadata.Extensions["dev.fiftyten.generator"].Components
+	if len(components) != 2 || components[0].Path != "apps/web" || !reflect.DeepEqual(components[0].Capabilities, []string{"format", "lint", "test"}) ||
+		components[1].Path != "services/api" || !reflect.DeepEqual(components[1].Capabilities, []string{"build", "test"}) {
+		t.Fatalf("component adoption capabilities = %+v", components)
 	}
 }
 
@@ -708,6 +769,87 @@ func TestGoAndRustArtifactPowerSetRejectsOrRendersSource(t *testing.T) {
 	}
 }
 
+func TestBootstrapToAdoptionUpgradePlansRetirementAndProtectsCustomization(t *testing.T) {
+	t.Parallel()
+	bootstrap := fixtureRequest(t, "single-go.yaml")
+	release := fixtureRelease(t)
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapFiles, bootstrapDigest, err := Render(bootstrap, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := WriteStaging(repository, bootstrapFiles, GeneratePlan(bootstrapFiles, bootstrapDigest, bundle, release)); err != nil {
+		t.Fatal(err)
+	}
+
+	adoption := cloneRequest(bootstrap)
+	adoption.MaterializationMode = "adoption"
+	adoption.Targets = []Target{{OS: "linux", Architecture: "amd64", Tier: "primary"}}
+	adoption.Components[0].Capabilities = []string{"build", "test"}
+	adoption.Components[0].ModulePath = ""
+	adoptionFiles, adoptionDigest, err := Render(adoption, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := UpgradePlan(repository, adoptionFiles, adoptionDigest, bundle, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConflictCount != 0 {
+		t.Fatalf("clean bootstrap-to-adoption transition has %d conflicts", plan.ConflictCount)
+	}
+	statuses := make(map[string]string, len(plan.Changes))
+	for _, change := range plan.Changes {
+		statuses[change.Path] = change.Status
+	}
+	for _, path := range []string{"go.mod", "justfile", "mise.toml", "cmd/example-go-service/main.go"} {
+		if statuses[path] != "remove" {
+			t.Fatalf("retired bootstrap asset %s status = %q, want remove", path, statuses[path])
+		}
+	}
+	candidate := filepath.Join(t.TempDir(), "candidate")
+	if err := WriteStaging(candidate, adoptionFiles, plan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(repository, "go.mod")); err != nil {
+		t.Fatalf("upgrade candidate construction mutated source go.mod: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(candidate, "go.mod")); !os.IsNotExist(err) {
+		t.Fatalf("adoption candidate unexpectedly materialized retired go.mod: %v", err)
+	}
+
+	customized := []byte("module github.com/5010-dev/customized\n")
+	// #nosec G306 -- the test intentionally models a repository-owned 0644 source file.
+	if err := os.WriteFile(filepath.Join(repository, "go.mod"), customized, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	conflicted, err := UpgradePlan(repository, adoptionFiles, adoptionDigest, bundle, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conflicted.ConflictCount != 1 {
+		t.Fatalf("customized bootstrap-to-adoption transition has %d conflicts, want 1", conflicted.ConflictCount)
+	}
+	conflictStatuses := make(map[string]string, len(conflicted.Changes))
+	for _, change := range conflicted.Changes {
+		conflictStatuses[change.Path] = change.Status
+	}
+	if conflictStatuses["go.mod"] != "conflict" {
+		t.Fatalf("customized retired go.mod status = %q, want conflict", conflictStatuses["go.mod"])
+	}
+	conflictedCandidate := filepath.Join(t.TempDir(), "conflicted-candidate")
+	if err := WriteStaging(conflictedCandidate, adoptionFiles, conflicted); err == nil {
+		t.Fatal("materialized a bootstrap-to-adoption candidate with an unresolved customization conflict")
+	}
+	if _, err := os.Stat(conflictedCandidate); !os.IsNotExist(err) {
+		t.Fatalf("conflicted adoption staging directory exists: %v", err)
+	}
+}
+
 func TestUpgradeTreatsDeletedAndModeChangedGeneratedAssetsAsConflicts(t *testing.T) {
 	t.Parallel()
 	request := fixtureRequest(t, "single-go.yaml")
@@ -783,6 +925,13 @@ components:
 	invalid := strings.Replace(valid, "artifactTypes: [service]", "artifactTypes: [service]\n    modulePath: /bad", 1)
 	if _, err := DecodeRequest(strings.NewReader(invalid)); err == nil {
 		t.Fatal("accepted an invalid Go module path")
+	}
+	programmatic := Request{
+		SchemaVersion: RequestSchema, Layout: "single", ProjectName: "Reserved Module", ProjectSlug: "aux",
+		Components: []Component{{Name: "service", Path: ".", Profiles: []string{"go"}, ArtifactTypes: []string{"service"}}},
+	}
+	if _, _, err := Render(programmatic, fixtureRelease(t)); err == nil {
+		t.Fatal("Render accepted an invalid derived Go module path")
 	}
 }
 
@@ -1157,6 +1306,9 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
 		}},
 		{name: "null-materialization-mode", mutate: func(document map[string]any) {
 			document["materializationMode"] = nil
+		}},
+		{name: "empty-materialization-mode", mutate: func(document map[string]any) {
+			document["materializationMode"] = ""
 		}},
 		{name: "explicit-mode-without-target", mutate: func(document map[string]any) {
 			document["materializationMode"] = "bootstrap"

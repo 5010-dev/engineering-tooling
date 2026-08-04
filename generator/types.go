@@ -196,7 +196,7 @@ func DecodeRequest(reader io.Reader) (Request, error) {
 	if err := yaml.Unmarshal(data, &presence); err != nil {
 		return Request{}, fmt.Errorf("inspect generator request fields: %w", err)
 	}
-	if presence.MaterializationMode.Kind != 0 && presence.MaterializationMode.Tag == "!!null" {
+	if presence.MaterializationMode.Kind != 0 && (presence.MaterializationMode.Tag == "!!null" || request.MaterializationMode == "") {
 		return Request{}, fmt.Errorf("materializationMode must be omitted or select bootstrap or adoption")
 	}
 	if presence.Targets.Kind != 0 && presence.Targets.Tag == "!!null" {
@@ -445,8 +445,11 @@ func validateRequest(request *Request) error {
 						component.ModulePath = path.Join(component.ModulePath, component.Path)
 					}
 				}
-			} else if err := module.CheckPath(component.ModulePath); err != nil {
-				return fmt.Errorf("component %q has invalid Go modulePath", component.Name)
+			}
+			if component.ModulePath != "" {
+				if err := module.CheckPath(component.ModulePath); err != nil {
+					return fmt.Errorf("component %q has invalid Go modulePath", component.Name)
+				}
 			}
 		} else if component.ModulePath != "" {
 			return fmt.Errorf("component %q sets modulePath without the go profile", component.Name)
