@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ import (
 func TestSyntheticRequestMatrixRendersDeterministically(t *testing.T) {
 	t.Parallel()
 	release := fixtureRelease(t)
-	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml", "zig-profiles.yaml"} {
+	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml", "zig-profiles.yaml", "node-publisher.yaml"} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -56,6 +57,173 @@ func TestSyntheticRequestMatrixRendersDeterministically(t *testing.T) {
 				t.Fatal("generated canonical request does not reproduce the normalized input")
 			}
 		})
+	}
+}
+
+func TestExplicitCapabilitiesArePreservedAndActivateConditionalRules(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "node-publisher.yaml")
+	files, requestDigest, err := Render(request, fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var metadata struct {
+		Capabilities []string `json:"capabilities"`
+		Extensions   map[string]struct {
+			Components []struct {
+				Capabilities []string `json:"capabilities"`
+			} `json:"components"`
+		} `json:"extensions"`
+	}
+	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path.yaml"), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	wantCapabilities := []string{
+		"build", "cache", "dependency-automation", "format", "lint", "package", "publish",
+		"released-artifact", "test", "typecheck",
+	}
+	if !reflect.DeepEqual(metadata.Capabilities, wantCapabilities) {
+		t.Fatalf("aggregate capabilities = %v, want %v", metadata.Capabilities, wantCapabilities)
+	}
+	generated := metadata.Extensions["dev.fiftyten.generator"]
+	if len(generated.Components) != 1 || !reflect.DeepEqual(generated.Components[0].Capabilities, wantCapabilities) {
+		t.Fatalf("component capabilities = %+v, want %v", generated.Components, wantCapabilities)
+	}
+
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := WriteStaging(repository, files, GeneratePlan(files, requestDigest, bundle, fixtureRelease(t))); err != nil {
+		t.Fatal(err)
+	}
+	result := checker.Check(checker.Options{
+		Root: repository, EvaluatedAt: time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC), Enforcement: "report-only",
+	})
+	for _, ruleID := range []string{
+		"DT-NODE-004", "DT-NODE-005", "DT-SUPPLY-001", "DT-SUPPLY-002", "DT-SUPPLY-003", "DT-PLATFORM-001",
+	} {
+		finding := findingByRuleID(t, result, ruleID)
+		if strings.Contains(finding.Message, "does not apply to the declared") {
+			t.Fatalf("%s remained inapplicable after explicit capability generation: %s", ruleID, finding.Message)
+		}
+	}
+}
+
+func TestLegacyRequestDigestAndCanonicalShapeRemainStable(t *testing.T) {
+	t.Parallel()
+	files, requestDigest, err := Render(fixtureRequest(t, "single-go.yaml"), fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestDigest != "0864564b0506ae9b1400c31eb7c0a946b61d379efcb43e9e654c6cb8701844e2" {
+		t.Fatalf("legacy request digest = %q", requestDigest)
+	}
+	if bytes.Contains(fileContent(t, files, ".github/golden-path-request.json"), []byte(`"capabilities"`)) {
+		t.Fatal("legacy canonical request gained an absent optional capabilities field")
+	}
+}
+
+func TestRenderRejectsExplicitEmptyCapabilities(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "single-go.yaml")
+	request.Components[0].Capabilities = []string{}
+	if _, _, err := Render(request, fixtureRelease(t)); err == nil {
+		t.Fatal("Render accepted explicitly empty capabilities")
+	}
+}
+
+func TestRequestCapabilitiesMatchNormativeMetadataCatalog(t *testing.T) {
+	t.Parallel()
+	requestCapabilities := schemaStringEnum(t, filepath.Join("schemas", "golden-path-generator-request-v1.schema.json"),
+		"properties", "components", "items", "properties", "capabilities", "items", "enum")
+	metadataCapabilities := schemaStringEnum(t,
+		filepath.Join("..", "standards", "snapshots", "2026.08", "schemas", "golden-path-metadata-v1.schema.json"),
+		"$defs", "capability", "enum")
+	want := append([]string(nil), supportedCapabilities...)
+	slices.Sort(requestCapabilities)
+	slices.Sort(metadataCapabilities)
+	slices.Sort(want)
+	if !reflect.DeepEqual(requestCapabilities, want) {
+		t.Fatalf("request capability enum = %v, want generator catalog %v", requestCapabilities, want)
+	}
+	if !reflect.DeepEqual(metadataCapabilities, want) {
+		t.Fatalf("metadata capability enum = %v, want generator catalog %v", metadataCapabilities, want)
+	}
+}
+
+func TestUpgradeAddsExplicitCapabilitiesWithoutMutatingSource(t *testing.T) {
+	t.Parallel()
+	release := fixtureRelease(t)
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := fixtureRequest(t, "node-publisher.yaml")
+	legacyRequest := cloneRequest(request)
+	legacyRequest.Components[0].Capabilities = nil
+	legacyFiles, legacyRequestDigest, err := Render(legacyRequest, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := WriteStaging(repository, legacyFiles, GeneratePlan(legacyFiles, legacyRequestDigest, bundle, release)); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := filepath.Join(repository, ".github", "golden-path.yaml")
+	before, err := os.ReadFile(metadataPath) // #nosec G304 -- test-owned temporary repository.
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files, requestDigest, err := Render(request, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := UpgradePlan(repository, files, requestDigest, bundle, release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConflictCount != 0 {
+		t.Fatalf("explicit-capability upgrade has %d conflicts", plan.ConflictCount)
+	}
+	statuses := map[string]string{}
+	for _, change := range plan.Changes {
+		statuses[change.Path] = change.Status
+	}
+	for _, path := range []string{".github/golden-path.yaml", ".github/golden-path-request.json"} {
+		if statuses[path] != "update" {
+			t.Fatalf("%s status = %q, want update", path, statuses[path])
+		}
+	}
+	after, err := os.ReadFile(metadataPath) // #nosec G304 -- test-owned temporary repository.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("upgrade planning mutated the source repository")
+	}
+
+	candidate := filepath.Join(t.TempDir(), "candidate")
+	if err := WriteStaging(candidate, files, plan); err != nil {
+		t.Fatal(err)
+	}
+	candidateMetadata, err := os.ReadFile(filepath.Join(candidate, ".github", "golden-path.yaml")) // #nosec G304 -- test-owned temporary candidate.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata struct {
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := json.Unmarshal(candidateMetadata, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range request.Components[0].Capabilities {
+		if !slices.Contains(metadata.Capabilities, capability) {
+			t.Fatalf("candidate metadata omits explicit capability %q", capability)
+		}
 	}
 }
 
@@ -739,6 +907,18 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
 			component["artifactTypes"] = []any{"documentation"}
 			delete(component, "modulePath")
 		}},
+		{name: "unknown-capability", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["capabilities"] = []any{"release-everything"}
+		}},
+		{name: "duplicate-capability", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["capabilities"] = []any{"package", "package"}
+		}},
+		{name: "empty-capability", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["capabilities"] = []any{}
+		}},
+		{name: "null-capability", mutate: func(document map[string]any) {
+			document["components"].([]any)[0].(map[string]any)["capabilities"] = nil
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data, err := json.Marshal(base)
@@ -753,6 +933,9 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
 			candidate, err := json.Marshal(document)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if _, err := DecodeRequest(bytes.NewReader(candidate)); err == nil {
+				t.Fatal("generator accepted an input outside its request boundary")
 			}
 			if schemaValidationError(t, "golden-path-generator-request-v1.schema.json", candidate) == nil {
 				t.Fatal("published request schema accepted an input outside the generator boundary")
@@ -771,6 +954,52 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
     "artifactTypes": ["service", "infrastructure"]
   }]
 }`))
+}
+
+func findingByRuleID(t *testing.T, result checker.Result, ruleID string) checker.Finding {
+	t.Helper()
+	for _, finding := range result.Findings {
+		if finding.RuleID == ruleID {
+			return finding
+		}
+	}
+	t.Fatalf("missing finding for %s", ruleID)
+	return checker.Finding{}
+}
+
+func schemaStringEnum(t *testing.T, path string, keys ...string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path) // #nosec G304 -- source-controlled schema selected by the test.
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range keys {
+		object, ok := value.(map[string]any)
+		if !ok {
+			t.Fatalf("schema path %v does not resolve through object key %q", keys, key)
+		}
+		value, ok = object[key]
+		if !ok {
+			t.Fatalf("schema path %v is missing key %q", keys, key)
+		}
+	}
+	items, ok := value.([]any)
+	if !ok {
+		t.Fatalf("schema path %v is not an array", keys)
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.(string)
+		if !ok {
+			t.Fatalf("schema path %v contains non-string value", keys)
+		}
+		result = append(result, entry)
+	}
+	return result
 }
 
 func fixtureRequest(t *testing.T, name string) Request {

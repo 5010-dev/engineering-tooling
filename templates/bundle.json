@@ -2,7 +2,7 @@
   "schemaVersion": "golden-path-template-bundle/v1",
   "standardVersion": "2026.08",
   "contractVersion": "golden-path/v1",
-  "assetBundleVersion": "1.1.0",
+  "assetBundleVersion": "1.2.0",
   "miseMinimumVersion": "2026.7.18",
   "pnpmArchiveSHA256": "29c35ca8d2a287988fdee3e0f36e07d9b93783f567b579b7fd5b798a4563dd81",
   "pnpmExecutableSHA256": "d34a7b439643e7b8680a817387ec3692c7097ae7a85865c2c15ad6211143d506",
