@@ -1,12 +1,12 @@
 {
   "schemaVersion": "golden-path-generated-assets/v1",
-  "standardVersion": "2026.07",
-  "assetBundleVersion": "1.0.1",
-  "releaseVersion": "1.0.1",
+  "standardVersion": "2026.08",
+  "assetBundleVersion": "1.1.0",
+  "releaseVersion": "1.1.0",
   "source": {
     "repository": "https://github.com/5010-dev/engineering-tooling",
-    "commit": "46e9175e2f97b192ef61a5a0320a396f87b9e5ca",
-    "tag": "v1.0.1"
+    "commit": "cebac127c71406e7818237fcd83ad39fe7a472bc",
+    "tag": "v1.1.0"
   },
   "requestSHA256": "0864564b0506ae9b1400c31eb7c0a946b61d379efcb43e9e654c6cb8701844e2",
   "files": [
@@ -31,13 +31,13 @@
     {
       "path": ".github/golden-path.yaml",
       "mode": "0644",
-      "sha256": "5a516daf6ffb277c625489e48794c29014b5a4d9e6e09bf2e2613a8c971b3a73",
+      "sha256": "b84856c4bd3cdb420885bb319af6c8ef781f08ce2743e2b26e31b1cb9ac0a16b",
       "source": "generator/metadata"
     },
     {
       "path": ".github/workflows/developer-tooling.yml",
       "mode": "0644",
-      "sha256": "6c85025fca80abfa06ed3b36852bf5e42b4947e272ce2580c5faef6f00f00e10",
+      "sha256": "9fe0365494fa5189f2099e6cbacdc20d25ebae784aad006f0ea34762b3718a0a",
       "source": "common/.github/workflows/developer-tooling.yml.tmpl"
     },
     {
@@ -103,7 +103,7 @@
     {
       "path": "scripts/golden-path",
       "mode": "0755",
-      "sha256": "d6d449d38059b8080ff3ca54122f003056b896b3240b1c7a7cbde20f9334dd1d",
+      "sha256": "15df6971cfe8e61f3a42671c488cd22300c87a9b875107822af0872a0a694a5c",
       "source": "common/scripts/golden-path.tmpl"
     }
   ]

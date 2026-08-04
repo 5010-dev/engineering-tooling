@@ -1,9 +1,9 @@
 {
   "schemaVersion": "golden-path-materialization-plan/v1",
   "operation": "generate",
-  "standardVersion": "2026.07",
-  "assetBundleVersion": "1.0.1",
-  "releaseVersion": "1.0.1",
+  "standardVersion": "2026.08",
+  "assetBundleVersion": "1.1.0",
+  "releaseVersion": "1.1.0",
   "requestSHA256": "0864564b0506ae9b1400c31eb7c0a946b61d379efcb43e9e654c6cb8701844e2",
   "changes": [
     {
@@ -18,7 +18,7 @@
       "status": "create",
       "source": "generator/assets-manifest",
       "desiredMode": "0644",
-      "desiredSHA256": "71c203cf9b4a25466e113552584cf5289025a7d41501eb4d10f4c26a0aaf129c"
+      "desiredSHA256": "b4393a8cd10fce17ff798630abd3454241396a582cd3c72e8246c067bca41909"
     },
     {
       "path": ".github/golden-path-exceptions.yaml",
@@ -39,14 +39,14 @@
       "status": "create",
       "source": "generator/metadata",
       "desiredMode": "0644",
-      "desiredSHA256": "5a516daf6ffb277c625489e48794c29014b5a4d9e6e09bf2e2613a8c971b3a73"
+      "desiredSHA256": "b84856c4bd3cdb420885bb319af6c8ef781f08ce2743e2b26e31b1cb9ac0a16b"
     },
     {
       "path": ".github/workflows/developer-tooling.yml",
       "status": "create",
       "source": "common/.github/workflows/developer-tooling.yml.tmpl",
       "desiredMode": "0644",
-      "desiredSHA256": "6c85025fca80abfa06ed3b36852bf5e42b4947e272ce2580c5faef6f00f00e10"
+      "desiredSHA256": "9fe0365494fa5189f2099e6cbacdc20d25ebae784aad006f0ea34762b3718a0a"
     },
     {
       "path": ".gitignore",
@@ -123,7 +123,7 @@
       "status": "create",
       "source": "common/scripts/golden-path.tmpl",
       "desiredMode": "0755",
-      "desiredSHA256": "d6d449d38059b8080ff3ca54122f003056b896b3240b1c7a7cbde20f9334dd1d"
+      "desiredSHA256": "15df6971cfe8e61f3a42671c488cd22300c87a9b875107822af0872a0a694a5c"
     }
   ],
   "conflictCount": 0

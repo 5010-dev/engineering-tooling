@@ -1,0 +1,10 @@
+schemaVersion: golden-path-generator-request/v1
+layout: single
+projectName: Published Node Package
+projectSlug: published-node-package
+components:
+  - name: package
+    path: .
+    profiles: [node-typescript]
+    artifactTypes: [library, package]
+    capabilities: [released-artifact, publish, package]

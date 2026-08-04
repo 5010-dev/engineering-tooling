@@ -604,6 +604,9 @@ func metadataCapabilities(component Component) []string {
 			capabilities[capability] = true
 		}
 	}
+	for _, capability := range component.Capabilities {
+		capabilities[capability] = true
+	}
 	return sortedKeys(capabilities)
 }
 
@@ -777,10 +780,18 @@ func validateRenderedFiles(files []File) error {
 func cloneRequest(request Request) Request {
 	request.Components = append([]Component(nil), request.Components...)
 	for index := range request.Components {
-		request.Components[index].Profiles = append([]string(nil), request.Components[index].Profiles...)
-		request.Components[index].ArtifactTypes = append([]string(nil), request.Components[index].ArtifactTypes...)
+		request.Components[index].Profiles = cloneStrings(request.Components[index].Profiles)
+		request.Components[index].ArtifactTypes = cloneStrings(request.Components[index].ArtifactTypes)
+		request.Components[index].Capabilities = cloneStrings(request.Components[index].Capabilities)
 	}
 	return request
+}
+
+func cloneStrings(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	return append(make([]string, 0, len(values)), values...)
 }
 
 func hasArtifact(component Component, artifact string) bool {

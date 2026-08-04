@@ -47,6 +47,7 @@ type Component struct {
 	Path          string   `json:"path" yaml:"path"`
 	Profiles      []string `json:"profiles" yaml:"profiles"`
 	ArtifactTypes []string `json:"artifactTypes" yaml:"artifactTypes"`
+	Capabilities  []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
 	ModulePath    string   `json:"modulePath,omitempty" yaml:"modulePath,omitempty"`
 }
 
@@ -106,6 +107,11 @@ type FileChange struct {
 	PreviousSHA256 string `json:"previousGeneratedSHA256,omitempty"`
 }
 
+var supportedCapabilities = []string{
+	"format", "lint", "typecheck", "test", "build", "package", "publish", "coverage", "fuzz",
+	"unsafe", "native-extension", "cgo", "released-artifact", "dependency-automation", "cache", "devcontainer",
+}
+
 type Plan struct {
 	SchemaVersion      string       `json:"schemaVersion"`
 	Operation          string       `json:"operation"`
@@ -135,8 +141,12 @@ type AssetManifest struct {
 }
 
 func DecodeRequest(reader io.Reader) (Request, error) {
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return Request{}, fmt.Errorf("read generator request: %w", err)
+	}
 	var request Request
-	decoder := yaml.NewDecoder(reader)
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&request); err != nil {
 		return Request{}, fmt.Errorf("decode generator request: %w", err)
@@ -144,6 +154,19 @@ func DecodeRequest(reader io.Reader) (Request, error) {
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return Request{}, fmt.Errorf("generator request must contain exactly one document")
+	}
+	var presence struct {
+		Components []struct {
+			Capabilities yaml.Node `yaml:"capabilities"`
+		} `yaml:"components"`
+	}
+	if err := yaml.Unmarshal(data, &presence); err != nil {
+		return Request{}, fmt.Errorf("inspect generator request fields: %w", err)
+	}
+	for index, component := range presence.Components {
+		if component.Capabilities.Kind != 0 && component.Capabilities.Tag == "!!null" {
+			return Request{}, fmt.Errorf("component %q must omit capabilities or declare at least one", request.Components[index].Name)
+		}
 	}
 	if err := validateRequest(&request); err != nil {
 		return Request{}, err
@@ -255,6 +278,7 @@ func validateRequest(request *Request) error {
 		"package": true, "binary": true, "container": true, "infrastructure": true,
 		"tooling": true, "documentation": true,
 	}
+	capabilitySet := stringSet(supportedCapabilities)
 	seenNames := map[string]bool{}
 	seenPaths := map[string]bool{}
 	for index := range request.Components {
@@ -275,13 +299,18 @@ func validateRequest(request *Request) error {
 		if len(component.Profiles) == 0 || len(component.ArtifactTypes) == 0 {
 			return fmt.Errorf("component %q must declare profiles and artifactTypes", component.Name)
 		}
+		if component.Capabilities != nil && len(component.Capabilities) == 0 {
+			return fmt.Errorf("component %q must omit capabilities or declare at least one", component.Name)
+		}
 		profiles := sortedUnique(component.Profiles)
 		artifacts := sortedUnique(component.ArtifactTypes)
-		if len(profiles) != len(component.Profiles) || len(artifacts) != len(component.ArtifactTypes) {
-			return fmt.Errorf("component %q profiles and artifactTypes must be unique and non-empty", component.Name)
+		capabilities := sortedUnique(component.Capabilities)
+		if len(profiles) != len(component.Profiles) || len(artifacts) != len(component.ArtifactTypes) || len(capabilities) != len(component.Capabilities) {
+			return fmt.Errorf("component %q profiles, artifactTypes, and capabilities must be unique", component.Name)
 		}
 		component.Profiles = profiles
 		component.ArtifactTypes = artifacts
+		component.Capabilities = capabilities
 		for _, profile := range component.Profiles {
 			if !profileSet[profile] {
 				return fmt.Errorf("component %q has unsupported profile %q", component.Name, profile)
@@ -290,6 +319,11 @@ func validateRequest(request *Request) error {
 		for _, artifact := range component.ArtifactTypes {
 			if !artifactSet[artifact] {
 				return fmt.Errorf("component %q has unsupported artifact type %q", component.Name, artifact)
+			}
+		}
+		for _, capability := range component.Capabilities {
+			if !capabilitySet[capability] {
+				return fmt.Errorf("component %q has unsupported capability %q", component.Name, capability)
 			}
 		}
 		profileSelection := stringSet(component.Profiles)

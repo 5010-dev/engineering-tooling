@@ -68,6 +68,16 @@ never materializes a candidate. A conflict-free upgrade writes a separate
 candidate and `golden-path-plan.json`; it never writes to the source repository
 or a default branch.
 
+Each request component may declare optional `capabilities` from the published
+request schema when the repository really provides behavior such as `package`,
+`publish`, or `released-artifact`. The generator merges those declarations with
+its deterministic baseline capabilities and records the result in aggregate
+and component metadata, allowing capability-scoped conformance rules to run.
+Capabilities are declarative: selecting `artifactTypes: [package]` does not
+infer publication, and declaring `publish` does not create a release workflow.
+The consumer repository still owns the corresponding implementation and
+evidence.
+
 The generated caller owns events, permissions, concurrency, runner, working
 directory, selected profiles, immutable automation source, and release
 checksums and provenance identity. Before execution, bootstrap paths require the

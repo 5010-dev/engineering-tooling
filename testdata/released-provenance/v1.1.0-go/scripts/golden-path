@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-version='1.0.1'
+version='1.1.0'
 repository='5010-dev/engineering-tooling'
-source_commit='46e9175e2f97b192ef61a5a0320a396f87b9e5ca'
+source_commit='cebac127c71406e7818237fcd83ad39fe7a472bc'
 github_cli_version='2.97.0'
 script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
@@ -44,10 +44,10 @@ else
     *) printf '%s\n' 'Unsupported Golden Path host architecture.' >&2; exit 2 ;;
   esac
   case "$os/$architecture" in
-    darwin/amd64) expected_archive='adcb2e5c4a2f17f800541f7ce05fccf3353ce08df1837ed065a273ecdf970803'; expected_executable='a4f3e8a0def0b17b7a540b33d201f152f70f43bcc879545db28084ca199904d7' ;;
-    darwin/arm64) expected_archive='19e73bcc19c16953dda1241beaa016004eb6e4e8d7cdc96ef090b942d88cbce6'; expected_executable='9df9b389eb8ba1698f9e769c2bf21553893f8b4a816a6c7d2428e31fd0914ea7' ;;
-    linux/amd64) expected_archive='9d22518948b1cb0294aaa58c2079942a1434bd2fe3113417782e7b418182e1b7'; expected_executable='fc0183d50607a1acb6bbc3acab7b6ac2a23cb5f762b63396012bcebdeccc5e80' ;;
-    linux/arm64) expected_archive='b500e89ea7a2a171b520ed55a174a58a935b0d2346419fbb06fcec2819b0147e'; expected_executable='90758d89896f322e66a0b6e72c9767505cb59b6cedd18429aa73eaf7d0ca5075' ;;
+    darwin/amd64) expected_archive='6974d3f344b210c592ead03cd444771b9e7bc33369df5c9622028b990286e4b9'; expected_executable='168d8acb10c21198cf350aa11549fe98c691460b9828cac55f39f720e2bd323e' ;;
+    darwin/arm64) expected_archive='ecf34a6896e5eaa41815fda018c8bd6920a8fd8d28bd9cd41a8bae3f0e44cbf6'; expected_executable='1f84745b553b30e3b89d01786c4c803a681f73ea6b47e35853a88276933fd2b9' ;;
+    linux/amd64) expected_archive='f5020724c216ec467501e5a44b2803897c7cfb010ed4f1299304524344545a2c'; expected_executable='ff674534b72f2467784c6d5ef23e291ecbff02170c8245e7a28c4fdac88980b8' ;;
+    linux/arm64) expected_archive='6d80a2310a58c3b5b5146943b22e72c1bdb425e2801bba0a205b6a50e2e26805'; expected_executable='440db41036b8b10ab456c74158576f177658be7719fccbfee8dbaecb4c39bcd5' ;;
   esac
   binary="$cache_directory/$version/golden-path"
   if [ ! -x "$binary" ] || [ "$(sha256 "$binary")" != "$expected_executable" ] || ! verify_version "$binary"; then

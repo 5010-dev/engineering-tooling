@@ -1,35 +1,38 @@
-# Golden Path tooling 1.1.0
+# Golden Path tooling 1.2.0
 
 Minor release for the `2026.08` Developer Tooling Standard. This release adds
-backward-compatible native dependency-root declarations while retaining the
-`golden-path/v1` compatibility epoch and report-only enforcement.
+backward-compatible explicit component capability declarations to the
+generator while retaining the `golden-path/v1` compatibility epoch and
+report-only enforcement.
 
-## Changes from 1.0.1
+## Changes from 1.1.0
 
-- Embeds the immutable `2026.08` standard snapshot from organization-policy
-  commit `604a40886d5a1cba3b304471e6e072b72cec7601` and verifies its exact source
-  tree, file inventory, catalog digest, and aggregate digest.
-- Loads the optional repository-owned
-  `.github/golden-path-native-roots.yaml` contract when dependency-manager
-  roots differ from generated artifact-component paths.
-- Evaluates native manifest, lock, selector, and profile rules independently
-  for every declared root while preserving component-derived behavior when the
-  sidecar is absent.
-- Supports committed `go.work` roots by validating every repository-local
-  referenced module and its conditional checksum record.
-- Checks structural IaC dependency authority, including CDK and Pulumi project
-  manifests, Terraform/OpenTofu locks, and exact or immutable module sources.
-- Allows disjoint profiles to share one path, requires every selected native
-  profile to have a root, and rejects same-profile overlaps or roots outside
-  aggregate profile metadata.
-- Keeps artifact types and capabilities out of native-root declarations and
-  exception matching so artifact classification cannot silently waive a
-  dependency-graph finding.
-- Reports schema and semantic sidecar failures as configuration errors with
-  actionable detail.
-- Adds end-to-end coverage for polyglot same-path roots, invalid declarations,
-  no-sidecar compatibility, independent same-ecosystem graphs, exception
-  scoping, and undeclared root markers.
+- Adds the optional `capabilities` array to each
+  `golden-path-generator-request/v1` component.
+- Accepts only capabilities defined by the normative metadata contract and
+  rejects empty, duplicate, or unknown values in both the published schema and
+  generator semantics.
+- Merges explicit capabilities with the generator's deterministic baseline and
+  records the sorted union in aggregate and component metadata.
+- Enables capability-scoped conformance rules to evaluate repositories that
+  really package, publish, or release artifacts instead of skipping them as
+  outside declared applicability.
+- Preserves the canonical bytes and SHA-256 digest of every legacy request that
+  omits the new optional field.
+- Adds conflict-free upgrade coverage from a legacy generated request to an
+  explicit-capability request without mutating the source repository.
+- Adds a package-producing Node fixture that verifies generated metadata and
+  capability-scoped rule activation end to end.
+
+## Capability ownership boundary
+
+Capabilities are explicit declarations of repository behavior. The generator
+does not infer `publish` or `released-artifact` from
+`artifactTypes: [package]`, and a capability declaration does not materialize a
+release workflow, registry credential, package metadata, or publication
+evidence. The consumer repository owns those implementation details. A newly
+applicable rule may therefore report a real failure until that repository
+implements the declared contract.
 
 ## Compatibility
 
@@ -45,18 +48,16 @@ backward-compatible native dependency-root declarations while retaining the
 - Release manifest: `golden-path-release-manifest/v2`
 - Enforcement: `report-only`
 
-Repositories without the native-roots sidecar retain the `1.0.1` component
-fallback. The sidecar is optional and introduces no generated-metadata schema
-change.
+Existing generator requests remain valid and render with their previous
+canonical request shape. No compatibility reader, migration schema, or new
+contract epoch is required.
 
 ## External-tool cutoff
 
 The exact external tools, runtime selections, generated-profile package locks,
-and workflow action commits remain unchanged from `1.0.1`. The checker adds the
-exact `github.com/hashicorp/hcl/v2` `2.24.0` library to parse Terraform/OpenTofu
-module declarations; the 2026-08-04 cutoff binds the resulting Go checksum
-record and the new `1.1.0` template-bundle identity. This release does not
-silently upgrade executable tools or generated project dependencies.
+workflow action commits, and Go module graph remain unchanged from `1.1.0`.
+The 2026-08-04 cutoff is retained and binds the new `1.2.0` template-bundle
+identity; no executable tool or generated dependency is silently upgraded.
 
 ## Support and deprecation
 
@@ -67,44 +68,36 @@ silently upgrade executable tools or generated project dependencies.
 | `0.1.x` | Deprecated | 2027-01-28 | Advance to `0.2.0`, then migrate to supported `1.x` |
 
 Deprecated `0.x` receives only critical security or integrity fixes. Standard
-`2026.08` becomes preferred when the organization bootstrap locator selects
-this released implementation.
+`2026.08` remains preferred.
 
-## Migration from 1.0.1 or 0.2.0
+## Migration from 1.1.0 or 0.2.0
 
-1. Download the exact `1.1.0` archive and `release-manifest.json`, then verify
-   the archive checksum and both artifact attestations against the `v1.1.0`
-   tag, source commit, signer commit, and release workflow.
-2. Run `golden-path upgrade` without `--write` against the existing repository,
-   its recorded request, and the verified `1.1.0` release manifest.
-3. Repositories whose native dependency roots already match generated
-   artifact-component paths need no sidecar. Review the ordinary generated
-   candidate and continue the existing upgrade workflow.
-4. A repository with additional or different dependency-manager roots must
-   inventory those roots separately and add
-   `.github/golden-path-native-roots.yaml` as repository-owned configuration.
-   Do not edit generated `.github/golden-path.yaml` or copy artifact types and
-   capabilities into the sidecar.
-5. Resolve any generated-asset conflict before repeating the upgrade with
-   `--write` and a separate empty candidate directory. Review
-   `golden-path-plan.json`, the complete candidate diff, and the sidecar change,
-   then run the candidate's `just init` and `just ci`.
-6. Adopt the candidate through the consumer repository's normal review. Update
-   binary version, archive and executable checksums, reusable-workflow and
-   setup-action full commits, and generated asset inventory as one change.
+1. Download the exact `1.2.0` archive and `release-manifest.json`, then verify
+   their checksums and artifact attestations against the `v1.2.0` tag, source
+   commit, signer commit, and release workflow.
+2. Keep an existing request unchanged when the generated baseline describes
+   the repository truthfully. Add component `capabilities` only for behavior
+   the repository actually implements.
+3. Run `golden-path upgrade` without `--write` against the source repository,
+   selected request, and verified `1.2.0` manifest.
+4. Review newly applicable capability-scoped findings. Fix the repository
+   implementation or correct an inaccurate declaration; do not add dummy
+   evidence merely to obtain a pass.
+5. Resolve generated-asset conflicts before repeating the upgrade with
+   `--write` and a separate empty candidate directory. Review the plan and full
+   candidate diff, then run the candidate's `just init` and `just ci`.
+6. Adopt the candidate through the consumer repository's normal review,
+   updating the binary, checksums, immutable automation pins, request, metadata,
+   and generated-asset inventory as one change.
 
-The upgrader never modifies the source repository or its default branch. It
-does not generate or overwrite the repository-owned native-roots sidecar.
+The upgrader never modifies the source repository or its default branch.
 
 ## Limitations
 
 Hybrid, manual, non-applicable, and only partially evaluated rules remain
-explicit `skip` findings. Native-root discovery is declaration-based rather
-than recursive: an undeclared nested dependency graph is not inferred. The
-overlap rule intentionally rejects a root workspace and a separate nested root
-for the same profile. That competing-authority declaration is a configuration
-error rather than a waivable conformance finding; restructure or de-duplicate
-the manager boundary before checking the repository.
+explicit `skip` findings. Explicit capabilities improve applicability truth;
+they do not turn a structural checker into a registry, release, or operational
+verification system.
 
 This release does not establish merge protection and must not be represented
 as `policy-required` or `platform-enforced`. Existing repositories are neither
@@ -112,12 +105,12 @@ modified nor enrolled; adoption remains separately owned repository work.
 
 ## Rollback
 
-Restore the exact immutable `1.0.1` release identity: binary, release manifest,
+Restore the exact immutable `1.1.0` release identity: binary, release manifest,
 archive and executable checksums, generated asset inventory, and full-commit
-workflow/action pins. A `1.0.1` checker predates the native-roots contract and
-therefore does not provide multi-root conformance evidence; retain the sidecar
-as repository-owned data but do not represent the rollback result as equivalent
-coverage. `0.2.0` remains the verified legacy fallback.
+workflow/action pins. Because `1.1.0` does not recognize the new field,
+repositories that added it must select their previously recorded request when
+constructing a rollback candidate. `0.2.0` remains the verified legacy
+fallback.
 
 Re-materialize or upgrade only in a separate candidate directory and review the
 resulting diff. Do not move a tag, replace an asset, overwrite a consumer
