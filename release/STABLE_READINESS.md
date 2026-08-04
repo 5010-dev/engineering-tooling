@@ -36,7 +36,9 @@ rule catalog remain unchanged. Release-specific integrity evidence is bound by
    no longer skip for undeclared applicability.
 5. A legacy request retains its exact canonical request bytes and SHA-256
    digest, and upgrading it to explicit capabilities is conflict-free,
-   source-preserving, and materializes the expected candidate metadata.
+   source-preserving, and materializes the expected candidate metadata. An
+   explicitly empty materialization mode is rejected, and both decoded and
+   direct-render requests validate derived Go module paths.
 6. The published request target definition matches the normative metadata
    target schema, preserves explicit `execution: false`, sorts deterministically,
    requires a primary or secondary representative, and rejects missing, empty,
@@ -45,7 +47,9 @@ rule catalog remain unchanged. Release-specific integrity evidence is bound by
    out-of-inventory staging plan, records only explicit capabilities (including
    an explicit empty set), does not invent a Go module path, and establishes an
    upgradeable baseline without tracking or mutating repository-owned source,
-   manifests, locks, commands, or operational contracts.
+   manifests, locks, commands, or operational contracts. Bootstrap-to-adoption
+   planning records retired generated assets and refuses to stage customized
+   retirement conflicts.
 8. The setup action verifies released `0.2.0` and `1.1.0` provenance. Projects
    materialized by both releases upgrade to a separate `1.2.0` candidate and
    roll back without source mutation or unresolved conflicts.
