@@ -23,7 +23,7 @@ import (
 func TestSyntheticRequestMatrixRendersDeterministically(t *testing.T) {
 	t.Parallel()
 	release := fixtureRelease(t)
-	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml", "zig-profiles.yaml", "node-publisher.yaml"} {
+	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml", "zig-profiles.yaml", "node-publisher.yaml", "adoption-go-service.yaml"} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -121,8 +121,149 @@ func TestLegacyRequestDigestAndCanonicalShapeRemainStable(t *testing.T) {
 	if requestDigest != "0864564b0506ae9b1400c31eb7c0a946b61d379efcb43e9e654c6cb8701844e2" {
 		t.Fatalf("legacy request digest = %q", requestDigest)
 	}
-	if bytes.Contains(fileContent(t, files, ".github/golden-path-request.json"), []byte(`"capabilities"`)) {
-		t.Fatal("legacy canonical request gained an absent optional capabilities field")
+	canonicalRequest := fileContent(t, files, ".github/golden-path-request.json")
+	for _, field := range []string{`"capabilities"`, `"materializationMode"`, `"targets"`} {
+		if bytes.Contains(canonicalRequest, []byte(field)) {
+			t.Fatalf("legacy canonical request gained absent optional field %s", field)
+		}
+	}
+}
+
+func TestAdoptionMaterializesOnlyFixedControlPlaneAssets(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "adoption-go-service.yaml")
+	if request.Components[0].ModulePath != "" {
+		t.Fatalf("adoption request invented Go modulePath %q", request.Components[0].ModulePath)
+	}
+	files, requestDigest, err := Render(request, fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPaths := []string{
+		".github/golden-path-assets.json",
+		".github/golden-path-request.json",
+		".github/golden-path.yaml",
+		".github/workflows/developer-tooling.yml",
+		"scripts/golden-path",
+	}
+	actualPaths := make([]string, 0, len(files))
+	for _, file := range files {
+		actualPaths = append(actualPaths, file.Path)
+	}
+	if !reflect.DeepEqual(actualPaths, wantPaths) {
+		t.Fatalf("adoption paths = %v, want fixed control-plane set %v", actualPaths, wantPaths)
+	}
+
+	var metadata struct {
+		Capabilities []string `json:"capabilities"`
+		Targets      []Target `json:"targets"`
+		Extensions   map[string]struct {
+			MaterializationMode string `json:"materializationMode"`
+		} `json:"extensions"`
+	}
+	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path.yaml"), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	wantCapabilities := []string{"build", "format", "lint", "test"}
+	if !reflect.DeepEqual(metadata.Capabilities, wantCapabilities) {
+		t.Fatalf("adoption capabilities = %v, want only explicit declarations %v", metadata.Capabilities, wantCapabilities)
+	}
+	if len(metadata.Targets) != 1 || metadata.Targets[0].OS != "linux" || metadata.Targets[0].Architecture != "amd64" || metadata.Targets[0].Execution == nil || *metadata.Targets[0].Execution {
+		t.Fatalf("adoption metadata targets = %+v", metadata.Targets)
+	}
+	if metadata.Extensions["dev.fiftyten.generator"].MaterializationMode != "adoption" {
+		t.Fatalf("adoption metadata omits materialization mode: %+v", metadata.Extensions)
+	}
+
+	bundle, err := LoadBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := filepath.Join(t.TempDir(), "repository")
+	if err := WriteStaging(repository, files, GeneratePlan(files, requestDigest, bundle, fixtureRelease(t))); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string][]byte{
+		"cmd/server/main.go": []byte("package main\n"),
+		"go.mod":             []byte("module github.com/5010-dev/existing-go-service\n"),
+		"justfile":           []byte("ci:\n    go test ./...\n"),
+	} {
+		absolute := filepath.Join(repository, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		// #nosec G306 -- test-owned repository files use conventional source modes.
+		if err := os.WriteFile(absolute, content, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan, err := UpgradePlan(repository, files, requestDigest, bundle, fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.ConflictCount != 0 {
+		t.Fatalf("adoption baseline upgrade has %d conflicts", plan.ConflictCount)
+	}
+	for _, change := range plan.Changes {
+		if change.Status != "unchanged" {
+			t.Fatalf("adoption baseline path %s status = %s, want unchanged", change.Path, change.Status)
+		}
+	}
+	for _, path := range []string{"cmd/server/main.go", "go.mod", "justfile"} {
+		if _, err := os.Stat(filepath.Join(repository, filepath.FromSlash(path))); err != nil {
+			t.Fatalf("repository-owned path %s was not preserved: %v", path, err)
+		}
+	}
+}
+
+func TestExplicitTargetsAreNormalizedAndPreserved(t *testing.T) {
+	t.Parallel()
+	request, err := DecodeRequest(strings.NewReader(`schemaVersion: golden-path-generator-request/v1
+materializationMode: bootstrap
+layout: single
+projectName: Target Matrix
+projectSlug: target-matrix
+targets:
+  - os: linux
+    architecture: arm64
+    runtime: container
+    tier: secondary
+  - os: linux
+    architecture: amd64
+    runtime: container
+    tier: primary
+    execution: false
+components:
+  - name: service
+    path: .
+    profiles: [go]
+    artifactTypes: [service, container]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := Render(request, fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Targets) != 2 || request.Targets[0].Architecture != "amd64" || request.Targets[1].Architecture != "arm64" {
+		t.Fatalf("normalized targets = %+v", request.Targets)
+	}
+	var metadata struct {
+		Targets []Target `json:"targets"`
+	}
+	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path.yaml"), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(metadata.Targets, request.Targets) {
+		t.Fatalf("metadata targets = %+v, want request targets %+v", metadata.Targets, request.Targets)
+	}
+	var canonical Request
+	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path-request.json"), &canonical); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(canonical.Targets, request.Targets) {
+		t.Fatalf("canonical request targets = %+v, want %+v", canonical.Targets, request.Targets)
 	}
 }
 
@@ -132,6 +273,86 @@ func TestRenderRejectsExplicitEmptyCapabilities(t *testing.T) {
 	request.Components[0].Capabilities = []string{}
 	if _, _, err := Render(request, fixtureRelease(t)); err == nil {
 		t.Fatal("Render accepted explicitly empty capabilities")
+	}
+}
+
+func TestAdoptionPreservesExplicitEmptyCapabilities(t *testing.T) {
+	t.Parallel()
+	request, err := DecodeRequest(strings.NewReader(`schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Existing Documentation
+projectSlug: existing-documentation
+targets:
+  - os: linux
+    architecture: amd64
+    tier: primary
+components:
+  - name: documentation
+    path: .
+    profiles: [documentation]
+    artifactTypes: [documentation]
+    capabilities: []
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, _, err := Render(request, fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalRequest := fileContent(t, files, ".github/golden-path-request.json")
+	if !bytes.Contains(canonicalRequest, []byte(`"capabilities": []`)) {
+		t.Fatalf("adoption canonical request did not preserve explicit empty capabilities:\n%s", canonicalRequest)
+	}
+	validateAgainstSchema(t, "golden-path-generator-request-v1.schema.json", canonicalRequest)
+
+	var metadata struct {
+		Capabilities []string `json:"capabilities"`
+		Extensions   map[string]struct {
+			Components []struct {
+				Capabilities []string `json:"capabilities"`
+			} `json:"components"`
+		} `json:"extensions"`
+	}
+	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path.yaml"), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Capabilities == nil || len(metadata.Capabilities) != 0 {
+		t.Fatalf("aggregate adoption capabilities = %#v, want explicit empty array", metadata.Capabilities)
+	}
+	components := metadata.Extensions["dev.fiftyten.generator"].Components
+	if len(components) != 1 || components[0].Capabilities == nil || len(components[0].Capabilities) != 0 {
+		t.Fatalf("component adoption capabilities = %#v, want explicit empty array", components)
+	}
+}
+
+func TestGeneratorRejectsRepeatedTargetIdentityWithDifferentClaims(t *testing.T) {
+	t.Parallel()
+	_, err := DecodeRequest(strings.NewReader(`schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Conflicting Target
+projectSlug: conflicting-target
+targets:
+  - os: linux
+    architecture: amd64
+    runtime: container
+    tier: primary
+  - os: linux
+    architecture: amd64
+    runtime: container
+    tier: secondary
+    execution: false
+components:
+  - name: service
+    path: .
+    profiles: [go]
+    artifactTypes: [service]
+    capabilities: [build]
+`))
+	if err == nil || !strings.Contains(err.Error(), "same platform identity") {
+		t.Fatalf("repeated target identity error = %v", err)
 	}
 }
 
@@ -151,6 +372,17 @@ func TestRequestCapabilitiesMatchNormativeMetadataCatalog(t *testing.T) {
 	}
 	if !reflect.DeepEqual(metadataCapabilities, want) {
 		t.Fatalf("metadata capability enum = %v, want generator catalog %v", metadataCapabilities, want)
+	}
+}
+
+func TestRequestTargetsMatchNormativeMetadataSchema(t *testing.T) {
+	t.Parallel()
+	requestTarget := schemaValue(t, filepath.Join("schemas", "golden-path-generator-request-v1.schema.json"), "$defs", "target")
+	metadataTarget := schemaValue(t,
+		filepath.Join("..", "standards", "snapshots", "2026.08", "schemas", "golden-path-metadata-v1.schema.json"),
+		"$defs", "target")
+	if !reflect.DeepEqual(requestTarget, metadataTarget) {
+		t.Fatalf("request target schema does not match normative metadata target schema\nrequest: %#v\nmetadata: %#v", requestTarget, metadataTarget)
 	}
 }
 
@@ -919,6 +1151,39 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
 		{name: "null-capability", mutate: func(document map[string]any) {
 			document["components"].([]any)[0].(map[string]any)["capabilities"] = nil
 		}},
+		{name: "unsupported-materialization-mode", mutate: func(document map[string]any) {
+			document["materializationMode"] = "merge"
+			document["targets"] = []any{map[string]any{"os": "linux", "architecture": "amd64", "tier": "primary"}}
+		}},
+		{name: "null-materialization-mode", mutate: func(document map[string]any) {
+			document["materializationMode"] = nil
+		}},
+		{name: "explicit-mode-without-target", mutate: func(document map[string]any) {
+			document["materializationMode"] = "bootstrap"
+		}},
+		{name: "adoption-without-explicit-capability", mutate: func(document map[string]any) {
+			document["materializationMode"] = "adoption"
+			document["targets"] = []any{map[string]any{"os": "linux", "architecture": "amd64", "tier": "primary"}}
+		}},
+		{name: "empty-targets", mutate: func(document map[string]any) {
+			document["targets"] = []any{}
+		}},
+		{name: "null-targets", mutate: func(document map[string]any) {
+			document["targets"] = nil
+		}},
+		{name: "duplicate-target", mutate: func(document map[string]any) {
+			target := map[string]any{"os": "linux", "architecture": "amd64", "tier": "primary"}
+			document["targets"] = []any{target, target}
+		}},
+		{name: "invalid-target-tier", mutate: func(document map[string]any) {
+			document["targets"] = []any{map[string]any{"os": "linux", "architecture": "amd64", "tier": "unsupported"}}
+		}},
+		{name: "evaluation-only-target", mutate: func(document map[string]any) {
+			document["targets"] = []any{map[string]any{"os": "linux", "architecture": "amd64", "tier": "evaluation"}}
+		}},
+		{name: "empty-target-runtime", mutate: func(document map[string]any) {
+			document["targets"] = []any{map[string]any{"os": "linux", "architecture": "amd64", "runtime": "", "tier": "primary"}}
+		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			data, err := json.Marshal(base)
@@ -969,6 +1234,24 @@ func findingByRuleID(t *testing.T, result checker.Result, ruleID string) checker
 
 func schemaStringEnum(t *testing.T, path string, keys ...string) []string {
 	t.Helper()
+	value := schemaValue(t, path, keys...)
+	items, ok := value.([]any)
+	if !ok {
+		t.Fatalf("schema path %v is not an array", keys)
+	}
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		entry, ok := item.(string)
+		if !ok {
+			t.Fatalf("schema path %v contains non-string value", keys)
+		}
+		result = append(result, entry)
+	}
+	return result
+}
+
+func schemaValue(t *testing.T, path string, keys ...string) any {
+	t.Helper()
 	data, err := os.ReadFile(path) // #nosec G304 -- source-controlled schema selected by the test.
 	if err != nil {
 		t.Fatal(err)
@@ -987,19 +1270,7 @@ func schemaStringEnum(t *testing.T, path string, keys ...string) []string {
 			t.Fatalf("schema path %v is missing key %q", keys, key)
 		}
 	}
-	items, ok := value.([]any)
-	if !ok {
-		t.Fatalf("schema path %v is not an array", keys)
-	}
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		entry, ok := item.(string)
-		if !ok {
-			t.Fatalf("schema path %v contains non-string value", keys)
-		}
-		result = append(result, entry)
-	}
-	return result
+	return value
 }
 
 func fixtureRequest(t *testing.T, name string) Request {

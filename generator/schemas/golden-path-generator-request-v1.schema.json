@@ -7,9 +7,20 @@
   "required": ["schemaVersion", "layout", "projectName", "projectSlug", "components"],
   "properties": {
     "schemaVersion": { "const": "golden-path-generator-request/v1" },
+    "materializationMode": {
+      "enum": ["bootstrap", "adoption"],
+      "description": "Bootstrap materializes a complete starter. Adoption materializes only the fixed Golden Path control-plane asset set for integration into an existing repository. Omission preserves the legacy bootstrap request shape."
+    },
     "layout": { "enum": ["single", "monorepo", "polyglot", "documentation"] },
     "projectName": { "type": "string", "minLength": 2, "maxLength": 100, "pattern": "^[^\\s\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}](?:[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*[^\\s\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}])?$" },
     "projectSlug": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Explicit production or release representative targets. At least one target must use the primary or secondary tier. The generator records these claims without inferring them from profiles or CI runners and rejects repeated OS, architecture, runtime, and target-triple identities even when their tier or execution attributes differ.",
+      "items": { "$ref": "#/$defs/target" }
+    },
     "components": {
       "type": "array",
       "minItems": 1,
@@ -41,9 +52,8 @@
           },
           "capabilities": {
             "type": "array",
-            "minItems": 1,
             "uniqueItems": true,
-            "description": "Explicit capabilities implemented by this component in addition to the deterministic baseline materialized for its selected profiles.",
+            "description": "Explicit capabilities implemented by this component. Bootstrap adds them to its deterministic materialized baseline and rejects an explicitly empty array. Adoption requires the field and records its exact value, including an empty array when no capability applies.",
             "items": {
               "enum": ["format", "lint", "typecheck", "test", "build", "package", "publish", "coverage", "fuzz", "unsafe", "native-extension", "cgo", "released-artifact", "dependency-automation", "cache", "devcontainer"]
             }
@@ -74,6 +84,66 @@
             }
           }
         ]
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["materializationMode"] },
+      "then": { "required": ["targets"] }
+    },
+    {
+      "if": { "required": ["targets"] },
+      "then": {
+        "properties": {
+          "targets": {
+            "contains": {
+              "type": "object",
+              "properties": { "tier": { "enum": ["primary", "secondary"] } },
+              "required": ["tier"]
+            },
+            "minContains": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "materializationMode": { "const": "adoption" } },
+        "required": ["materializationMode"]
+      },
+      "then": {
+        "properties": {
+          "components": {
+            "items": { "required": ["capabilities"] }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "components": {
+            "items": {
+              "properties": {
+                "capabilities": { "minItems": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture", "tier"],
+      "properties": {
+        "os": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "architecture": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "runtime": { "type": "string", "minLength": 1 },
+        "targetTriple": { "type": "string", "minLength": 1 },
+        "tier": { "enum": ["primary", "secondary", "evaluation"] },
+        "execution": { "type": "boolean" }
       }
     }
   }

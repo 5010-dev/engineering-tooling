@@ -1,24 +1,39 @@
 # Golden Path tooling 1.2.0
 
 Minor release for the `2026.08` Developer Tooling Standard. This release adds
-backward-compatible explicit component capability declarations to the
-generator while retaining the `golden-path/v1` compatibility epoch and
-report-only enforcement.
+backward-compatible explicit component capability and platform declarations,
+plus a bounded first-adoption mode for existing repositories, while retaining
+the `golden-path/v1` compatibility epoch and report-only enforcement.
 
 ## Changes from 1.1.0
 
 - Adds the optional `capabilities` array to each
   `golden-path-generator-request/v1` component.
+- Adds optional top-level `targets` that mirror the normative metadata target
+  contract and are recorded without profile- or runner-based inference.
+- Adds explicit `bootstrap` and `adoption` materialization modes. Adoption
+  emits only five managed assets: the canonical request, metadata,
+  generated-asset baseline, immutable bootstrap script, and thin caller
+  workflow. A staging-only materialization plan remains outside that inventory.
+- Requires explicit targets whenever a request selects a materialization mode,
+  requires at least one primary or secondary representative, rejects repeated
+  platform identities with conflicting attributes, and requires every adoption
+  component to declare its exact implemented-capability set, including an
+  explicit empty array when none apply.
+- Keeps existing source, entry points, native manifests and locks, Mise and
+  Just configuration, dependency automation, build and smoke behavior, and
+  release or deployment contracts outside the adoption asset set.
 - Accepts only capabilities defined by the normative metadata contract and
-  rejects empty, duplicate, or unknown values in both the published schema and
-  generator semantics.
-- Merges explicit capabilities with the generator's deterministic baseline and
-  records the sorted union in aggregate and component metadata.
+  rejects duplicate or unknown values. Bootstrap rejects an explicitly empty
+  declaration; adoption preserves it as an exact truthful set.
+- In bootstrap mode, merges explicit capabilities with the generator's
+  deterministic baseline and records the sorted union in aggregate and
+  component metadata. Adoption records the explicit set without inference.
 - Enables capability-scoped conformance rules to evaluate repositories that
   really package, publish, or release artifacts instead of skipping them as
   outside declared applicability.
 - Preserves the canonical bytes and SHA-256 digest of every legacy request that
-  omits the new optional field.
+  omits the new optional fields.
 - Adds conflict-free upgrade coverage from a legacy generated request to an
   explicit-capability request without mutating the source repository.
 - Adds a package-producing Node fixture that verifies generated metadata and
@@ -33,6 +48,26 @@ release workflow, registry credential, package metadata, or publication
 evidence. The consumer repository owns those implementation details. A newly
 applicable rule may therefore report a real failure until that repository
 implements the declared contract.
+
+Bootstrap mode records the union of explicit declarations and the behavior it
+materializes. Adoption mode records exactly the explicit declarations because
+the existing repository owns every executable quality, build, package, and
+release path.
+
+## Target and adoption boundary
+
+Targets are repository support claims, not generator inference. A request may
+declare OS, architecture, runtime or target triple, support tier, and whether
+semantic execution is actually established. Compilation alone does not justify
+`execution: true`. At least one target must be primary or secondary, and a
+single platform identity cannot carry multiple tier or execution claims.
+
+Adoption is a fixed control-plane materialization mode rather than an arbitrary
+per-file selector. It does not accept a product entry point, binary name, smoke
+command, include list, or exclude list. The consumer integrates the generated
+control-plane assets into its existing tree and keeps product and operational
+authority repository-local. Once the generated-asset baseline is committed,
+normal conflict-aware `upgrade` applies to that fixed asset set.
 
 ## Compatibility
 
@@ -49,8 +84,8 @@ implements the declared contract.
 - Enforcement: `report-only`
 
 Existing generator requests remain valid and render with their previous
-canonical request shape. No compatibility reader, migration schema, or new
-contract epoch is required.
+canonical request shape and implicit bootstrap behavior. No compatibility
+reader, migration schema, or new contract epoch is required.
 
 ## External-tool cutoff
 
@@ -76,8 +111,9 @@ Deprecated `0.x` receives only critical security or integrity fixes. Standard
    their checksums and artifact attestations against the `v1.2.0` tag, source
    commit, signer commit, and release workflow.
 2. Keep an existing request unchanged when the generated baseline describes
-   the repository truthfully. Add component `capabilities` only for behavior
-   the repository actually implements.
+   the repository truthfully. Add component `capabilities` and top-level
+   `targets` only for behavior and support claims the repository actually
+   implements.
 3. Run `golden-path upgrade` without `--write` against the source repository,
    selected request, and verified `1.2.0` manifest.
 4. Review newly applicable capability-scoped findings. Fix the repository
@@ -90,6 +126,16 @@ Deprecated `0.x` receives only critical security or integrity fixes. Standard
    updating the binary, checksums, immutable automation pins, request, metadata,
    and generated-asset inventory as one change.
 
+For a repository that has never committed a Golden Path generated-asset
+inventory, create a separate request with `materializationMode: adoption`,
+explicit component capabilities, and at least one primary or secondary
+representative target. Run `generate` into an empty directory, integrate only
+its fixed five managed assets, retain the staging plan as review evidence
+rather than repository configuration, and preserve the existing repository's
+source, dependency, command, release, and deployment contracts. Run the
+consumer repository's native checks and `just ci` after integration. Do not run
+`upgrade` until this first baseline is committed.
+
 The upgrader never modifies the source repository or its default branch.
 
 ## Limitations
@@ -101,16 +147,19 @@ verification system.
 
 This release does not establish merge protection and must not be represented
 as `policy-required` or `platform-enforced`. Existing repositories are neither
-modified nor enrolled; adoption remains separately owned repository work.
+modified nor enrolled; adoption remains separately owned repository work, and
+the generator never writes into the existing repository.
 
 ## Rollback
 
 Restore the exact immutable `1.1.0` release identity: binary, release manifest,
 archive and executable checksums, generated asset inventory, and full-commit
 workflow/action pins. Because `1.1.0` does not recognize the new field,
-repositories that added it must select their previously recorded request when
-constructing a rollback candidate. `0.2.0` remains the verified legacy
-fallback.
+repositories that added capabilities, targets, or a materialization mode must
+select their previously recorded request when constructing a rollback
+candidate. An adoption baseline has no `1.1.0` equivalent and is removed only
+through a reviewed consumer-repository rollback; the released generator never
+mutates that repository. `0.2.0` remains the verified legacy fallback.
 
 Re-materialize or upgrade only in a separate candidate directory and review the
 resulting diff. Do not move a tag, replace an asset, overwrite a consumer
