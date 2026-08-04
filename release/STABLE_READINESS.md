@@ -14,9 +14,10 @@ applicability.
 - Normative source commit: `604a40886d5a1cba3b304471e6e072b72cec7601`
 - External-tool cutoff: `2026-08-04T12:54:32Z`
 
-The minor increment is required because the released generator request gains an
-optional explicit component-capability input. Legacy requests retain their
-canonical bytes and digest, and no contract epoch changes. Runtime selections,
+The minor increment is required because the released generator request gains
+optional explicit component-capability and target inputs plus bounded bootstrap
+and adoption modes. Legacy requests retain their canonical bytes, digest, and
+implicit bootstrap behavior, and no contract epoch changes. Runtime selections,
 external tools, generated dependency locks, workflow actions, and the checker
 rule catalog remain unchanged. Release-specific integrity evidence is bound by
 [`tooling-cutoff-2026-08-04.json`](./tooling-cutoff-2026-08-04.json).
@@ -36,31 +37,42 @@ rule catalog remain unchanged. Release-specific integrity evidence is bound by
 5. A legacy request retains its exact canonical request bytes and SHA-256
    digest, and upgrading it to explicit capabilities is conflict-free,
    source-preserving, and materializes the expected candidate metadata.
-6. The setup action verifies released `0.2.0` and `1.1.0` provenance. Projects
+6. The published request target definition matches the normative metadata
+   target schema, preserves explicit `execution: false`, sorts deterministically,
+   requires a primary or secondary representative, and rejects missing, empty,
+   repeated-identity, duplicate, or invalid declarations.
+7. Adoption renders exactly the fixed five managed control-plane assets plus an
+   out-of-inventory staging plan, records only explicit capabilities (including
+   an explicit empty set), does not invent a Go module path, and establishes an
+   upgradeable baseline without tracking or mutating repository-owned source,
+   manifests, locks, commands, or operational contracts.
+8. The setup action verifies released `0.2.0` and `1.1.0` provenance. Projects
    materialized by both releases upgrade to a separate `1.2.0` candidate and
    roll back without source mutation or unresolved conflicts.
-7. Every generated profile runs on its declared native CI runner, and the
+9. Every generated profile runs on its declared native CI runner, and the
    reusable-workflow integration executes against an actual `1.1.0` generated
    repository and immutable release identity.
-8. SBOMs bind every archive digest; release attestations cover every published
+10. SBOMs bind every archive digest; release attestations cover every published
    asset; the release manifest binds source, catalog, snapshot, templates,
    automation, cutoff, binaries, schemas, and supported targets.
-9. A separately approved read-only review confirms the complete candidate diff
+11. A separately approved read-only review confirms the complete candidate diff
    preserves the implementation, policy, migration, and release boundaries.
 
-The stable tag must not be created until all nine gates have evidence against
+The stable tag must not be created until all eleven gates have evidence against
 the exact source commit. Final source SHA, asset digests, workflow run, release
 URL, and bootstrap-locator pins are post-publication evidence and cannot be
 predeclared.
 
 ## Compatibility and ownership boundary
 
-The new request field is optional. Existing repositories do not need to change
-their request, metadata, or generated files unless they adopt `1.2.0` through
-their normal migration workflow. A component declares only capabilities its
-repository actually implements. The generator merges the declaration into
-metadata but does not infer publication from artifact type or create publishing
-automation, credentials, registry configuration, or release evidence.
+The new request fields are optional. Existing repositories do not need to
+change their request, metadata, or generated files unless they adopt `1.2.0`
+through their normal migration workflow. A component declares only capabilities
+its repository actually implements. Bootstrap merges declarations with its
+materialized baseline; adoption records exactly the declaration. The generator
+does not infer publication or platform support from artifact type, profile, or
+runner and does not create publishing automation, credentials, registry
+configuration, or release evidence.
 
 This is compatibility work for a released `1.1.0` request boundary. It is
 bounded to accepting old requests unchanged and offering a direct one-way
@@ -90,11 +102,15 @@ implementation repository. The tag-only release path remains seven jobs with
 
 ## Adoption boundary
 
-New-repository materialization records tooling bundle `1.2.0`, emits a thin
-report-only caller, and writes only to an explicitly selected empty staging
-directory. Existing repositories are not discovered, enrolled, or changed.
-Adding explicit capabilities is repository-owned adoption work based on actual
-behavior, not a central migration side effect.
+New-repository bootstrap records tooling bundle `1.2.0`, emits the complete
+starter and a thin report-only caller, and writes only to an explicitly selected
+empty staging directory. First adoption for an existing repository emits only
+the canonical request, metadata, generated-asset baseline, immutable bootstrap
+script, and thin caller. Existing repositories are not discovered, enrolled, or
+changed. Integrating the fixed adoption candidate, its explicit capabilities,
+and its explicit targets is repository-owned work based on actual behavior and
+support claims, not a central migration side effect. Normal `upgrade` begins
+only after that baseline is committed.
 
 After publication, the organization bootstrap locator is updated in a separate
 policy-repository change using the exact release source commit, manifest and

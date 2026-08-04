@@ -59,6 +59,28 @@ golden-path upgrade \
   --output /tmp/golden-path-candidate
 ```
 
+New repositories use an explicit `materializationMode: bootstrap` request.
+Existing repositories use `materializationMode: adoption` for their first
+Golden Path baseline. Adoption emits only the canonical request, truthful
+metadata, generated-asset inventory, immutable bootstrap script, and thin
+caller workflow. It does not generate or replace source entry points, native
+manifests or locks, Mise and Just configuration, dependency automation, or
+repository-specific build, smoke, release, and deployment behavior. Generate
+the adoption candidate into an empty directory, integrate its fixed asset set
+through the consumer repository's normal review, retain
+`golden-path-plan.json` as staging evidence rather than managed repository
+configuration, and use `upgrade` only after that baseline inventory is
+committed.
+
+An explicit materialization mode requires at least one production or release
+representative `target` in the `primary` or `secondary` tier. Evaluation-only
+targets cannot satisfy that boundary. Each target records OS, architecture,
+support tier, and optional runtime, target triple, and semantic-execution
+claim. The generator preserves these declarations exactly and never infers
+support from a profile, runner label, or compilation result. Legacy requests
+that omit both new fields retain their canonical request shape and implicit
+bootstrap behavior.
+
 Generation records the standard, asset bundle, release source commit, request
 digest, canonical request, and every generated file digest and mode. Upgrade
 reads that inventory to distinguish unchanged generated files from consumer
@@ -68,11 +90,15 @@ never materializes a candidate. A conflict-free upgrade writes a separate
 candidate and `golden-path-plan.json`; it never writes to the source repository
 or a default branch.
 
-Each request component may declare optional `capabilities` from the published
-request schema when the repository really provides behavior such as `package`,
-`publish`, or `released-artifact`. The generator merges those declarations with
-its deterministic baseline capabilities and records the result in aggregate
-and component metadata, allowing capability-scoped conformance rules to run.
+Each request component may declare `capabilities` from the published request
+schema when the repository really provides behavior such as `package`,
+`publish`, or `released-artifact`. Bootstrap mode merges those declarations
+with the deterministic behavior materialized by the full starter. Adoption
+mode requires the declaration and records exactly those capabilities because
+the generator does not own the existing repository's implementation.
+An adoption component uses an explicit empty array when it implements none of
+the capability catalog entries; omission remains invalid because it would make
+the repository claim ambiguous.
 Capabilities are declarative: selecting `artifactTypes: [package]` does not
 infer publication, and declaring `publish` does not create a release workflow.
 The consumer repository still owns the corresponding implementation and

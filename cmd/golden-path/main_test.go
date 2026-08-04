@@ -97,6 +97,37 @@ func TestRunGeneratesOnlyIntoExplicitStaging(t *testing.T) {
 	}
 }
 
+func TestRunMaterializesAdoptionCandidateWithoutProductAssets(t *testing.T) {
+	request := filepath.Join("..", "..", "testdata", "generator", "requests", "adoption-go-service.yaml")
+	release := filepath.Join("..", "..", "testdata", "generator", "release-manifest.json")
+	output := filepath.Join(t.TempDir(), "candidate")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{
+		"generate", "--request", request, "--release-manifest", release,
+		"--write", "--output", output,
+	}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("adoption generate exit = %d; stderr=%s", code, stderr.String())
+	}
+	for _, name := range []string{
+		".github/golden-path-assets.json",
+		".github/golden-path-request.json",
+		".github/golden-path.yaml",
+		".github/workflows/developer-tooling.yml",
+		"scripts/golden-path",
+		"golden-path-plan.json",
+	} {
+		if _, err := os.Stat(filepath.Join(output, filepath.FromSlash(name))); err != nil {
+			t.Fatalf("missing adoption candidate path %s: %v", name, err)
+		}
+	}
+	for _, name := range []string{"cmd", "go.mod", "justfile", "mise.toml", ".github/dependabot.yml", ".github/golden-path-exceptions.yaml"} {
+		if _, err := os.Stat(filepath.Join(output, filepath.FromSlash(name))); !os.IsNotExist(err) {
+			t.Fatalf("adoption candidate unexpectedly materialized %s: %v", name, err)
+		}
+	}
+}
+
 func TestRunDoesNotWriteUpgradeCandidateWithConflicts(t *testing.T) {
 	request := filepath.Join("..", "..", "testdata", "generator", "requests", "single-go.yaml")
 	release := filepath.Join("..", "..", "testdata", "generator", "release-manifest.json")

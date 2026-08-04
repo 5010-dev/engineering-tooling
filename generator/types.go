@@ -30,16 +30,28 @@ const (
 var (
 	identifierPattern    = regexp.MustCompile(`^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$`)
 	componentPathPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$`)
+	targetNamePattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 	fullCommitPattern    = regexp.MustCompile(`^[a-f0-9]{40}$`)
 	exactVersionPattern  = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 )
 
 type Request struct {
-	SchemaVersion string      `json:"schemaVersion" yaml:"schemaVersion"`
-	Layout        string      `json:"layout" yaml:"layout"`
-	ProjectName   string      `json:"projectName" yaml:"projectName"`
-	ProjectSlug   string      `json:"projectSlug" yaml:"projectSlug"`
-	Components    []Component `json:"components" yaml:"components"`
+	SchemaVersion       string      `json:"schemaVersion" yaml:"schemaVersion"`
+	MaterializationMode string      `json:"materializationMode,omitempty" yaml:"materializationMode,omitempty"`
+	Layout              string      `json:"layout" yaml:"layout"`
+	ProjectName         string      `json:"projectName" yaml:"projectName"`
+	ProjectSlug         string      `json:"projectSlug" yaml:"projectSlug"`
+	Targets             []Target    `json:"targets,omitempty" yaml:"targets,omitempty"`
+	Components          []Component `json:"components" yaml:"components"`
+}
+
+type Target struct {
+	OS           string  `json:"os" yaml:"os"`
+	Architecture string  `json:"architecture" yaml:"architecture"`
+	Runtime      *string `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+	TargetTriple *string `json:"targetTriple,omitempty" yaml:"targetTriple,omitempty"`
+	Tier         string  `json:"tier" yaml:"tier"`
+	Execution    *bool   `json:"execution,omitempty" yaml:"execution,omitempty"`
 }
 
 type Component struct {
@@ -49,6 +61,25 @@ type Component struct {
 	ArtifactTypes []string `json:"artifactTypes" yaml:"artifactTypes"`
 	Capabilities  []string `json:"capabilities,omitempty" yaml:"capabilities,omitempty"`
 	ModulePath    string   `json:"modulePath,omitempty" yaml:"modulePath,omitempty"`
+}
+
+func (component Component) MarshalJSON() ([]byte, error) {
+	type componentJSON struct {
+		Name          string    `json:"name"`
+		Path          string    `json:"path"`
+		Profiles      []string  `json:"profiles"`
+		ArtifactTypes []string  `json:"artifactTypes"`
+		Capabilities  *[]string `json:"capabilities,omitempty"`
+		ModulePath    string    `json:"modulePath,omitempty"`
+	}
+	var capabilities *[]string
+	if component.Capabilities != nil {
+		capabilities = &component.Capabilities
+	}
+	return json.Marshal(componentJSON{
+		Name: component.Name, Path: component.Path, Profiles: component.Profiles,
+		ArtifactTypes: component.ArtifactTypes, Capabilities: capabilities, ModulePath: component.ModulePath,
+	})
 }
 
 type Bundle struct {
@@ -156,16 +187,27 @@ func DecodeRequest(reader io.Reader) (Request, error) {
 		return Request{}, fmt.Errorf("generator request must contain exactly one document")
 	}
 	var presence struct {
-		Components []struct {
+		MaterializationMode yaml.Node `yaml:"materializationMode"`
+		Targets             yaml.Node `yaml:"targets"`
+		Components          []struct {
 			Capabilities yaml.Node `yaml:"capabilities"`
 		} `yaml:"components"`
 	}
 	if err := yaml.Unmarshal(data, &presence); err != nil {
 		return Request{}, fmt.Errorf("inspect generator request fields: %w", err)
 	}
+	if presence.MaterializationMode.Kind != 0 && presence.MaterializationMode.Tag == "!!null" {
+		return Request{}, fmt.Errorf("materializationMode must be omitted or select bootstrap or adoption")
+	}
+	if presence.Targets.Kind != 0 && presence.Targets.Tag == "!!null" {
+		return Request{}, fmt.Errorf("targets must be omitted or declare at least one target")
+	}
 	for index, component := range presence.Components {
 		if component.Capabilities.Kind != 0 && component.Capabilities.Tag == "!!null" {
 			return Request{}, fmt.Errorf("component %q must omit capabilities or declare at least one", request.Components[index].Name)
+		}
+		if request.MaterializationMode == "adoption" && component.Capabilities.Kind == 0 {
+			return Request{}, fmt.Errorf("adoption component %q must explicitly declare its implemented capabilities, including an empty array when none apply", request.Components[index].Name)
 		}
 	}
 	if err := validateRequest(&request); err != nil {
@@ -261,6 +303,44 @@ func validateRequest(request *Request) error {
 	if !identifierPattern.MatchString(request.ProjectSlug) {
 		return fmt.Errorf("projectSlug must be a lowercase kebab-case identifier")
 	}
+	if request.MaterializationMode != "" && request.MaterializationMode != "bootstrap" && request.MaterializationMode != "adoption" {
+		return fmt.Errorf("materializationMode must select bootstrap or adoption")
+	}
+	if request.Targets != nil && len(request.Targets) == 0 {
+		return fmt.Errorf("targets must be omitted or declare at least one target")
+	}
+	if request.MaterializationMode != "" && len(request.Targets) == 0 {
+		return fmt.Errorf("explicit materializationMode requires at least one target")
+	}
+	targets := cloneTargets(request.Targets)
+	sort.Slice(targets, func(left, right int) bool {
+		return canonicalTargetKey(targets[left]) < canonicalTargetKey(targets[right])
+	})
+	targetIdentities := make(map[string]bool, len(targets))
+	hasRepresentativeTarget := false
+	for _, target := range targets {
+		if !targetNamePattern.MatchString(target.OS) || !targetNamePattern.MatchString(target.Architecture) {
+			return fmt.Errorf("target os and architecture must use lowercase repository-safe identifiers")
+		}
+		if (target.Runtime != nil && *target.Runtime == "") || (target.TargetTriple != nil && *target.TargetTriple == "") {
+			return fmt.Errorf("target runtime and targetTriple must be non-empty when declared")
+		}
+		if target.Tier != "primary" && target.Tier != "secondary" && target.Tier != "evaluation" {
+			return fmt.Errorf("target tier must select primary, secondary, or evaluation")
+		}
+		if target.Tier == "primary" || target.Tier == "secondary" {
+			hasRepresentativeTarget = true
+		}
+		identity := canonicalTargetIdentityKey(target)
+		if targetIdentities[identity] {
+			return fmt.Errorf("targets must not declare the same platform identity more than once")
+		}
+		targetIdentities[identity] = true
+	}
+	if len(targets) > 0 && !hasRepresentativeTarget {
+		return fmt.Errorf("targets must include at least one primary or secondary production or release representative")
+	}
+	request.Targets = targets
 	if len(request.Components) == 0 {
 		return fmt.Errorf("at least one component is required")
 	}
@@ -299,8 +379,11 @@ func validateRequest(request *Request) error {
 		if len(component.Profiles) == 0 || len(component.ArtifactTypes) == 0 {
 			return fmt.Errorf("component %q must declare profiles and artifactTypes", component.Name)
 		}
-		if component.Capabilities != nil && len(component.Capabilities) == 0 {
+		if request.MaterializationMode != "adoption" && component.Capabilities != nil && len(component.Capabilities) == 0 {
 			return fmt.Errorf("component %q must omit capabilities or declare at least one", component.Name)
+		}
+		if request.MaterializationMode == "adoption" && component.Capabilities == nil {
+			component.Capabilities = []string{}
 		}
 		profiles := sortedUnique(component.Profiles)
 		artifacts := sortedUnique(component.ArtifactTypes)
@@ -356,12 +439,13 @@ func validateRequest(request *Request) error {
 		}
 		if profileSelection["go"] {
 			if component.ModulePath == "" {
-				component.ModulePath = path.Join("github.com/5010-dev", request.ProjectSlug)
-				if component.Path != "." {
-					component.ModulePath = path.Join(component.ModulePath, component.Path)
+				if materializationMode(*request) == "bootstrap" {
+					component.ModulePath = path.Join("github.com/5010-dev", request.ProjectSlug)
+					if component.Path != "." {
+						component.ModulePath = path.Join(component.ModulePath, component.Path)
+					}
 				}
-			}
-			if err := module.CheckPath(component.ModulePath); err != nil {
+			} else if err := module.CheckPath(component.ModulePath); err != nil {
 				return fmt.Errorf("component %q has invalid Go modulePath", component.Name)
 			}
 		} else if component.ModulePath != "" {
@@ -394,6 +478,54 @@ func validateRequest(request *Request) error {
 		return request.Components[left].Path < request.Components[right].Path
 	})
 	return nil
+}
+
+func materializationMode(request Request) string {
+	if request.MaterializationMode == "" {
+		return "bootstrap"
+	}
+	return request.MaterializationMode
+}
+
+func canonicalTargetKey(target Target) string {
+	data, _ := json.Marshal(target)
+	return string(data)
+}
+
+func canonicalTargetIdentityKey(target Target) string {
+	identity := struct {
+		OS           string  `json:"os"`
+		Architecture string  `json:"architecture"`
+		Runtime      *string `json:"runtime,omitempty"`
+		TargetTriple *string `json:"targetTriple,omitempty"`
+	}{
+		OS: target.OS, Architecture: target.Architecture,
+		Runtime: target.Runtime, TargetTriple: target.TargetTriple,
+	}
+	data, _ := json.Marshal(identity)
+	return string(data)
+}
+
+func cloneTargets(targets []Target) []Target {
+	if targets == nil {
+		return nil
+	}
+	result := append(make([]Target, 0, len(targets)), targets...)
+	for index := range result {
+		if result[index].Runtime != nil {
+			value := *result[index].Runtime
+			result[index].Runtime = &value
+		}
+		if result[index].TargetTriple != nil {
+			value := *result[index].TargetTriple
+			result[index].TargetTriple = &value
+		}
+		if result[index].Execution != nil {
+			value := *result[index].Execution
+			result[index].Execution = &value
+		}
+	}
+	return result
 }
 
 func ValidateRelease(bundle Bundle, release ReleaseManifest) error {
@@ -440,7 +572,10 @@ func cleanRelativePath(value string) (string, error) {
 }
 
 func sortedUnique(values []string) []string {
-	copyOfValues := append([]string(nil), values...)
+	if values == nil {
+		return nil
+	}
+	copyOfValues := append(make([]string, 0, len(values)), values...)
 	sort.Strings(copyOfValues)
 	result := copyOfValues[:0]
 	for _, value := range copyOfValues {

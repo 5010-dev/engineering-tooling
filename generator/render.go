@@ -140,20 +140,19 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 		return nil, "", fmt.Errorf("encode canonical request: %w", err)
 	}
 	requestDigest := digest(requestData)
-	profiles, artifactTypes, capabilities := aggregateMetadata(request)
+	mode := materializationMode(request)
+	profiles, artifactTypes, capabilities := aggregateMetadata(request, mode)
 	componentMetadata := make([]map[string]any, 0, len(request.Components))
 	for _, component := range request.Components {
 		componentMetadata = append(componentMetadata, map[string]any{
 			"path": component.Path, "profiles": component.Profiles, "artifactTypes": component.ArtifactTypes,
-			"capabilities": metadataCapabilities(component),
+			"capabilities": metadataCapabilities(component, mode),
 		})
 	}
 	automation, err := buildAutomationModel(release, profiles)
 	if err != nil {
 		return nil, "", err
 	}
-	recipes := buildRecipeModel(request)
-	dependabot := buildDependabotModel(request)
 
 	var files []File
 	addTemplate := func(target, source string, mode fs.FileMode, data any) error {
@@ -164,45 +163,61 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 		files = append(files, File{Path: target, Mode: mode, Content: content, Source: source})
 		return nil
 	}
-	for _, entry := range []struct {
+	type templateAsset struct {
 		target string
 		source string
 		mode   fs.FileMode
 		data   any
-	}{
-		{"justfile", "common/justfile.tmpl", 0o644, recipes},
-		{"just/common.just", "common/just/common.just.tmpl", 0o644, recipes},
+	}
+	commonTemplates := []templateAsset{
 		{".github/workflows/developer-tooling.yml", "common/.github/workflows/developer-tooling.yml.tmpl", 0o644, automation},
-		{".github/dependabot.yml", "common/.github/dependabot.yml.tmpl", 0o644, dependabot},
-		{".github/golden-path-exceptions.yaml", "common/.github/golden-path-exceptions.yaml.tmpl", 0o644, nil},
 		{"scripts/golden-path", "common/scripts/golden-path.tmpl", 0o755, automation},
-		{".gitignore", "common/.gitignore.tmpl", 0o644, nil},
-	} {
+	}
+	if mode == "bootstrap" {
+		recipes := buildRecipeModel(request)
+		dependabot := buildDependabotModel(request)
+		commonTemplates = append(commonTemplates,
+			templateAsset{"justfile", "common/justfile.tmpl", 0o644, recipes},
+			templateAsset{"just/common.just", "common/just/common.just.tmpl", 0o644, recipes},
+			templateAsset{".github/dependabot.yml", "common/.github/dependabot.yml.tmpl", 0o644, dependabot},
+			templateAsset{".github/golden-path-exceptions.yaml", "common/.github/golden-path-exceptions.yaml.tmpl", 0o644, nil},
+			templateAsset{".gitignore", "common/.gitignore.tmpl", 0o644, nil},
+		)
+	}
+	for _, entry := range commonTemplates {
 		if err := addTemplate(entry.target, entry.source, entry.mode, entry.data); err != nil {
 			return nil, "", err
 		}
 	}
 
-	selectedTools := selectedMiseTools(profiles)
-	miseTOML, err := renderMiseTOML(bundle, selectedTools)
-	if err != nil {
-		return nil, "", err
-	}
-	files = append(files, File{Path: "mise.toml", Mode: 0o644, Content: miseTOML, Source: "tooling/mise.toml"})
-	miseLock, err := filterMiseLock(selectedTools)
-	if err != nil {
-		return nil, "", err
-	}
-	files = append(files, File{Path: "mise.lock", Mode: 0o644, Content: miseLock, Source: "tooling/mise.lock"})
-
-	for _, component := range request.Components {
-		componentFiles, componentErr := renderComponent(component, request, bundle)
-		if componentErr != nil {
-			return nil, "", componentErr
+	if mode == "bootstrap" {
+		selectedTools := selectedMiseTools(profiles)
+		miseTOML, miseErr := renderMiseTOML(bundle, selectedTools)
+		if miseErr != nil {
+			return nil, "", miseErr
 		}
-		files = append(files, componentFiles...)
+		files = append(files, File{Path: "mise.toml", Mode: 0o644, Content: miseTOML, Source: "tooling/mise.toml"})
+		miseLock, lockErr := filterMiseLock(selectedTools)
+		if lockErr != nil {
+			return nil, "", lockErr
+		}
+		files = append(files, File{Path: "mise.lock", Mode: 0o644, Content: miseLock, Source: "tooling/mise.lock"})
+
+		for _, component := range request.Components {
+			componentFiles, componentErr := renderComponent(component, request, bundle)
+			if componentErr != nil {
+				return nil, "", componentErr
+			}
+			files = append(files, componentFiles...)
+		}
 	}
 
+	generatorExtension := map[string]any{
+		"layout": request.Layout, "requestSHA256": requestDigest, "components": componentMetadata,
+	}
+	if request.MaterializationMode != "" {
+		generatorExtension["materializationMode"] = mode
+	}
 	metadata := map[string]any{
 		"schemaVersion":      "golden-path-metadata/v1",
 		"contractVersion":    bundle.ContractVersion,
@@ -212,12 +227,11 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 		"artifactTypes":      artifactTypes,
 		"capabilities":       capabilities,
 		"extensions": map[string]any{
-			"dev.fiftyten.generator": map[string]any{
-				"layout":        request.Layout,
-				"requestSHA256": requestDigest,
-				"components":    componentMetadata,
-			},
+			"dev.fiftyten.generator": generatorExtension,
 		},
+	}
+	if len(request.Targets) > 0 {
+		metadata["targets"] = request.Targets
 	}
 	metadataData, err := indentJSON(metadata)
 	if err != nil {
@@ -580,8 +594,8 @@ func componentCapabilities(component Component) map[string]bool {
 	return flags
 }
 
-func aggregateMetadata(request Request) ([]string, []string, []string) {
-	profileSet, artifactSet, capabilitySet := map[string]bool{}, map[string]bool{}, map[string]bool{"dependency-automation": true, "cache": true}
+func aggregateMetadata(request Request, mode string) ([]string, []string, []string) {
+	profileSet, artifactSet, capabilitySet := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, component := range request.Components {
 		for _, profile := range component.Profiles {
 			profileSet[profile] = true
@@ -589,14 +603,17 @@ func aggregateMetadata(request Request) ([]string, []string, []string) {
 		for _, artifact := range component.ArtifactTypes {
 			artifactSet[artifact] = true
 		}
-		for _, capability := range metadataCapabilities(component) {
+		for _, capability := range metadataCapabilities(component, mode) {
 			capabilitySet[capability] = true
 		}
 	}
 	return sortedKeys(profileSet), sortedKeys(artifactSet), sortedKeys(capabilitySet)
 }
 
-func metadataCapabilities(component Component) []string {
+func metadataCapabilities(component Component, mode string) []string {
+	if mode == "adoption" {
+		return cloneStrings(component.Capabilities)
+	}
 	flags := componentCapabilities(component)
 	capabilities := map[string]bool{"dependency-automation": true, "cache": true}
 	for _, capability := range []string{"format", "lint", "typecheck", "test", "build"} {
@@ -778,6 +795,7 @@ func validateRenderedFiles(files []File) error {
 }
 
 func cloneRequest(request Request) Request {
+	request.Targets = cloneTargets(request.Targets)
 	request.Components = append([]Component(nil), request.Components...)
 	for index := range request.Components {
 		request.Components[index].Profiles = cloneStrings(request.Components[index].Profiles)

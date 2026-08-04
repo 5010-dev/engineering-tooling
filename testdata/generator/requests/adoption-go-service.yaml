@@ -1,0 +1,17 @@
+schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Existing Go Service
+projectSlug: existing-go-service
+targets:
+  - os: linux
+    architecture: amd64
+    runtime: container
+    tier: primary
+    execution: false
+components:
+  - name: service
+    path: .
+    profiles: [go]
+    artifactTypes: [service, container]
+    capabilities: [format, lint, test, build]
