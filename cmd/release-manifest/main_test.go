@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/5010-dev/engineering-tooling/checker"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
@@ -28,10 +30,10 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	}()
 
 	for _, name := range []string{
-		"golden-path_1.0.1_darwin_amd64.tar.gz",
-		"golden-path_1.0.1_darwin_arm64.tar.gz",
-		"golden-path_1.0.1_linux_amd64.tar.gz",
-		"golden-path_1.0.1_linux_arm64.tar.gz",
+		"golden-path_1.1.0_darwin_amd64.tar.gz",
+		"golden-path_1.1.0_darwin_arm64.tar.gz",
+		"golden-path_1.1.0_linux_amd64.tar.gz",
+		"golden-path_1.1.0_linux_arm64.tar.gz",
 	} {
 		archive := fixtureArchive(t, name)
 		if err := root.WriteFile(name, archive, 0o600); err != nil {
@@ -52,12 +54,12 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	for sourceName, distName := range map[string]string{
 		"compatibility/manifest.json":                                       "compatibility-manifest.json",
 		"compatibility/golden-path-checker-compatibility-v1.schema.json":    "golden-path-checker-compatibility-v1.schema.json",
-		"standards/snapshots/2026.07/manifest.json":                         "standard-snapshot-manifest.json",
+		"standards/snapshots/2026.08/manifest.json":                         "standard-snapshot-manifest.json",
 		"release/RELEASE_NOTES.md":                                          "RELEASE_NOTES.md",
 		"release/golden-path-release-manifest-v1.schema.json":               "golden-path-release-manifest-v1.schema.json",
 		"release/golden-path-release-manifest-v2.schema.json":               "golden-path-release-manifest-v2.schema.json",
 		"release/golden-path-tooling-cutoff-v1.schema.json":                 "golden-path-tooling-cutoff-v1.schema.json",
-		"release/tooling-cutoff-2026-08-01.json":                            "tooling-cutoff.json",
+		"release/tooling-cutoff-2026-08-04.json":                            "tooling-cutoff.json",
 		"generator/schemas/golden-path-generated-assets-v1.schema.json":     "golden-path-generated-assets-v1.schema.json",
 		"generator/schemas/golden-path-generator-request-v1.schema.json":    "golden-path-generator-request-v1.schema.json",
 		"generator/schemas/golden-path-materialization-plan-v1.schema.json": "golden-path-materialization-plan-v1.schema.json",
@@ -75,7 +77,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	if err := run([]string{
 		"--source", repository,
 		"--dist", directory,
-		"--tag", "v1.0.1",
+		"--tag", "v1.1.0",
 		"--source-commit", "0123456789abcdef0123456789abcdef01234567",
 		"--output", output,
 	}, &stderr); err != nil {
@@ -104,11 +106,14 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateDocument(t, releaseSchema, data)
-	if result.ReleaseVersion != "1.0.1" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.0.1" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.0.1" || result.Components.Automation.Digest == "" {
+	if result.ReleaseVersion != "1.1.0" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.1.0" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.1.0" || result.Components.Automation.Digest == "" {
 		t.Fatalf("unexpected manifest: %+v", result)
 	}
-	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree == "" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 7 {
+	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree != "ed2bf9ad2f5156c9195365274f0dded5a4b6f8c2" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 7 {
 		t.Fatalf("release evidence is incomplete: %+v", result)
+	}
+	if !slices.Contains(result.SchemaVersions, "golden-path-native-roots/v1") {
+		t.Fatalf("release manifest omits native-root schema compatibility: %+v", result.SchemaVersions)
 	}
 	if result.Build.CleanCheckout {
 		t.Fatal("mismatched source commit was represented as a clean checkout")
@@ -122,6 +127,33 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		if len(item.SHA256) != 64 || len(item.ExecutableSHA256) != 64 || item.Size == 0 || len(item.SBOM.SHA256) != 64 || item.SBOM.Size == 0 {
 			t.Fatalf("asset identity is incomplete: %+v", item)
 		}
+	}
+}
+
+func TestSnapshotIdentityRejectsAWellFormedWrongSourceTree(t *testing.T) {
+	standard := checker.CompatibleStandard{
+		SourceCommit:            checker.SnapshotSourceCommit,
+		SnapshotAggregateDigest: checker.SnapshotAggregateDigest,
+	}
+	snapshot := snapshotDocument{
+		SchemaVersion:   "golden-path-standard-snapshot/v1",
+		StandardVersion: checker.StandardVersion,
+		ContractVersion: checker.ContractVersion,
+		Source: snapshotSource{
+			Repository: "https://github.com/5010-dev/.github",
+			Commit:     checker.SnapshotSourceCommit,
+			Path:       "docs/standards/developer-tooling",
+			GitTree:    checker.SnapshotSourceTree,
+		},
+	}
+	snapshot.Aggregate.Algorithm = "sha256"
+	snapshot.Aggregate.Digest = strings.TrimPrefix(checker.SnapshotAggregateDigest, "sha256:")
+	if !validSnapshotIdentity(snapshot, standard) {
+		t.Fatal("exact snapshot identity was rejected")
+	}
+	snapshot.Source.GitTree = strings.Repeat("a", 40)
+	if validSnapshotIdentity(snapshot, standard) {
+		t.Fatal("well-formed but incorrect source tree was accepted")
 	}
 }
 
@@ -184,7 +216,7 @@ func TestRunRequiresExactCleanCheckoutWhenRequested(t *testing.T) {
 	var stderr bytes.Buffer
 	err := run([]string{
 		"--source", filepath.Join("..", ".."),
-		"--tag", "v1.0.1",
+		"--tag", "v1.1.0",
 		"--source-commit", strings.Repeat("a", 40),
 		"--output", filepath.Join(t.TempDir(), "release-manifest.json"),
 		"--require-clean-checkout",

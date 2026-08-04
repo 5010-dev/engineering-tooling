@@ -1,12 +1,13 @@
 {
   "schemaVersion": "golden-path-release-manifest/v2",
-  "releaseVersion": "1.0.1",
+  "releaseVersion": "1.1.0",
   "lifecycle": "stable",
   "enforcement": ["report-only"],
-  "standardVersion": "2026.07",
+  "standardVersion": "2026.08",
   "contractVersion": "golden-path/v1",
   "schemaVersions": [
     "golden-path-metadata/v1",
+    "golden-path-native-roots/v1",
     "golden-path-exceptions/v1",
     "golden-path-checker-output/v1",
     "golden-path-rule-catalog/v1",
@@ -18,7 +19,7 @@
   "source": {
     "repository": "https://github.com/5010-dev/engineering-tooling",
     "commit": "0123456789abcdef0123456789abcdef01234567",
-    "tag": "v1.0.1"
+    "tag": "v1.1.0"
   },
   "catalogDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "snapshotAggregateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -29,16 +30,17 @@
     },
     "supportedStandards": [
       {
-        "standardVersion": "2026.07",
+        "standardVersion": "2026.08",
         "contractVersion": "golden-path/v1",
         "schemaVersions": [
           "golden-path-metadata/v1",
+          "golden-path-native-roots/v1",
           "golden-path-exceptions/v1",
           "golden-path-checker-output/v1",
           "golden-path-rule-catalog/v1",
           "runtime-support/v1"
         ],
-        "snapshot": "standards/snapshots/2026.07/manifest.json",
+        "snapshot": "standards/snapshots/2026.08/manifest.json",
         "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
         "catalogDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "snapshotAggregateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -105,7 +107,7 @@
   "toolingCutoff": {
     "manifest": "tooling-cutoff.json",
     "schema": "golden-path-tooling-cutoff-v1.schema.json",
-    "checkedAt": "2026-08-01T11:21:19Z",
+    "checkedAt": "2026-08-04T12:54:32Z",
     "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
   },
   "runtimeSelections": [
@@ -122,28 +124,28 @@
   ],
   "components": {
     "checker": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "executable": "golden-path",
       "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "lifecycle": "stable",
       "enforcement": ["report-only"]
     },
     "generator": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "executable": "golden-path",
       "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "lifecycle": "stable",
       "enforcement": ["report-only"]
     },
     "assetBundle": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "requestSchema": "golden-path-generator-request/v1",
       "generatedAssetsSchema": "golden-path-generated-assets/v1",
       "planSchema": "golden-path-materialization-plan/v1"
     },
     "automation": {
-      "version": "1.0.1",
+      "version": "1.1.0",
       "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "reusableWorkflow": ".github/workflows/golden-path-quality.yml",
       "setupAction": "actions/setup-golden-path/action.yml"
@@ -151,14 +153,14 @@
   },
   "assets": [
     {
-      "name": "golden-path_1.0.1_darwin_amd64.tar.gz",
+      "name": "golden-path_1.1.0_darwin_amd64.tar.gz",
       "os": "darwin",
       "architecture": "amd64",
       "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "executableSHA256": "1111111111111111111111111111111111111111111111111111111111111111",
       "size": 1,
       "sbom": {
-        "name": "golden-path_1.0.1_darwin_amd64.cdx.json",
+        "name": "golden-path_1.1.0_darwin_amd64.cdx.json",
         "format": "CycloneDX",
         "specVersion": "1.6",
         "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -166,14 +168,14 @@
       }
     },
     {
-      "name": "golden-path_1.0.1_darwin_arm64.tar.gz",
+      "name": "golden-path_1.1.0_darwin_arm64.tar.gz",
       "os": "darwin",
       "architecture": "arm64",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "executableSHA256": "2222222222222222222222222222222222222222222222222222222222222222",
       "size": 1,
       "sbom": {
-        "name": "golden-path_1.0.1_darwin_arm64.cdx.json",
+        "name": "golden-path_1.1.0_darwin_arm64.cdx.json",
         "format": "CycloneDX",
         "specVersion": "1.6",
         "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
@@ -181,14 +183,14 @@
       }
     },
     {
-      "name": "golden-path_1.0.1_linux_amd64.tar.gz",
+      "name": "golden-path_1.1.0_linux_amd64.tar.gz",
       "os": "linux",
       "architecture": "amd64",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "executableSHA256": "3333333333333333333333333333333333333333333333333333333333333333",
       "size": 1,
       "sbom": {
-        "name": "golden-path_1.0.1_linux_amd64.cdx.json",
+        "name": "golden-path_1.1.0_linux_amd64.cdx.json",
         "format": "CycloneDX",
         "specVersion": "1.6",
         "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -196,14 +198,14 @@
       }
     },
     {
-      "name": "golden-path_1.0.1_linux_arm64.tar.gz",
+      "name": "golden-path_1.1.0_linux_arm64.tar.gz",
       "os": "linux",
       "architecture": "arm64",
       "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "executableSHA256": "4444444444444444444444444444444444444444444444444444444444444444",
       "size": 1,
       "sbom": {
-        "name": "golden-path_1.0.1_linux_arm64.cdx.json",
+        "name": "golden-path_1.1.0_linux_arm64.cdx.json",
         "format": "CycloneDX",
         "specVersion": "1.6",
         "sha256": "89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567",

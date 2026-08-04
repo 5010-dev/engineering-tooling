@@ -105,6 +105,7 @@ func TestCheckFixtureContracts(t *testing.T) {
 			wantStatus: map[string]string{
 				"DT-META-001": "pass",
 				"DT-CMD-001":  "pass",
+				"DT-DEP-001":  "pass",
 				"DT-IAC-001":  "skip",
 			},
 		},
@@ -295,7 +296,7 @@ func TestUnsupportedStandardIsConfigurationError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = []byte(strings.Replace(string(data), `"2026.07"`, `"2026.06"`, 1))
+	data = []byte(strings.Replace(string(data), `"2026.08"`, `"2026.07"`, 1))
 	if err := rootFS.WriteFile(".github/golden-path.yaml", data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -768,7 +769,7 @@ func TestSnapshotCatalogIdentity(t *testing.T) {
 	if len(catalog.Rules) != 73 {
 		t.Fatalf("rule count = %d, want 73", len(catalog.Rules))
 	}
-	const want = "sha256:c2ec366495c5f2aa124a886152aadd1f4f0d1b7dcb34beb674c9dfa0db4b86ac"
+	const want = "sha256:6e8f0d979f55974dc693f21b0d559ec42cf67aaf48d09d9c8be46fb33fa30f9b"
 	if digest != want {
 		t.Fatalf("catalog digest = %q, want %q", digest, want)
 	}
@@ -942,6 +943,10 @@ func TestBundledContractExamplesValidate(t *testing.T) {
 		{
 			schema:  "schemas/golden-path-metadata-v1.schema.json",
 			example: "schemas/examples/golden-path-metadata-v1.valid.json",
+		},
+		{
+			schema:  "schemas/golden-path-native-roots-v1.schema.json",
+			example: "schemas/examples/golden-path-native-roots-v1.valid.json",
 		},
 		{
 			schema:  "schemas/golden-path-exceptions-v1.schema.json",

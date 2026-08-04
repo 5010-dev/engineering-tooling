@@ -20,6 +20,18 @@ const maxInputBytes = 2 << 20
 
 var errNotFound = errors.New("repository input not found")
 var metadataComponentPathPattern = regexp.MustCompile(`^(?:\.|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*)$`)
+var nativeProfiles = map[string]bool{
+	"node-typescript":          true,
+	"python":                   true,
+	"go":                       true,
+	"rust":                     true,
+	"zig":                      true,
+	"zig-toolchain":            true,
+	"infrastructure-aws-cdk":   true,
+	"infrastructure-terraform": true,
+	"infrastructure-opentofu":  true,
+	"infrastructure-pulumi":    true,
+}
 
 func readRepositoryFile(root, name string) ([]byte, error) {
 	cleanRoot, err := filepath.Abs(root)
@@ -247,6 +259,96 @@ func validateComponentMetadata(metadata Metadata) error {
 		return fmt.Errorf("metadata aggregate declarations must equal the union of component declarations")
 	}
 	return nil
+}
+
+func loadNativeRoots(root string, metadata Metadata) ([]MetadataNativeRoot, bool, error) {
+	data, err := readRepositoryFile(root, ".github/golden-path-native-roots.yaml")
+	if errors.Is(err, errNotFound) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	jsonData, err := decodeYAML(data)
+	if err != nil {
+		return nil, true, err
+	}
+	if err := validateJSON("schemas/golden-path-native-roots-v1.schema.json", jsonData); err != nil {
+		return nil, true, err
+	}
+	var declaration NativeRootsFile
+	if err := json.Unmarshal(jsonData, &declaration); err != nil {
+		return nil, true, fmt.Errorf("decode native roots: %w", err)
+	}
+	if err := validateNativeRoots(metadata, declaration.Roots); err != nil {
+		return nil, true, err
+	}
+	return declaration.Roots, true, nil
+}
+
+func validateNativeRoots(metadata Metadata, roots []MetadataNativeRoot) error {
+	if len(roots) == 0 {
+		return fmt.Errorf("native root declaration must contain at least one root")
+	}
+	metadataProfiles := enabledSet(metadata.Profiles)
+	ids := map[string]bool{}
+	coveredProfiles := map[string]bool{}
+
+	for _, root := range roots {
+		if root.ID == "" || ids[root.ID] {
+			return fmt.Errorf("native root IDs must be non-empty and unique")
+		}
+		ids[root.ID] = true
+		if !metadataComponentPathPattern.MatchString(root.Path) ||
+			len(root.Profiles) == 0 || !uniqueNonEmpty(root.Profiles) {
+			return fmt.Errorf("native root %q declaration is invalid", root.ID)
+		}
+		if !isSubset(root.Profiles, metadataProfiles) {
+			return fmt.Errorf("native root %q profiles must be a subset of aggregate metadata", root.ID)
+		}
+		for _, profile := range root.Profiles {
+			if !nativeProfiles[profile] {
+				return fmt.Errorf("native root %q contains a non-native profile", root.ID)
+			}
+			coveredProfiles[profile] = true
+		}
+	}
+
+	for profile := range metadataProfiles {
+		if nativeProfiles[profile] && !coveredProfiles[profile] {
+			return fmt.Errorf("native profile %q has no declared root", profile)
+		}
+	}
+	for leftIndex, left := range roots {
+		for _, right := range roots[leftIndex+1:] {
+			if pathsOverlap(left.Path, right.Path) && intersects(left.Profiles, right.Profiles) {
+				return fmt.Errorf("native roots %q and %q overlap for the same profile", left.ID, right.ID)
+			}
+		}
+	}
+	return nil
+}
+
+func enabledSet(values []string) map[string]bool {
+	result := make(map[string]bool, len(values))
+	for _, value := range values {
+		result[value] = true
+	}
+	return result
+}
+
+func isSubset(values []string, allowed map[string]bool) bool {
+	for _, value := range values {
+		if !allowed[value] {
+			return false
+		}
+	}
+	return true
+}
+
+func pathsOverlap(left, right string) bool {
+	return left == right || left == "." || right == "." ||
+		strings.HasPrefix(left, right+"/") || strings.HasPrefix(right, left+"/")
 }
 
 func uniqueNonEmpty(values []string) bool {

@@ -36,6 +36,17 @@ func loadCompatibility() (CompatibilityManifest, error) {
 		standard.SnapshotAggregateDigest != SnapshotAggregateDigest {
 		return CompatibilityManifest{}, fmt.Errorf("bundled standard compatibility identity mismatch")
 	}
+	expectedSchemas := []string{
+		"golden-path-metadata/v1",
+		"golden-path-native-roots/v1",
+		"golden-path-exceptions/v1",
+		"golden-path-checker-output/v1",
+		"golden-path-rule-catalog/v1",
+		"runtime-support/v1",
+	}
+	if !slices.Equal(standard.SchemaVersions, expectedSchemas) {
+		return CompatibilityManifest{}, fmt.Errorf("bundled standard schema compatibility mismatch")
+	}
 
 	profiles := make(map[string]struct{}, len(manifest.RuntimeSelections))
 	expectedTools := map[string]string{

@@ -4,12 +4,13 @@ package checker
 import "time"
 
 const (
-	Version                 = "1.0.1"
-	StandardVersion         = "2026.07"
+	Version                 = "1.1.0"
+	StandardVersion         = "2026.08"
 	ContractVersion         = "golden-path/v1"
-	CatalogDigest           = "sha256:c2ec366495c5f2aa124a886152aadd1f4f0d1b7dcb34beb674c9dfa0db4b86ac"
-	SnapshotAggregateDigest = "sha256:e62a016975a65b0e085c999891032400ea6e8b0dd8ef25f64cef978191319e52"
-	SnapshotSourceCommit    = "a47aac134196460edf81131defc9b420745abe73"
+	CatalogDigest           = "sha256:6e8f0d979f55974dc693f21b0d559ec42cf67aaf48d09d9c8be46fb33fa30f9b"
+	SnapshotAggregateDigest = "sha256:2ccb04cf3c5a9345f632b42be16bd75d8f4c5e1439210b140b57037cf6dc6a17"
+	SnapshotSourceCommit    = "604a40886d5a1cba3b304471e6e072b72cec7601"
+	SnapshotSourceTree      = "ed2bf9ad2f5156c9195365274f0dded5a4b6f8c2"
 )
 
 type Options struct {
@@ -57,18 +58,20 @@ type Finding struct {
 }
 
 type Metadata struct {
-	SchemaVersion      string              `json:"schemaVersion"`
-	ContractVersion    string              `json:"contractVersion"`
-	StandardVersion    string              `json:"standardVersion"`
-	AssetBundleVersion string              `json:"assetBundleVersion"`
-	Applicability      Applicability       `json:"applicability,omitempty"`
-	Profiles           []string            `json:"profiles"`
-	ArtifactTypes      []string            `json:"artifactTypes"`
-	Capabilities       []string            `json:"capabilities"`
-	Targets            []Target            `json:"targets,omitempty"`
-	Components         []MetadataComponent `json:"-"`
-	Extensions         map[string]any      `json:"extensions,omitempty"`
-	ComponentPath      string              `json:"-"`
+	SchemaVersion      string               `json:"schemaVersion"`
+	ContractVersion    string               `json:"contractVersion"`
+	StandardVersion    string               `json:"standardVersion"`
+	AssetBundleVersion string               `json:"assetBundleVersion"`
+	Applicability      Applicability        `json:"applicability,omitempty"`
+	Profiles           []string             `json:"profiles"`
+	ArtifactTypes      []string             `json:"artifactTypes"`
+	Capabilities       []string             `json:"capabilities"`
+	Targets            []Target             `json:"targets,omitempty"`
+	Components         []MetadataComponent  `json:"-"`
+	NativeRoots        []MetadataNativeRoot `json:"-"`
+	Extensions         map[string]any       `json:"extensions,omitempty"`
+	ComponentPath      string               `json:"-"`
+	NativeRootID       string               `json:"-"`
 }
 
 type MetadataComponent struct {
@@ -76,6 +79,17 @@ type MetadataComponent struct {
 	Profiles      []string `json:"profiles"`
 	ArtifactTypes []string `json:"artifactTypes"`
 	Capabilities  []string `json:"capabilities"`
+}
+
+type NativeRootsFile struct {
+	SchemaVersion string               `json:"schemaVersion"`
+	Roots         []MetadataNativeRoot `json:"roots"`
+}
+
+type MetadataNativeRoot struct {
+	ID       string   `json:"id"`
+	Path     string   `json:"path"`
+	Profiles []string `json:"profiles"`
 }
 
 type Applicability struct {

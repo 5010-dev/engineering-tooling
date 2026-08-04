@@ -64,6 +64,18 @@ func Check(options Options) Result {
 	if metadata.StandardVersion != StandardVersion || metadata.ContractVersion != ContractVersion {
 		return configurationResult(result, "DT-META-001", ".github/golden-path.yaml", "The selected standard or contract version is unsupported by this checker.")
 	}
+	nativeRoots, nativeRootsPresent, err := loadNativeRoots(options.Root, metadata)
+	if err != nil {
+		return configurationResult(
+			result,
+			"DT-META-001",
+			".github/golden-path-native-roots.yaml",
+			fmt.Sprintf("Golden Path native roots do not satisfy golden-path-native-roots/v1: %v", err),
+		)
+	}
+	if nativeRootsPresent {
+		metadata.NativeRoots = nativeRoots
+	}
 	if metadata.Applicability.Status != "not-applicable" {
 		if findingPath, message := validateProfileDeclarations(options.Root, metadata); message != "" {
 			return configurationResult(result, "DT-META-001", findingPath, message)
@@ -126,6 +138,22 @@ func Check(options Options) Result {
 }
 
 func exceptionMetadata(metadata Metadata, finding Finding) Metadata {
+	nativeRootID, _ := finding.Extensions["nativeRootId"].(string)
+	if nativeRootID != "" {
+		nativeRootProfile, _ := finding.Extensions["nativeRootProfile"].(string)
+		for _, nativeRoot := range metadata.NativeRoots {
+			if nativeRoot.ID == nativeRootID {
+				profiles := nativeRoot.Profiles
+				if nativeRootProfile != "" && slices.Contains(nativeRoot.Profiles, nativeRootProfile) {
+					profiles = []string{nativeRootProfile}
+				}
+				return Metadata{
+					Profiles: profiles, ComponentPath: nativeRoot.Path,
+					NativeRootID: nativeRoot.ID,
+				}
+			}
+		}
+	}
 	componentPath, _ := finding.Extensions["componentPath"].(string)
 	if componentPath == "" {
 		return metadata
