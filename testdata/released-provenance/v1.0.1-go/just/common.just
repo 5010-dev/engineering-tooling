@@ -1,0 +1,22 @@
+[private]
+_common-init:
+    MISE_GLOBAL_CONFIG_FILE=/dev/null mise install --locked
+    ./scripts/golden-path --install-only
+
+[private]
+_common-check:
+    #!/usr/bin/env sh
+    set -eu
+    git diff --check
+    evaluated_at="${GOLDEN_PATH_EVALUATED_AT:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}"
+    status=0
+    ./scripts/golden-path check --root . --evaluated-at "$evaluated_at" --json-output - || status=$?
+    if [ "$status" -eq 1 ]; then
+      printf '%s\n' 'Golden Path conformance is report-only; violations remain visible above.' >&2
+      exit 0
+    fi
+    exit "$status"
+
+[private]
+_common-ci:
+    actionlint
