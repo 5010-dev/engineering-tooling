@@ -14,7 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
+	hcljson "github.com/hashicorp/hcl/v2/json"
 	"github.com/pelletier/go-toml/v2"
+	"golang.org/x/mod/modfile"
 )
 
 type ruleEvaluator func(root string, metadata Metadata, rule Rule, exceptionsPresent bool) Finding
@@ -66,10 +70,66 @@ func evaluateRule(
 	if rule.Assessment != "automated" {
 		return baseFinding(rule, "skip", ".", "Rule requires hybrid or manual evidence and was not asserted by the structural checker.")
 	}
+	if componentScopedRules[rule.ID] && len(metadata.NativeRoots) > 0 {
+		return evaluateNativeRootRule(root, metadata, rule, exceptions, exceptionsPresent, evaluatedAt, compatibility)
+	}
 	if componentScopedRules[rule.ID] && len(metadata.Components) > 0 {
 		return evaluateComponentRule(root, metadata, rule, exceptions, exceptionsPresent, evaluatedAt, compatibility)
 	}
 	return evaluateAutomatedRule(root, metadata, rule, exceptionsPresent, evaluatedAt, compatibility)
+}
+
+func evaluateNativeRootRule(
+	root string,
+	metadata Metadata,
+	rule Rule,
+	exceptions []Exception,
+	exceptionsPresent bool,
+	evaluatedAt time.Time,
+	compatibility CompatibilityManifest,
+) Finding {
+	var selected *Finding
+	selectedWaivable := false
+	for _, nativeRoot := range metadata.NativeRoots {
+		for _, profile := range nativeRoot.Profiles {
+			rootMetadata := Metadata{
+				SchemaVersion: metadata.SchemaVersion, ContractVersion: metadata.ContractVersion,
+				StandardVersion: metadata.StandardVersion, AssetBundleVersion: metadata.AssetBundleVersion,
+				Profiles: []string{profile}, Targets: metadata.Targets,
+				ComponentPath: nativeRoot.Path, NativeRootID: nativeRoot.ID,
+			}
+			if !ruleApplies(rootMetadata, rule) {
+				continue
+			}
+			finding := evaluateAutomatedRule(root, rootMetadata, rule, exceptionsPresent, evaluatedAt, compatibility)
+			if finding.Extensions == nil {
+				finding.Extensions = map[string]any{}
+			}
+			finding.Extensions["nativeRootId"] = nativeRoot.ID
+			finding.Extensions["nativeRootPath"] = nativeRoot.Path
+			finding.Extensions["nativeRootProfile"] = profile
+			waivable := false
+			if finding.Status == "fail" {
+				if exception, expired := matchingException(exceptions, rootMetadata, finding, rule, evaluatedAt); exception != nil && !expired {
+					waivable = true
+				}
+			}
+			priority := componentFindingPriority(finding.Status)
+			selectedPriority := 0
+			if selected != nil {
+				selectedPriority = componentFindingPriority(selected.Status)
+			}
+			if selected == nil || priority > selectedPriority || priority == selectedPriority && selectedWaivable && !waivable {
+				copyOfFinding := finding
+				selected = &copyOfFinding
+				selectedWaivable = waivable
+			}
+		}
+	}
+	if selected == nil {
+		return baseFinding(rule, "skip", ".", "Rule does not apply to any declared native root.")
+	}
+	return *selected
 }
 
 func evaluateAutomatedRule(
@@ -163,6 +223,9 @@ type nativeProfileMarker struct {
 }
 
 func validateProfileDeclarations(root string, metadata Metadata) (string, string) {
+	if len(metadata.NativeRoots) > 0 {
+		return validateNativeRootProfileDeclarations(root, metadata.NativeRoots, metadata.Components)
+	}
 	if len(metadata.Components) == 0 {
 		return validateProfileRoot(root, metadata)
 	}
@@ -184,15 +247,68 @@ func validateProfileDeclarations(root string, metadata Metadata) (string, string
 	return "", ""
 }
 
-func validateProfileRoot(root string, metadata Metadata) (string, string) {
-	markers := []nativeProfileMarker{
-		{paths: []string{"package.json"}, profiles: []string{"node-typescript"}},
-		{paths: []string{"pyproject.toml"}, profiles: []string{"python"}},
-		{paths: []string{"go.mod", "go.work"}, profiles: []string{"go"}},
-		{paths: []string{"Cargo.toml"}, profiles: []string{"rust"}},
-		{paths: []string{"build.zig", "build.zig.zon"}, profiles: []string{"zig", "zig-toolchain"}},
+func validateNativeRootProfileDeclarations(root string, nativeRoots []MetadataNativeRoot, components []MetadataComponent) (string, string) {
+	profilesByPath := map[string]map[string]bool{".": {}}
+	for _, nativeRoot := range nativeRoots {
+		profiles, exists := profilesByPath[nativeRoot.Path]
+		if !exists {
+			profiles = map[string]bool{}
+			profilesByPath[nativeRoot.Path] = profiles
+		}
+		for _, profile := range nativeRoot.Profiles {
+			profiles[profile] = true
+		}
 	}
-	for _, marker := range markers {
+	paths := make([]string, 0, len(profilesByPath))
+	for rootPath := range profilesByPath {
+		paths = append(paths, rootPath)
+	}
+	slices.Sort(paths)
+	for _, rootPath := range paths {
+		rootMetadata := Metadata{
+			Profiles:      sortedEnabledKeys(profilesByPath[rootPath]),
+			ComponentPath: rootPath,
+		}
+		if findingPath, message := validateProfileRoot(root, rootMetadata); message != "" {
+			return findingPath, message
+		}
+	}
+	for _, component := range components {
+		componentMetadata := Metadata{Profiles: component.Profiles, ComponentPath: component.Path}
+		if findingPath, message := validateProfileRoot(root, componentMetadata); message != "" {
+			return findingPath, message
+		}
+		for _, marker := range nativeProfileMarkers() {
+			name, _, err := firstExistingComponent(root, componentMetadata, marker.paths...)
+			if errors.Is(err, errNotFound) {
+				continue
+			}
+			if err != nil {
+				return componentFile(componentMetadata, marker.paths[0]), "A native profile marker could not be read safely."
+			}
+			requiredProfiles := make([]string, 0, len(marker.profiles))
+			for _, profile := range marker.profiles {
+				if slices.Contains(component.Profiles, profile) {
+					requiredProfiles = append(requiredProfiles, profile)
+				}
+			}
+			covered := false
+			for _, nativeRoot := range nativeRoots {
+				if pathContains(nativeRoot.Path, component.Path) && intersects(nativeRoot.Profiles, requiredProfiles) {
+					covered = true
+					break
+				}
+			}
+			if !covered {
+				return name, "Native marker " + name + " is not covered by a declared native dependency root for its profile."
+			}
+		}
+	}
+	return "", ""
+}
+
+func validateProfileRoot(root string, metadata Metadata) (string, string) {
+	for _, marker := range nativeProfileMarkers() {
 		name, _, err := firstExistingComponent(root, metadata, marker.paths...)
 		if errors.Is(err, errNotFound) {
 			continue
@@ -205,6 +321,20 @@ func validateProfileRoot(root string, metadata Metadata) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+func nativeProfileMarkers() []nativeProfileMarker {
+	return []nativeProfileMarker{
+		{paths: []string{"package.json"}, profiles: []string{"node-typescript"}},
+		{paths: []string{"pyproject.toml"}, profiles: []string{"python"}},
+		{paths: []string{"go.mod", "go.work"}, profiles: []string{"go"}},
+		{paths: []string{"Cargo.toml"}, profiles: []string{"rust"}},
+		{paths: []string{"build.zig", "build.zig.zon"}, profiles: []string{"zig", "zig-toolchain"}},
+	}
+}
+
+func pathContains(rootPath, candidatePath string) bool {
+	return rootPath == "." || candidatePath == rootPath || strings.HasPrefix(candidatePath, rootPath+"/")
 }
 
 func componentFile(metadata Metadata, name string) string {
@@ -224,6 +354,92 @@ func firstExistingComponent(root string, metadata Metadata, names ...string) (st
 		return componentName, data, err
 	}
 	return "", nil, errNotFound
+}
+
+type goModuleRecord struct {
+	path string
+	data []byte
+}
+
+type goWorkspaceRecord struct {
+	authorityPath string
+	authorityData []byte
+	modules       []goModuleRecord
+	runtimeFiles  []goModuleRecord
+}
+
+func loadGoWorkspace(root string, metadata Metadata, rule Rule) (goWorkspaceRecord, *Finding) {
+	workPath := componentFile(metadata, "go.work")
+	workData, workErr := readRepositoryFile(root, workPath)
+	if workErr == nil {
+		workFile, parseErr := modfile.ParseWork(workPath, workData, nil)
+		if parseErr != nil {
+			finding := inputError(rule, workPath)
+			return goWorkspaceRecord{}, &finding
+		}
+		if len(workFile.Use) == 0 {
+			finding := baseFinding(rule, deviationStatus(rule), workPath, "Go workspace must declare at least one repository-local module.")
+			return goWorkspaceRecord{}, &finding
+		}
+		modules := make([]goModuleRecord, 0, len(workFile.Use))
+		seen := make(map[string]bool, len(workFile.Use))
+		for _, use := range workFile.Use {
+			cleanPath := path.Clean(use.Path)
+			if path.IsAbs(use.Path) || cleanPath == ".." || strings.HasPrefix(cleanPath, "../") || strings.Contains(use.Path, "\\") {
+				finding := baseFinding(rule, deviationStatus(rule), workPath, "Go workspace use paths must remain within the declared native root.")
+				finding.Secondary = use.Path
+				return goWorkspaceRecord{}, &finding
+			}
+			modulePath := componentFile(metadata, path.Join(cleanPath, "go.mod"))
+			if seen[modulePath] {
+				continue
+			}
+			moduleData, moduleErr := readRepositoryFile(root, modulePath)
+			if moduleErr != nil {
+				finding := missingOrInput(rule, modulePath, moduleErr, "Go workspace references a module without go.mod.")
+				return goWorkspaceRecord{}, &finding
+			}
+			seen[modulePath] = true
+			modules = append(modules, goModuleRecord{path: modulePath, data: moduleData})
+		}
+		slices.SortFunc(modules, func(left, right goModuleRecord) int {
+			return strings.Compare(left.path, right.path)
+		})
+		var runtimeFiles []goModuleRecord
+		rootModulePath := componentFile(metadata, "go.mod")
+		if !seen[rootModulePath] {
+			rootModuleData, rootModuleErr := readRepositoryFile(root, rootModulePath)
+			switch {
+			case rootModuleErr == nil:
+				runtimeFiles = append(runtimeFiles, goModuleRecord{path: rootModulePath, data: rootModuleData})
+			case !errors.Is(rootModuleErr, errNotFound):
+				finding := inputError(rule, rootModulePath)
+				return goWorkspaceRecord{}, &finding
+			}
+		}
+		return goWorkspaceRecord{
+			authorityPath: workPath,
+			authorityData: workData,
+			modules:       modules,
+			runtimeFiles:  runtimeFiles,
+		}, nil
+	}
+	if !errors.Is(workErr, errNotFound) {
+		finding := inputError(rule, workPath)
+		return goWorkspaceRecord{}, &finding
+	}
+
+	modulePath := componentFile(metadata, "go.mod")
+	moduleData, moduleErr := readRepositoryFile(root, modulePath)
+	if moduleErr != nil {
+		finding := missingOrInput(rule, modulePath, moduleErr, "Go profile requires go.mod or go.work.")
+		return goWorkspaceRecord{}, &finding
+	}
+	return goWorkspaceRecord{
+		authorityPath: modulePath,
+		authorityData: moduleData,
+		modules:       []goModuleRecord{{path: modulePath, data: moduleData}},
+	}, nil
 }
 
 func ruleApplies(metadata Metadata, rule Rule) bool {
@@ -448,9 +664,13 @@ func evaluateDependencyRecords(root string, metadata Metadata, rule Rule, _ bool
 	requirements := []requirement{
 		{"node-typescript", []string{"package.json", "pnpm-lock.yaml"}},
 		{"python", []string{"pyproject.toml", "uv.lock"}},
-		{"go", []string{"go.mod"}},
+		{"go", nil},
 		{"rust", []string{"Cargo.toml", "Cargo.lock"}},
 		{"zig", []string{"build.zig", "build.zig.zon"}},
+		{"infrastructure-aws-cdk", []string{"cdk.json"}},
+		{"infrastructure-terraform", nil},
+		{"infrastructure-opentofu", nil},
+		{"infrastructure-pulumi", []string{"Pulumi.yaml"}},
 	}
 	checked := false
 	for _, requirement := range requirements {
@@ -458,6 +678,26 @@ func evaluateDependencyRecords(root string, metadata Metadata, rule Rule, _ bool
 			continue
 		}
 		checked = true
+		if requirement.profile == "go" {
+			if _, finding := loadGoWorkspace(root, metadata, rule); finding != nil {
+				return *finding
+			}
+			continue
+		}
+		if requirement.profile == "infrastructure-terraform" || requirement.profile == "infrastructure-opentofu" {
+			terraformFiles, filesErr := repositoryDirectoryFiles(root, metadata.ComponentPath, 256, ".tf", ".tf.json")
+			if filesErr != nil {
+				return inputError(rule, componentFile(metadata, "."))
+			}
+			if len(terraformFiles) == 0 {
+				return baseFinding(rule, deviationStatus(rule), componentFile(metadata, "."), "Terraform or OpenTofu root requires at least one configuration file.")
+			}
+			lockPath := componentFile(metadata, ".terraform.lock.hcl")
+			if _, err := readRepositoryFile(root, lockPath); err != nil {
+				return missingOrInput(rule, lockPath, err, "Terraform or OpenTofu root requires .terraform.lock.hcl.")
+			}
+			continue
+		}
 		for _, name := range requirement.files {
 			componentName := componentFile(metadata, name)
 			if _, err := readRepositoryFile(root, componentName); errors.Is(err, errNotFound) {
@@ -475,30 +715,39 @@ func evaluateDependencyRecords(root string, metadata Metadata, rule Rule, _ bool
 
 func evaluateDirectDependencies(root string, metadata Metadata, rule Rule, _ bool) Finding {
 	var detected bool
-	packageJSON := componentFile(metadata, "package.json")
-	if data, err := readRepositoryFile(root, packageJSON); err == nil {
-		var manifest map[string]any
-		if json.Unmarshal(data, &manifest) != nil {
-			return inputError(rule, packageJSON)
-		}
-		for _, section := range []string{"dependencies", "devDependencies", "optionalDependencies", "peerDependencies"} {
-			dependencies, _ := manifest[section].(map[string]any)
-			for name, raw := range dependencies {
-				value, _ := raw.(string)
-				if isDirectReference(value) {
-					detected = true
-					if !directReferenceIsImmutable(value) {
-						finding := baseFinding(rule, deviationStatus(rule), packageJSON, "Direct dependency "+name+" is not pinned to an immutable reference with integrity.")
-						finding.Secondary = name
-						return finding
+	if slices.Contains(metadata.Profiles, "node-typescript") {
+		packageJSON := componentFile(metadata, "package.json")
+		if data, err := readRepositoryFile(root, packageJSON); err == nil {
+			var manifest map[string]any
+			if json.Unmarshal(data, &manifest) != nil {
+				return inputError(rule, packageJSON)
+			}
+			for _, section := range []string{"dependencies", "devDependencies", "optionalDependencies", "peerDependencies"} {
+				dependencies, _ := manifest[section].(map[string]any)
+				for name, raw := range dependencies {
+					value, _ := raw.(string)
+					if isDirectReference(value) {
+						detected = true
+						if !directReferenceIsImmutable(value) {
+							finding := baseFinding(rule, deviationStatus(rule), packageJSON, "Direct dependency "+name+" is not pinned to an immutable reference with integrity.")
+							finding.Secondary = name
+							return finding
+						}
 					}
 				}
 			}
+		} else if !errors.Is(err, errNotFound) {
+			return inputError(rule, packageJSON)
 		}
-	} else if !errors.Is(err, errNotFound) {
-		return inputError(rule, packageJSON)
 	}
-	for _, name := range []string{"pyproject.toml", "Cargo.toml"} {
+	var tomlNames []string
+	if slices.Contains(metadata.Profiles, "python") {
+		tomlNames = append(tomlNames, "pyproject.toml")
+	}
+	if slices.Contains(metadata.Profiles, "rust") {
+		tomlNames = append(tomlNames, "Cargo.toml")
+	}
+	for _, name := range tomlNames {
 		componentName := componentFile(metadata, name)
 		data, err := readRepositoryFile(root, componentName)
 		if errors.Is(err, errNotFound) {
@@ -521,10 +770,155 @@ func evaluateDirectDependencies(root string, metadata Metadata, rule Rule, _ boo
 			}
 		}
 	}
+	if slices.Contains(metadata.Profiles, "infrastructure-terraform") || slices.Contains(metadata.Profiles, "infrastructure-opentofu") {
+		terraformFinding, terraformDetected := evaluateTerraformDirectDependencies(root, metadata, rule)
+		if terraformFinding != nil {
+			return *terraformFinding
+		}
+		detected = detected || terraformDetected
+	}
 	if !detected {
 		return baseFinding(rule, "skip", ".", "No direct VCS, URL, archive, binary, or generated-source dependency was detected.")
 	}
 	return baseFinding(rule, "skip", ".", "Detected direct references are immutable, but ecosystem integrity-record correlation is outside this structural check.")
+}
+
+func evaluateTerraformDirectDependencies(root string, metadata Metadata, rule Rule) (*Finding, bool) {
+	const maxTerraformFiles = 256
+	type moduleDirectory struct {
+		path     string
+		required bool
+	}
+	rootPath := metadata.ComponentPath
+	if rootPath == "" {
+		rootPath = "."
+	}
+	queue := []moduleDirectory{{path: rootPath}}
+	visited := map[string]bool{}
+	fileCount := 0
+	detected := false
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if visited[current.path] {
+			continue
+		}
+		visited[current.path] = true
+		files, err := repositoryDirectoryFiles(root, current.path, maxTerraformFiles, ".tf", ".tf.json")
+		if err != nil || (len(files) == 0 && current.required) {
+			finding := inputError(rule, current.path)
+			return &finding, detected
+		}
+		fileCount += len(files)
+		if fileCount > maxTerraformFiles {
+			finding := inputError(rule, componentFile(metadata, "."))
+			return &finding, detected
+		}
+		for _, name := range files {
+			data, readErr := readRepositoryFile(root, name)
+			if readErr != nil {
+				finding := inputError(rule, name)
+				return &finding, detected
+			}
+			file, diagnostics := parseTerraformConfiguration(data, name)
+			if diagnostics.HasErrors() {
+				finding := inputError(rule, name)
+				return &finding, detected
+			}
+			content, _, contentDiagnostics := file.Body.PartialContent(&hcl.BodySchema{
+				Blocks: []hcl.BlockHeaderSchema{{Type: "module", LabelNames: []string{"name"}}},
+			})
+			if contentDiagnostics.HasErrors() {
+				finding := inputError(rule, name)
+				return &finding, detected
+			}
+			for _, block := range content.Blocks {
+				attributes, attributeDiagnostics := block.Body.JustAttributes()
+				if attributeDiagnostics.HasErrors() {
+					finding := inputError(rule, name)
+					return &finding, detected
+				}
+				moduleName := strings.Join(block.Labels, ".")
+				sourceAttribute, exists := attributes["source"]
+				if !exists {
+					finding := baseFinding(rule, deviationStatus(rule), name, "Terraform or OpenTofu module dependency is missing a static source.")
+					finding.Secondary = moduleName
+					return &finding, detected
+				}
+				source, sourceOK := hclLiteralString(sourceAttribute)
+				if !sourceOK {
+					finding := baseFinding(rule, deviationStatus(rule), name, "Terraform or OpenTofu module source must be a static immutable reference.")
+					finding.Secondary = moduleName
+					return &finding, detected
+				}
+				if strings.HasPrefix(source, "./") || strings.HasPrefix(source, "../") {
+					localPath := path.Clean(path.Join(path.Dir(name), source))
+					if localPath == ".." || strings.HasPrefix(localPath, "../") || path.IsAbs(source) || strings.Contains(source, "\\") {
+						finding := baseFinding(rule, deviationStatus(rule), name, "Terraform or OpenTofu local module source must remain within the repository.")
+						finding.Secondary = moduleName
+						return &finding, detected
+					}
+					if visited[localPath] {
+						continue
+					}
+					queue = append(queue, moduleDirectory{path: localPath, required: true})
+					continue
+				}
+				detected = true
+				if terraformRemoteSource(source) {
+					if !directReferenceIsImmutable(source) {
+						finding := baseFinding(rule, deviationStatus(rule), name, "Terraform or OpenTofu VCS or URL module source must pin an immutable commit or integrity digest.")
+						finding.Secondary = moduleName
+						return &finding, detected
+					}
+					continue
+				}
+				versionAttribute, exists := attributes["version"]
+				version, versionOK := hclLiteralString(versionAttribute)
+				if !exists || !versionOK || !exactTerraformModuleVersion(version) {
+					finding := baseFinding(rule, deviationStatus(rule), name, "Terraform or OpenTofu registry module must pin one exact version.")
+					finding.Secondary = moduleName
+					return &finding, detected
+				}
+			}
+		}
+	}
+	return nil, detected
+}
+
+func parseTerraformConfiguration(data []byte, name string) (*hcl.File, hcl.Diagnostics) {
+	if strings.HasSuffix(name, ".tf.json") {
+		return hcljson.Parse(data, name)
+	}
+	return hclsyntax.ParseConfig(data, name, hcl.Pos{Line: 1, Column: 1})
+}
+
+func hclLiteralString(attribute *hcl.Attribute) (string, bool) {
+	if attribute == nil {
+		return "", false
+	}
+	value, diagnostics := attribute.Expr.Value(nil)
+	if diagnostics.HasErrors() || !value.IsKnown() || value.IsNull() || value.Type().FriendlyName() != "string" {
+		return "", false
+	}
+	return value.AsString(), true
+}
+
+func terraformRemoteSource(source string) bool {
+	lower := strings.ToLower(source)
+	return strings.Contains(lower, "::") ||
+		strings.HasPrefix(lower, "git@") ||
+		strings.Contains(lower, "://") ||
+		strings.HasPrefix(lower, "github.com/") ||
+		strings.HasPrefix(lower, "bitbucket.org/")
+}
+
+func exactTerraformModuleVersion(value string) bool {
+	value = strings.TrimSpace(value)
+	if strings.HasPrefix(value, "=") {
+		value = strings.TrimSpace(strings.TrimPrefix(value, "="))
+	}
+	return exactPatchVersion(value)
 }
 
 func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Finding {
@@ -754,44 +1148,85 @@ func evaluateGoAuthority(root string, metadata Metadata, rule Rule, _ bool) Find
 	if finding != nil {
 		return *finding
 	}
-	goMod := componentFile(metadata, "go.mod")
-	data, err := readRepositoryFile(root, goMod)
-	if errors.Is(err, errNotFound) {
-		goMod = componentFile(metadata, "go.work")
-		data, err = readRepositoryFile(root, goMod)
+	workspace, workspaceFinding := loadGoWorkspace(root, metadata, rule)
+	if workspaceFinding != nil {
+		return *workspaceFinding
 	}
-	if err != nil {
-		return missingOrInput(rule, componentFile(metadata, "go.mod"), err, "Go profile requires go.mod or go.work.")
-	}
-	goLine := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)\s*$`).FindStringSubmatch(string(data))
-	toolchainLine := regexp.MustCompile(`(?m)^toolchain\s+go([0-9]+\.[0-9]+\.[0-9]+)\s*$`).FindStringSubmatch(string(data))
 	parts := versionParts(miseGo)
-	if len(parts) != 3 || len(goLine) < 2 {
-		return baseFinding(rule, deviationStatus(rule), goMod, "Go runtime declarations are incomplete.")
+	if len(parts) != 3 {
+		return baseFinding(rule, deviationStatus(rule), workspace.authorityPath, "Go runtime declarations are incomplete.")
 	}
-	if compareNumericVersions(goLine[1], miseGo) > 0 {
-		return baseFinding(rule, deviationStatus(rule), goMod, "The Go directive contradicts the mise-selected runtime.")
+	files := append([]goModuleRecord{{path: workspace.authorityPath, data: workspace.authorityData}}, workspace.modules...)
+	files = append(files, workspace.runtimeFiles...)
+	seen := map[string]bool{}
+	for _, file := range files {
+		if seen[file.path] {
+			continue
+		}
+		seen[file.path] = true
+		goLine := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)\s*$`).FindStringSubmatch(string(file.data))
+		if len(goLine) < 2 {
+			return baseFinding(rule, deviationStatus(rule), file.path, "Go runtime declarations are incomplete.")
+		}
+		if compareNumericVersions(goLine[1], miseGo) > 0 {
+			return baseFinding(rule, deviationStatus(rule), file.path, "The Go directive contradicts the mise-selected runtime.")
+		}
+		toolchainLine := regexp.MustCompile(`(?m)^toolchain\s+(\S+)\s*$`).FindStringSubmatch(string(file.data))
+		if len(toolchainLine) == 2 && toolchainLine[1] != "default" && toolchainLine[1] != "go"+miseGo {
+			return baseFinding(rule, deviationStatus(rule), file.path, "The Go toolchain directive contradicts the mise-selected runtime.")
+		}
 	}
-	if len(toolchainLine) == 2 && toolchainLine[1] != miseGo {
-		return baseFinding(rule, deviationStatus(rule), goMod, "The Go toolchain directive contradicts the mise-selected runtime.")
-	}
-	return baseFinding(rule, "pass", goMod, "Mise and native Go runtime declarations align.")
+	return baseFinding(rule, "pass", workspace.authorityPath, "Mise and native Go module or workspace runtime declarations align.")
 }
 
 func evaluateGoDependencies(root string, metadata Metadata, rule Rule, _ bool) Finding {
-	goMod := componentFile(metadata, "go.mod")
-	data, err := readRepositoryFile(root, goMod)
-	if err != nil {
-		return missingOrInput(rule, goMod, err, "Go profile requires go.mod.")
+	workspace, workspaceFinding := loadGoWorkspace(root, metadata, rule)
+	if workspaceFinding != nil {
+		return *workspaceFinding
 	}
-	hasThirdParty := regexp.MustCompile(`(?m)^\s*(?:require\s+)?(?:github\.com|gitlab\.com|golang\.org|gopkg\.in)/`).Match(data)
-	if hasThirdParty {
-		goSum := componentFile(metadata, "go.sum")
-		if _, err := readRepositoryFile(root, goSum); err != nil {
-			return missingOrInput(rule, goSum, err, "Go modules resolve third-party dependencies but go.sum is missing.")
+	moduleFiles := make([]*modfile.File, 0, len(workspace.modules))
+	workspaceModules := make(map[string]bool, len(workspace.modules))
+	for _, module := range workspace.modules {
+		moduleFile, parseErr := modfile.Parse(module.path, module.data, nil)
+		if parseErr != nil || moduleFile.Module == nil || moduleFile.Module.Mod.Path == "" {
+			return inputError(rule, module.path)
+		}
+		moduleFiles = append(moduleFiles, moduleFile)
+		workspaceModules[moduleFile.Module.Mod.Path] = true
+	}
+	for index, module := range workspace.modules {
+		moduleFile := moduleFiles[index]
+		hasExternalRequirement := false
+		for _, requirement := range moduleFile.Require {
+			if workspaceModules[requirement.Mod.Path] || goRequirementUsesLocalReplacement(moduleFile, requirement) {
+				continue
+			}
+			hasExternalRequirement = true
+			break
+		}
+		if hasExternalRequirement {
+			goSum := path.Join(path.Dir(module.path), "go.sum")
+			if _, err := readRepositoryFile(root, goSum); err != nil {
+				return missingOrInput(rule, goSum, err, "Go modules resolve third-party dependencies but go.sum is missing.")
+			}
 		}
 	}
-	return baseFinding(rule, "skip", goMod, "Go dependency authority uses native records; tidy drift and go tool execution require the repository quality gate.")
+	return baseFinding(rule, "skip", workspace.authorityPath, "Go dependency authority uses native module or workspace records; sync, tidy, verify, and go tool execution require the repository quality gate.")
+}
+
+func goRequirementUsesLocalReplacement(moduleFile *modfile.File, requirement *modfile.Require) bool {
+	for _, replacement := range moduleFile.Replace {
+		if replacement.Old.Path != requirement.Mod.Path ||
+			replacement.Old.Version != "" && replacement.Old.Version != requirement.Mod.Version ||
+			replacement.New.Version != "" {
+			continue
+		}
+		return path.IsAbs(replacement.New.Path) ||
+			replacement.New.Path == "." ||
+			strings.HasPrefix(replacement.New.Path, "./") ||
+			strings.HasPrefix(replacement.New.Path, "../")
+	}
+	return false
 }
 
 func evaluateRustProfile(root string, metadata Metadata, rule Rule, _ bool) Finding {
@@ -1054,6 +1489,45 @@ func repositoryFiles(root, directory string, limit int, extensions ...string) ([
 	})
 	slices.Sort(result)
 	return result, err
+}
+
+func repositoryDirectoryFiles(root, directory string, limit int, extensions ...string) ([]string, error) {
+	if directory == "" {
+		directory = "."
+	}
+	cleanRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	rootFS, err := os.OpenRoot(cleanRoot)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rootFS.Close() }()
+	entries, err := fs.ReadDir(rootFS.FS(), directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		for _, extension := range extensions {
+			if strings.HasSuffix(entry.Name(), extension) {
+				result = append(result, path.Join(directory, entry.Name()))
+				if len(result) > limit {
+					return nil, fmt.Errorf("repository file limit exceeded")
+				}
+				break
+			}
+		}
+	}
+	slices.Sort(result)
+	return result, nil
 }
 
 func isExactToolVersion(value string) bool {

@@ -12,9 +12,9 @@ import (
 	"github.com/5010-dev/engineering-tooling/standards"
 )
 
-const snapshotRoot = "snapshots/2026.07"
+const snapshotRoot = "snapshots/2026.08"
 
-const snapshotAggregateDefinition = "SHA-256 of UTF-8 lines sorted by snapshot-relative path, each formatted as <file-sha256>  standards/snapshots/2026.07/<snapshot-relative-path>\\n, excluding manifest.json"
+const snapshotAggregateDefinition = "SHA-256 of UTF-8 lines sorted by snapshot-relative path, each formatted as <file-sha256>  standards/snapshots/2026.08/<snapshot-relative-path>\\n, excluding manifest.json"
 
 type snapshotManifest struct {
 	SchemaVersion   string `json:"schemaVersion"`
@@ -54,7 +54,10 @@ func loadSnapshot() (Catalog, string, error) {
 	if manifest.SchemaVersion != "golden-path-standard-snapshot/v1" ||
 		manifest.StandardVersion != StandardVersion ||
 		manifest.ContractVersion != ContractVersion ||
-		manifest.Source.Commit != SnapshotSourceCommit {
+		manifest.Source.Repository != "https://github.com/5010-dev/.github" ||
+		manifest.Source.Commit != SnapshotSourceCommit ||
+		manifest.Source.Path != "docs/standards/developer-tooling" ||
+		manifest.Source.GitTree != SnapshotSourceTree {
 		return Catalog{}, "", fmt.Errorf("bundled snapshot compatibility mismatch")
 	}
 	if manifest.Aggregate.Algorithm != "sha256" || manifest.Aggregate.Definition != snapshotAggregateDefinition {

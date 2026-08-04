@@ -92,7 +92,7 @@ can pass or fail; non-applicable, hybrid, manual, or only partially evaluated
 rules are explicit `skip` findings. The checker never converts missing evidence
 into a pass.
 
-The compatibility manifest maps the `2026.07` runtime lines to exact Node.js,
+The compatibility manifest maps the `2026.08` runtime lines to exact Node.js,
 Python, Go, Rust, and Zig patch releases. Mise selectors may use an exact
 release or a major/minor selector that a committed `mise.lock` resolves to one
 exact release. The resolved patch must still appear in the immutable runtime

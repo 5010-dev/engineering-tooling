@@ -252,7 +252,7 @@ func run(arguments []string, stderr io.Writer) error {
 		return fmt.Errorf("open release asset directory: %w", err)
 	}
 	defer func() { _ = distRoot.Close() }()
-	cutoffFile, cutoffData, err := matchingEvidence(root, distRoot, "release/tooling-cutoff-2026-08-01.json", "tooling-cutoff.json")
+	cutoffFile, cutoffData, err := matchingEvidence(root, distRoot, "release/tooling-cutoff-2026-08-04.json", "tooling-cutoff.json")
 	if err != nil {
 		return fmt.Errorf("read tooling cutoff: %w", err)
 	}
@@ -260,7 +260,7 @@ func run(arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("bind compatibility manifest: %w", err)
 	}
-	snapshotFile, snapshotData, err := matchingEvidence(root, distRoot, "standards/snapshots/2026.07/manifest.json", "standard-snapshot-manifest.json")
+	snapshotFile, snapshotData, err := matchingEvidence(root, distRoot, "standards/snapshots/2026.08/manifest.json", "standard-snapshot-manifest.json")
 	if err != nil {
 		return fmt.Errorf("bind standard snapshot manifest: %w", err)
 	}
@@ -286,16 +286,7 @@ func run(arguments []string, stderr io.Writer) error {
 		return fmt.Errorf("tooling cutoff identity does not match the release")
 	}
 	var snapshot snapshotDocument
-	if err := json.Unmarshal(snapshotData, &snapshot); err != nil ||
-		snapshot.SchemaVersion != "golden-path-standard-snapshot/v1" ||
-		snapshot.StandardVersion != checker.StandardVersion ||
-		snapshot.ContractVersion != checker.ContractVersion ||
-		snapshot.Source.Repository != "https://github.com/5010-dev/.github" ||
-		snapshot.Source.Commit != standard.SourceCommit ||
-		snapshot.Source.Path != "docs/standards/developer-tooling" ||
-		!fullCommit(snapshot.Source.GitTree) ||
-		snapshot.Aggregate.Algorithm != "sha256" ||
-		"sha256:"+snapshot.Aggregate.Digest != standard.SnapshotAggregateDigest {
+	if err := json.Unmarshal(snapshotData, &snapshot); err != nil || !validSnapshotIdentity(snapshot, standard) {
 		return fmt.Errorf("standard snapshot identity does not match the release")
 	}
 	document := manifest{
@@ -307,6 +298,7 @@ func run(arguments []string, stderr io.Writer) error {
 		ContractVersion: checker.ContractVersion,
 		SchemaVersions: []string{
 			"golden-path-metadata/v1",
+			"golden-path-native-roots/v1",
 			"golden-path-exceptions/v1",
 			"golden-path-checker-output/v1",
 			"golden-path-rule-catalog/v1",
@@ -380,6 +372,18 @@ func run(arguments []string, stderr io.Writer) error {
 		return fmt.Errorf("write release manifest: %w", err)
 	}
 	return nil
+}
+
+func validSnapshotIdentity(snapshot snapshotDocument, standard checker.CompatibleStandard) bool {
+	return snapshot.SchemaVersion == "golden-path-standard-snapshot/v1" &&
+		snapshot.StandardVersion == checker.StandardVersion &&
+		snapshot.ContractVersion == checker.ContractVersion &&
+		snapshot.Source.Repository == "https://github.com/5010-dev/.github" &&
+		snapshot.Source.Commit == standard.SourceCommit &&
+		snapshot.Source.Path == "docs/standards/developer-tooling" &&
+		snapshot.Source.GitTree == checker.SnapshotSourceTree &&
+		snapshot.Aggregate.Algorithm == "sha256" &&
+		"sha256:"+snapshot.Aggregate.Digest == standard.SnapshotAggregateDigest
 }
 
 func matchingEvidence(sourceRoot, distRoot *os.Root, sourceName, distName string) (fileEvidence, []byte, error) {

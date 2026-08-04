@@ -155,7 +155,7 @@ jobs:
           cp compatibility/manifest.json dist/compatibility-manifest.json
           cp compatibility/golden-path-checker-compatibility-v1.schema.json \
             dist/golden-path-checker-compatibility-v1.schema.json
-          cp standards/snapshots/2026.07/manifest.json dist/standard-snapshot-manifest.json
+          cp standards/snapshots/2026.08/manifest.json dist/standard-snapshot-manifest.json
           cp release/RELEASE_NOTES.md dist/RELEASE_NOTES.md
           cp release/golden-path-release-manifest-v1.schema.json \
             dist/golden-path-release-manifest-v1.schema.json
@@ -163,7 +163,7 @@ jobs:
             dist/golden-path-release-manifest-v2.schema.json
           cp release/golden-path-tooling-cutoff-v1.schema.json \
             dist/golden-path-tooling-cutoff-v1.schema.json
-          cp release/tooling-cutoff-2026-08-01.json dist/tooling-cutoff.json
+          cp release/tooling-cutoff-2026-08-04.json dist/tooling-cutoff.json
           cp generator/schemas/*.json dist/
           go run -mod=readonly ./cmd/release-manifest \
             --require-clean-checkout \

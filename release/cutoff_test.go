@@ -101,7 +101,7 @@ func TestStableToolingCutoffIsCompleteAndConsistent(t *testing.T) {
 		}
 	}()
 
-	cutoffData := readFile(t, root, "release/tooling-cutoff-2026-08-01.json")
+	cutoffData := readFile(t, root, "release/tooling-cutoff-2026-08-04.json")
 	validateJSON(t, readFile(t, root, "release/golden-path-tooling-cutoff-v1.schema.json"), cutoffData)
 
 	var cutoff cutoffManifest
