@@ -1,7 +1,8 @@
 [private]
 _common-init:
     mkdir -p .cache/golden-path/mise-config
-    MISE_CONFIG_DIR="$PWD/.cache/golden-path/mise-config" mise install --locked
+    : > .cache/golden-path/mise-config/global.toml
+    MISE_CONFIG_DIR="$PWD/.cache/golden-path/mise-config" MISE_GLOBAL_CONFIG_FILE="$PWD/.cache/golden-path/mise-config/global.toml" mise install --locked
     ./scripts/golden-path --install-only
 
 [private]

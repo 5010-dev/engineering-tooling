@@ -1120,8 +1120,15 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		}
 	}
 	commonJust := string(fileContent(t, files, "just/common.just"))
-	if !strings.Contains(commonJust, `MISE_CONFIG_DIR="$PWD/.cache/golden-path/mise-config" mise install --locked`) ||
-		strings.Contains(commonJust, "MISE_GLOBAL_CONFIG_FILE") {
+	for _, expected := range []string{
+		`: > .cache/golden-path/mise-config/global.toml`,
+		`MISE_CONFIG_DIR="$PWD/.cache/golden-path/mise-config" MISE_GLOBAL_CONFIG_FILE="$PWD/.cache/golden-path/mise-config/global.toml" mise install --locked`,
+	} {
+		if !strings.Contains(commonJust, expected) {
+			t.Fatalf("generated init does not enforce %q", expected)
+		}
+	}
+	if strings.Contains(commonJust, "MISE_GLOBAL_CONFIG_FILE=/dev/null") {
 		t.Fatal("generated init does not isolate developer-global mise tools")
 	}
 	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {

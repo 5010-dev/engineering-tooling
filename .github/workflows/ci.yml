@@ -159,7 +159,9 @@ jobs:
           mise install --locked
           mkdir -p "$RUNNER_TEMP/hostile-xdg/mise"
           printf '%s\n' '[tools]' 'node = "999.0.0"' > "$RUNNER_TEMP/hostile-xdg/mise/config.toml"
+          printf '%s\n' '[tools]' 'node = "999.0.0"' > "$RUNNER_TEMP/hostile-global-mise.toml"
           XDG_CONFIG_HOME="$RUNNER_TEMP/hostile-xdg" \
+            MISE_GLOBAL_CONFIG_FILE="$RUNNER_TEMP/hostile-global-mise.toml" \
             GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" \
             just init
           GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" just ci

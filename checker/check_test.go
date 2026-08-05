@@ -611,6 +611,75 @@ runs:
 	}
 }
 
+func TestUnsafeLocalActionReferenceProducesSchemaValidConfigurationFinding(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	unsafeReference := "./../" + strings.Repeat("outside", 100)
+	writeTestFile(t, root, ".github/workflows/test.yml", `name: test
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: `+unsafeReference+`
+`)
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding := findingByRule(result, "DT-ASSET-002")
+	if result.ExitCode != 2 || result.Complete || finding.Status != "error" || finding.Path != ".github/workflows/test.yml" {
+		t.Fatalf("unsafe local action result: exit=%d complete=%t finding=%+v", result.ExitCode, result.Complete, finding)
+	}
+	if len([]rune(finding.Secondary)) != 500 || !strings.HasPrefix(unsafeReference, finding.Secondary) {
+		t.Fatalf("unsafe local action secondary was not safely bounded: %q", finding.Secondary)
+	}
+	if _, err := RenderJSON(result); err != nil {
+		t.Fatalf("unsafe local action result violates output schema: %v", err)
+	}
+}
+
+func TestLongRemoteActionReferenceProducesSchemaValidFinding(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	reference := "example/action@" + strings.Repeat("mutable", 100)
+	writeTestFile(t, root, ".github/workflows/test.yml", `name: test
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: `+reference+`
+`)
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding := findingByRule(result, "DT-ASSET-002")
+	if result.ExitCode != 1 || finding.Status != "fail" || len([]rune(finding.Secondary)) != 500 {
+		t.Fatalf("long remote action result: exit=%d finding=%+v", result.ExitCode, finding)
+	}
+	if _, err := RenderJSON(result); err != nil {
+		t.Fatalf("long remote action result violates output schema: %v", err)
+	}
+}
+
+func TestLocalActionTraversalBoundCountsDistinctActions(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	var steps strings.Builder
+	for range 300 {
+		steps.WriteString("      - uses: ./.github/actions/repeated\n")
+	}
+	writeTestFile(t, root, ".github/workflows/test.yml", "name: test\non: push\njobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n"+steps.String())
+	writeTestFile(t, root, ".github/actions/repeated/action.yml", `name: repeated
+description: test
+runs:
+  using: composite
+  steps:
+    - run: true
+      shell: sh
+`)
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if finding := findingByRule(result, "DT-ASSET-002"); result.ExitCode != 0 || finding.Status != "skip" {
+		t.Fatalf("repeated local action references exhausted the distinct-action bound: exit=%d finding=%+v", result.ExitCode, finding)
+	}
+}
+
 func TestRepositoryLocalWorkflowDollarReferenceIsNotRemote(t *testing.T) {
 	root := copyFixture(t, "positive-go")
 	writeTestFile(t, root, ".github/workflows/test.yml", `name: test
@@ -767,6 +836,8 @@ func TestDirectReferenceImmutabilityRequiresSemanticRevisionOrDigestPosition(t *
 	accepted := []string{
 		"git+https://example.invalid/repository.git#" + commit,
 		"git::https://example.invalid/repository.git?ref=" + commit,
+		"git@github.com:5010-dev/example.git?ref=" + commit,
+		"git::username@example.com:storage.git?ref=" + commit,
 		"package @ git+https://example.invalid/repository.git@" + commit,
 		"https://example.invalid/archive.tgz#sha256=" + sha256Digest,
 		sha512Integrity,
@@ -782,6 +853,7 @@ func TestDirectReferenceImmutabilityRequiresSemanticRevisionOrDigestPosition(t *
 	rejected := []string{
 		"https://example.invalid/archive-main-" + commit + ".tgz",
 		"git::https://example.invalid/repository.git?ref=main&cache=" + commit,
+		"git@github.com:5010-dev/example.git?ref=main",
 		"https://example.invalid/sha256:" + sha256Digest + "/archive.tgz",
 		"https://example.invalid/archive.tgz?integrity=sha512-not-base64",
 		"git+https://example.invalid/repository.git#v1.2.3",
@@ -830,6 +902,23 @@ func TestDirectDependencyRuleRejectsUnrelatedCommitLookingURLText(t *testing.T) 
 	}
 }
 
+func TestTerraformSCPStyleSourceAcceptsFullCommitRef(t *testing.T) {
+	root := copyFixture(t, "positive-infrastructure")
+	writeTestFile(t, root, "main.tf", `terraform {
+  required_version = "= 1.15.8"
+}
+
+module "pinned" {
+  source = "git@github.com:5010-dev/example.git?ref=0123456789abcdef0123456789abcdef01234567"
+}
+`)
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if finding := findingByRule(result, "DT-DEP-004"); finding.Status != "skip" || result.ExitCode != 0 {
+		t.Fatalf("immutable SCP-style Terraform source = exit %d finding %+v", result.ExitCode, finding)
+	}
+}
+
 func TestGoAuthorityUsesNativeParserForDirectiveComments(t *testing.T) {
 	root := copyFixture(t, "positive-go")
 	writeTestFile(t, root, "go.mod", `module example.com/positive
@@ -841,6 +930,20 @@ toolchain go1.26.5 // exact selected toolchain
 	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
 	if finding := findingByRule(result, "DT-GO-001"); finding.Status != "pass" {
 		t.Fatalf("native Go directive comments = %+v", finding)
+	}
+}
+
+func TestGoAuthorityRejectsNonNumericGoDirective(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	writeTestFile(t, root, "go.mod", `module example.com/positive
+
+go 1.99rc1
+
+toolchain go1.26.5
+`)
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if finding := findingByRule(result, "DT-GO-001"); finding.Status != "fail" || !strings.Contains(finding.Message, "incomplete") {
+		t.Fatalf("non-numeric Go directive = %+v", finding)
 	}
 }
 

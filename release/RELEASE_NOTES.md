@@ -19,8 +19,9 @@ schemas, runtime selections, or report-only enforcement.
   parser, preserving valid directive comments.
 - Recognizes quoted default expressions, quiet recipes, and top-level imports
   in the Just façade without interpreting recipe-body commands as imports.
-- Uses an isolated `MISE_CONFIG_DIR` for generated initialization and exercises
-  a hostile default user config in CI.
+- Uses an isolated `MISE_CONFIG_DIR` plus an explicit empty
+  `MISE_GLOBAL_CONFIG_FILE` for generated initialization and exercises both
+  hostile user-config inputs in CI.
 - Replaces the release cutoff's raw workflow `uses:` scan with a parsed YAML
   oracle that ignores block-scalar content and supports job and step syntax.
 

@@ -1072,7 +1072,7 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 		return baseFinding(rule, "skip", ".github/workflows", "No GitHub Actions workflow references were detected.")
 	}
 	var remoteCount int
-	var localActions []string
+	var localActions []localActionReference
 	for _, name := range files {
 		data, readErr := readRepositoryFile(root, name)
 		if readErr != nil {
@@ -1085,14 +1085,14 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 		for _, reference := range references {
 			switch reference.kind {
 			case executableLocalAction:
-				localActions = append(localActions, reference.value)
+				localActions = append(localActions, localActionReference{value: reference.value, origin: name})
 			case executableAction:
 				remoteCount++
 				if immutableActionReference(reference.value) {
 					continue
 				}
 				finding := baseFinding(rule, deviationStatus(rule), name, "Remote executable reference is not pinned by full commit SHA or image digest.")
-				finding.Secondary = reference.value
+				finding.Secondary = boundedFindingSecondary(reference.value)
 				return finding
 			case executableImage:
 				remoteCount++
@@ -1100,22 +1100,30 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 					continue
 				}
 				finding := baseFinding(rule, deviationStatus(rule), name, "Container image reference is not pinned by SHA-256 digest.")
-				finding.Secondary = reference.value
+				finding.Secondary = boundedFindingSecondary(reference.value)
 				return finding
 			}
 		}
 	}
 	seenLocalActions := map[string]bool{}
+	seenLocalActionReferences := map[string]bool{}
 	for index := 0; index < len(localActions); index++ {
-		if index >= 256 {
-			return inputError(rule, ".github/actions")
+		reference := localActions[index]
+		if seenLocalActionReferences[reference.value] {
+			continue
 		}
-		metadataPath, data, resolveErr := readLocalActionMetadata(root, localActions[index])
+		seenLocalActionReferences[reference.value] = true
+		metadataPath, data, resolveErr := readLocalActionMetadata(root, reference.value)
 		if resolveErr != nil {
-			return inputError(rule, localActions[index])
+			finding := inputError(rule, reference.origin)
+			finding.Secondary = boundedFindingSecondary(reference.value)
+			return finding
 		}
 		if seenLocalActions[metadataPath] {
 			continue
+		}
+		if len(seenLocalActions) >= 256 {
+			return inputError(rule, ".github/actions")
 		}
 		seenLocalActions[metadataPath] = true
 		references, parseErr := actionExecutableReferences(data)
@@ -1125,14 +1133,14 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 		for _, reference := range references {
 			switch reference.kind {
 			case executableLocalAction:
-				localActions = append(localActions, reference.value)
+				localActions = append(localActions, localActionReference{value: reference.value, origin: metadataPath})
 			case executableAction:
 				remoteCount++
 				if immutableActionReference(reference.value) {
 					continue
 				}
 				finding := baseFinding(rule, deviationStatus(rule), metadataPath, "Remote executable reference is not pinned by full commit SHA or image digest.")
-				finding.Secondary = reference.value
+				finding.Secondary = boundedFindingSecondary(reference.value)
 				return finding
 			case executableImage:
 				remoteCount++
@@ -1140,7 +1148,7 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 					continue
 				}
 				finding := baseFinding(rule, deviationStatus(rule), metadataPath, "Container image reference is not pinned by SHA-256 digest.")
-				finding.Secondary = reference.value
+				finding.Secondary = boundedFindingSecondary(reference.value)
 				return finding
 			}
 		}
@@ -1167,6 +1175,20 @@ const (
 type executableReference struct {
 	kind  executableReferenceKind
 	value string
+}
+
+type localActionReference struct {
+	value  string
+	origin string
+}
+
+func boundedFindingSecondary(value string) string {
+	const maximumRunes = 500
+	runes := []rune(value)
+	if len(runes) > maximumRunes {
+		runes = runes[:maximumRunes]
+	}
+	return string(runes)
 }
 
 func workflowExecutableReferences(data []byte) ([]executableReference, error) {
@@ -1780,7 +1802,8 @@ func evaluateGoAuthority(root string, metadata Metadata, rule Rule, _ bool) Find
 		}
 		seen[file.path] = true
 		goVersion, toolchain, parseErr := goRuntimeDirectives(file.path, file.data)
-		if parseErr != nil || goVersion == "" {
+		goVersionParts := versionParts(goVersion)
+		if parseErr != nil || len(goVersionParts) < 2 || len(goVersionParts) > 3 {
 			return baseFinding(rule, deviationStatus(rule), file.path, "Go runtime declarations are incomplete.")
 		}
 		if compareNumericVersions(goVersion, miseGo) > 0 {
@@ -2240,7 +2263,11 @@ func directReferenceIsImmutable(value string) bool {
 		return true
 	}
 
+	gitGetterReference := strings.HasPrefix(value, "git::")
 	candidate := strings.TrimPrefix(value, "git::")
+	if gitGetterReference || strings.HasPrefix(candidate, "git@") {
+		candidate = normalizeSCPStyleGitURL(candidate)
+	}
 	parsed, err := url.Parse(candidate)
 	if err != nil {
 		return false
@@ -2272,6 +2299,22 @@ func directReferenceIsImmutable(value string) bool {
 		return true
 	}
 	return false
+}
+
+func normalizeSCPStyleGitURL(value string) string {
+	if strings.Contains(value, "://") {
+		return value
+	}
+	address := value
+	suffix := ""
+	if index := strings.IndexAny(address, "?#"); index >= 0 {
+		address, suffix = address[:index], address[index:]
+	}
+	separator := strings.Index(address, ":")
+	if separator <= 0 || separator == len(address)-1 || strings.Contains(address[:separator], "/") {
+		return value
+	}
+	return "ssh://" + address[:separator] + "/" + address[separator+1:] + suffix
 }
 
 func stripPEP508EnvironmentMarker(value string) string {
