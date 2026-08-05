@@ -25,7 +25,7 @@ The candidate must additionally prove that workflow and action metadata are
 parsed structurally, repository-local actions cannot hide mutable references,
 direct dependency evidence appears in semantic revision or digest positions,
 native Go and valid Just syntax are accepted, and generated initialization
-ignores a hostile default user Mise configuration.
+ignores hostile XDG and explicit global Mise configuration inputs.
 
 ## Required evidence before tagging
 
