@@ -8,24 +8,26 @@ applicability.
 
 - Standard: `2026.08`
 - Contract: `golden-path/v1`
-- Tooling and asset bundle: `1.2.1`
+- Tooling and asset bundle: `1.2.2`
 - Release lifecycle: `stable`
 - Enforcement: `report-only`
 - Normative source commit: `604a40886d5a1cba3b304471e6e072b72cec7601`
 - External-tool cutoff: `2026-08-04T12:54:32Z`
 
-The patch increment corrects released `1.2.0` checker and generated-init
-behavior. Request, metadata, and result schemas remain unchanged; no contract
-epoch, compatibility reader, or repository migration is introduced. Runtime
-selections, external tools, generated dependency locks, workflow actions, and
-the checker rule catalog remain unchanged. Release-specific integrity evidence is bound by
+The patch increment corrects the released `1.2.1` reusable workflow's GitHub
+CLI verifier bootstrap. Request, metadata, and result schemas remain unchanged;
+no contract epoch, compatibility reader, or repository migration is introduced.
+Runtime selections, external tools, generated dependency locks, workflow
+actions, and the checker rule catalog remain unchanged. Release-specific
+integrity evidence is bound by
 [`tooling-cutoff-2026-08-04.json`](./tooling-cutoff-2026-08-04.json).
 
-The candidate must additionally prove that workflow and action metadata are
-parsed structurally, repository-local actions cannot hide mutable references,
-direct dependency evidence appears in semantic revision or digest positions,
-native Go and valid Just syntax are accepted, and generated initialization
-ignores hostile XDG and explicit global Mise configuration inputs.
+The candidate must additionally prove that the reusable workflow installs the
+caller-selected exact GitHub CLI from release-recorded checksums under strict
+Mise lock enforcement, isolates every ambient configuration boundary, and
+invokes that resolved executable directly. Hostile ambient-config entries and
+a bare-CLI guard reject configuration leakage and any runner-bundled `gh`
+dependency during the executed workflow.
 
 ## Required evidence before tagging
 
@@ -55,12 +57,15 @@ ignores hostile XDG and explicit global Mise configuration inputs.
    manifests, locks, commands, or operational contracts. Bootstrap-to-adoption
    planning records retired generated assets and refuses to stage customized
    retirement conflicts.
-8. The setup action verifies released `0.2.0`, `1.1.0`, and `1.2.0` provenance.
-   Projects materialized by all three releases upgrade to a separate `1.2.1`
-   candidate and roll back without source mutation or unresolved conflicts.
+8. The setup action verifies released `0.2.0`, `1.1.0`, `1.2.0`, and `1.2.1`
+   provenance. Projects materialized by all four releases upgrade to a separate
+   `1.2.2` candidate and roll back without source mutation or unresolved
+   conflicts.
 9. Every generated profile runs on its declared native CI runner, and the
    reusable-workflow integration executes against an actual `1.1.0` generated
-   repository and immutable release identity.
+   repository and immutable release identity. The reusable workflow installs
+   and resolves its exact locked GitHub CLI verifier while the scoped runner-CLI
+   guard proves that a bare `gh` invocation fails before provenance can pass.
 10. SBOMs bind every archive digest; release attestations cover every published
    asset; the release manifest binds source, catalog, snapshot, templates,
    automation, cutoff, binaries, schemas, and supported targets.
@@ -75,7 +80,7 @@ predeclared.
 ## Compatibility and ownership boundary
 
 The new request fields are optional. Existing repositories do not need to
-change their request, metadata, or generated files unless they adopt `1.2.1`
+change their request, metadata, or generated files unless they adopt `1.2.2`
 through their normal migration workflow. A component declares only capabilities
 its repository actually implements. Bootstrap merges declarations with its
 materialized baseline; adoption records exactly the declaration. The generator
@@ -83,8 +88,8 @@ does not infer publication or platform support from artifact type, profile, or
 runner and does not create publishing automation, credentials, registry
 configuration, or release evidence.
 
-This is a behavior correction for the released `1.2.0` implementation. Exact
-consumer pins move to the separate immutable `1.2.1` release; no old data or
+This is a behavior correction for the released `1.2.1` implementation. Exact
+consumer pins move to the separate immutable `1.2.2` release; no old data or
 request form requires dual parsing, dual writing, or a compatibility path.
 
 ## GitHub Free private baseline
@@ -95,22 +100,22 @@ private artifact attestation. The reusable workflow preserves findings while
 converting only conformance exit `1` to a report-only job result. Configuration
 and internal errors (`2` and `3`) still fail closed.
 
-The `1.2.1` channel contains only public generic implementation assets. It does
+The `1.2.2` channel contains only public generic implementation assets. It does
 not contain, depend on, or claim support for a restricted implementation.
 
 ## CI cost boundary
 
-Central pull-request validation uses 13 GitHub-hosted jobs: one repository gate,
-four native targets, four generated-profile targets, three migration and
+Central pull-request validation uses 14 GitHub-hosted jobs: one repository gate,
+four native targets, four generated-profile targets, four migration and
 rollback matrix entries, and one reusable-workflow integration job. The maximum
-configured aggregate runner time is 285 minutes, the longest individual
+configured aggregate runner time is 295 minutes, the longest individual
 timeout remains 40 minutes, and the matrix runs only in the public
 implementation repository. The tag-only release path remains seven jobs with
 95 aggregate timeout-minutes.
 
 ## Adoption boundary
 
-New-repository bootstrap records tooling bundle `1.2.1`, emits the complete
+New-repository bootstrap records tooling bundle `1.2.2`, emits the complete
 starter and a thin report-only caller, and writes only to an explicitly selected
 empty staging directory. First adoption for an existing repository emits only
 the canonical request, metadata, generated-asset baseline, immutable bootstrap
@@ -126,12 +131,12 @@ snapshot-manifest hashes, archive hashes, and immutable automation pins.
 
 ## Support, deprecation, and rollback
 
-`1.x` remains the supported stable implementation line. `1.2.0` is the
+`1.x` remains the supported stable implementation line. `1.2.1` is the
 immediate immutable rollback source. The 2026-08-01 announcement continues to
 deprecate `0.1.x` and `0.2.x` through 2027-01-28; `0.2.0` remains a verified
 legacy migration source, while `0.1.x` must first advance to `0.2.0`.
 
 Rollback restores the exact binary, release manifest, archive and executable
 checksums, generated-asset inventory, and full-commit workflow/action pins.
-Rollback to `1.2.0` retains the same request and metadata schema and never
+Rollback to `1.2.1` retains the same request and metadata schema and never
 mutates a published release or consumer default branch.

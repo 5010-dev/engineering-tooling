@@ -77,11 +77,106 @@ jobs:
             [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
           done
 
-      - name: Install consumer-pinned toolchain and verifier
+      - name: Prepare isolated GitHub CLI verifier
+        id: verifier-toolchain
+        shell: bash
+        env:
+          GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_CLI_VERSION" != '2.97.0' ]]; then
+            printf '%s\n' 'The reusable workflow accepts only its release-pinned GitHub CLI version.' >&2
+            exit 2
+          fi
+          case "${RUNNER_OS}/${RUNNER_ARCH}" in
+            Linux/X64) mise_sha256=e1fc2899f2bc7dfe9a3553f4c2d5944cf69d11b5f561545504a20f1e11cd6cc5 ;;
+            Linux/ARM64) mise_sha256=7d96bad004ba706d7ce4e999113f61296ff317ad23754471743be883817e8a75 ;;
+            macOS/X64) mise_sha256=89a8a7d0dd0536da4666d51eb7d9a2a3ffbc0546f00efa9d36041958b642cb48 ;;
+            macOS/ARM64) mise_sha256=ad914875be24906afc35bca71c2da0f8ef0f74c450937a9701c03e0e992b6be6 ;;
+            *) printf '%s\n' 'Unsupported Golden Path verifier runner.' >&2; exit 2 ;;
+          esac
+          mkdir -p \
+            "$RUNNER_TEMP/golden-path-verifier/config" \
+            "$RUNNER_TEMP/golden-path-verifier/project" \
+            "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard" \
+            "$RUNNER_TEMP/golden-path-verifier/system-config"
+          printf '%s\n' '[tools]' 'node = "999.0.0"' \
+            >"$RUNNER_TEMP/golden-path-verifier/mise.toml"
+          printf '%s\n' '[tools]' 'node = "999.0.0"' \
+            >"$RUNNER_TEMP/golden-path-verifier/config/config.toml"
+          : >"$RUNNER_TEMP/golden-path-verifier/config/empty.toml"
+          printf '%s\n' '[tools]' 'node = "999.0.0"' \
+            >"$RUNNER_TEMP/golden-path-verifier/system-config/config.toml"
+          : >"$RUNNER_TEMP/golden-path-verifier/system-config/empty.toml"
+          printf '%s\n' \
+            'min_version = "2026.7.18"' \
+            '' \
+            '[tools]' \
+            "github-cli = \"$GITHUB_CLI_VERSION\"" \
+            '' \
+            '[settings]' \
+            'lockfile = true' \
+            >"$RUNNER_TEMP/golden-path-verifier/project/mise.toml"
+          cat >"$RUNNER_TEMP/golden-path-verifier/project/mise.lock" <<'EOF'
+          [[tools.github-cli]]
+          version = "2.97.0"
+          backend = "aqua:cli/cli"
+
+          [tools.github-cli."platforms.linux-arm64"]
+          checksum = "sha256:73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5"
+          url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_arm64.tar.gz"
+          url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108278"
+          provenance = "github-attestations"
+
+          [tools.github-cli."platforms.linux-x64"]
+          checksum = "sha256:a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"
+          url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_linux_amd64.tar.gz"
+          url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108269"
+          provenance = "github-attestations"
+
+          [tools.github-cli."platforms.macos-arm64"]
+          checksum = "sha256:a58b8fd77b417a38f47a0b54d1370c59b0fcdb324ccc9ca002b0998f7c4c999e"
+          url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_arm64.zip"
+          url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108298"
+          provenance = "github-attestations"
+
+          [tools.github-cli."platforms.macos-x64"]
+          checksum = "sha256:63298c998cc2a924c9e254c6af6a1caad6ece281122687a91f079bc0a462700e"
+          url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_amd64.zip"
+          url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108300"
+          provenance = "github-attestations"
+          EOF
+          cat >"$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' 'The runner-bundled GitHub CLI must not verify Golden Path artifacts.' >&2
+          exit 97
+          EOF
+          chmod 0755 "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh"
+          printf 'mise-sha256=%s\n' "$mise_sha256" >>"$GITHUB_OUTPUT"
+
+      - name: Install exact GitHub CLI verifier
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        env:
+          MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache
+          MISE_CEILING_PATHS: ${{ runner.temp }}/golden-path-verifier
+          MISE_CONFIG_DIR: ${{ runner.temp }}/golden-path-verifier/config
+          MISE_DATA_DIR: ${{ runner.temp }}/golden-path-verifier/data
+          MISE_GLOBAL_CONFIG_FILE: ${{ runner.temp }}/golden-path-verifier/config/empty.toml
+          MISE_LOCKED: "1"
+          MISE_STATE_DIR: ${{ runner.temp }}/golden-path-verifier/state
+          MISE_SYSTEM_CONFIG_DIR: ${{ runner.temp }}/golden-path-verifier/system-config
+          MISE_SYSTEM_CONFIG_FILE: ${{ runner.temp }}/golden-path-verifier/system-config/empty.toml
+          MISE_TRUSTED_CONFIG_PATHS: ${{ runner.temp }}/golden-path-verifier/project
         with:
+          version: 2026.7.18
+          sha256: ${{ steps.verifier-toolchain.outputs.mise-sha256 }}
+          working_directory: ${{ runner.temp }}/golden-path-verifier/project
           install: true
-          cache: true
+          install_args: --locked
+          cache: false
+          add_shims_to_path: false
+          env: false
+          export_path: false
 
       - name: Set up verified Golden Path executable
         id: golden-path
@@ -91,12 +186,29 @@ jobs:
           SOURCE_COMMIT: ${{ inputs.source-commit }}
           GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
           GH_TOKEN: ${{ github.token }}
+          MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache
+          MISE_CEILING_PATHS: ${{ runner.temp }}/golden-path-verifier
+          MISE_CONFIG_DIR: ${{ runner.temp }}/golden-path-verifier/config
+          MISE_DATA_DIR: ${{ runner.temp }}/golden-path-verifier/data
+          MISE_GLOBAL_CONFIG_FILE: ${{ runner.temp }}/golden-path-verifier/config/empty.toml
+          MISE_LOCKED: "1"
+          MISE_STATE_DIR: ${{ runner.temp }}/golden-path-verifier/state
+          MISE_SYSTEM_CONFIG_DIR: ${{ runner.temp }}/golden-path-verifier/system-config
+          MISE_SYSTEM_CONFIG_FILE: ${{ runner.temp }}/golden-path-verifier/system-config/empty.toml
+          MISE_TRUSTED_CONFIG_PATHS: ${{ runner.temp }}/golden-path-verifier/project
           DARWIN_AMD64_SHA256: ${{ inputs.darwin-amd64-sha256 }}
           DARWIN_ARM64_SHA256: ${{ inputs.darwin-arm64-sha256 }}
           LINUX_AMD64_SHA256: ${{ inputs.linux-amd64-sha256 }}
           LINUX_ARM64_SHA256: ${{ inputs.linux-arm64-sha256 }}
         run: |
           set -euo pipefail
+          export PATH="$RUNNER_TEMP/golden-path-verifier/runner-cli-guard:$PATH"
+          guard_status=0
+          gh version >/dev/null 2>&1 || guard_status=$?
+          if [[ "$guard_status" -ne 97 ]]; then
+            printf '%s\n' 'The runner-CLI guard is not in effect.' >&2
+            exit 3
+          fi
           case "${RUNNER_OS}/${RUNNER_ARCH}" in
             macOS/X64) os=darwin; architecture=amd64; expected="$DARWIN_AMD64_SHA256" ;;
             macOS/ARM64) os=darwin; architecture=arm64; expected="$DARWIN_ARM64_SHA256" ;;
@@ -112,8 +224,11 @@ jobs:
             "https://github.com/5010-dev/engineering-tooling/releases/download/v${CHECKER_VERSION}/$archive"
           actual="$(shasum -a 256 "$staging/$archive" | awk '{print $1}')"
           test "$actual" = "$expected"
-          test "$(gh version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"
-          gh attestation verify "$staging/$archive" \
+          mise_binary="$MISE_DATA_DIR/bin/mise"
+          test "$("$mise_binary" --version | awk 'NR == 1 { print $1 }')" = '2026.7.18'
+          gh_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which gh)"
+          test "$("$gh_binary" version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"
+          "$gh_binary" attestation verify "$staging/$archive" \
             --repo 5010-dev/engineering-tooling \
             --signer-workflow 5010-dev/engineering-tooling/.github/workflows/release.yml \
             --source-digest "$SOURCE_COMMIT" \
@@ -129,6 +244,12 @@ jobs:
           mkdir -p "$install_directory"
           install -m 0755 "$candidate" "$install_directory/golden-path"
           printf 'binary-path=%s\n' "$install_directory/golden-path" >> "$GITHUB_OUTPUT"
+
+      - name: Install consumer-pinned toolchain
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          install: true
+          cache: true
 
       - name: Select one evaluation time
         shell: bash

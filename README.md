@@ -106,14 +106,19 @@ evidence.
 
 The generated caller owns events, permissions, concurrency, runner, working
 directory, selected profiles, immutable automation source, and release
-checksums and provenance identity. Before execution, bootstrap paths require the
-exact GitHub CLI pinned by the generated `mise.toml`, verify the archive
-checksum, and verify the GitHub artifact attestation against the release
-workflow, source commit, signer commit, and tag. The reusable workflow owns only
-stable quality orchestration and calls the repository's root `just init` and
-`just ci`. It does not require GitHub Environments, protected branches, paid
-rulesets, deployment credentials, or consumer secrets, so private consumers on
-GitHub Free retain the baseline outcome.
+checksums and provenance identity. The reusable workflow installs the caller's
+exact GitHub CLI verifier from a checksum-bearing lock through a fully isolated
+Mise configuration. It checksum-pins the Mise bootstrap, blocks bare `gh`
+during provenance verification, and invokes the resolved verifier executable
+directly, so it never trusts a runner-bundled CLI or ambient configuration. It
+verifies the archive checksum and GitHub artifact attestation against the
+release workflow, source commit, signer commit, and tag. Repository-local
+bootstrap uses the exact GitHub CLI pinned by the repository's `mise.toml` and
+`mise.lock`. The reusable workflow otherwise owns only stable quality
+orchestration and calls the repository's root `just init` and `just ci`. It
+does not require GitHub Environments, protected branches, paid rulesets,
+deployment credentials, or consumer secrets, so private consumers on GitHub
+Free retain the baseline outcome.
 
 Executable artifact types receive native entry points and post-build runtime
 smoke checks for Go, Node.js, Python, Rust, and Zig. Zig and `zig cc` profiles
