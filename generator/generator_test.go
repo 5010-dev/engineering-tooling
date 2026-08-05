@@ -1105,8 +1105,46 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		t.Fatal("reusable workflow does not declare the read-only baseline permission")
 	}
 	for _, expected := range []string{
-		"test \"$(gh version | awk 'NR == 1 { print $3 }')\" = \"$GITHUB_CLI_VERSION\"",
-		"gh attestation verify",
+		"name: Prepare isolated GitHub CLI verifier",
+		"id: verifier-toolchain",
+		"The reusable workflow accepts only its release-pinned GitHub CLI version.",
+		`"github-cli = \"$GITHUB_CLI_VERSION\""`,
+		`cat >"$RUNNER_TEMP/golden-path-verifier/project/mise.lock"`,
+		`checksum = "sha256:a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"`,
+		`checksum = "sha256:73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5"`,
+		`checksum = "sha256:63298c998cc2a924c9e254c6af6a1caad6ece281122687a91f079bc0a462700e"`,
+		`checksum = "sha256:a58b8fd77b417a38f47a0b54d1370c59b0fcdb324ccc9ca002b0998f7c4c999e"`,
+		`runner-cli-guard/gh`,
+		"The runner-bundled GitHub CLI must not verify Golden Path artifacts.",
+		`node = "999.0.0"`,
+		"name: Install exact GitHub CLI verifier",
+		"version: 2026.7.18",
+		"sha256: ${{ steps.verifier-toolchain.outputs.mise-sha256 }}",
+		"working_directory: ${{ runner.temp }}/golden-path-verifier/project",
+		"install_args: --locked",
+		"add_shims_to_path: false",
+		"env: false",
+		"export_path: false",
+		`: >"$RUNNER_TEMP/golden-path-verifier/config/empty.toml"`,
+		"MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache",
+		"MISE_CEILING_PATHS: ${{ runner.temp }}/golden-path-verifier",
+		"MISE_CONFIG_DIR: ${{ runner.temp }}/golden-path-verifier/config",
+		"MISE_DATA_DIR: ${{ runner.temp }}/golden-path-verifier/data",
+		"MISE_GLOBAL_CONFIG_FILE: ${{ runner.temp }}/golden-path-verifier/config/empty.toml",
+		`MISE_LOCKED: "1"`,
+		"MISE_STATE_DIR: ${{ runner.temp }}/golden-path-verifier/state",
+		"MISE_SYSTEM_CONFIG_DIR: ${{ runner.temp }}/golden-path-verifier/system-config",
+		"MISE_SYSTEM_CONFIG_FILE: ${{ runner.temp }}/golden-path-verifier/system-config/empty.toml",
+		"MISE_TRUSTED_CONFIG_PATHS: ${{ runner.temp }}/golden-path-verifier/project",
+		`export PATH="$RUNNER_TEMP/golden-path-verifier/runner-cli-guard:$PATH"`,
+		`guard_status=0`,
+		`gh version >/dev/null 2>&1 || guard_status=$?`,
+		`if [[ "$guard_status" -ne 97 ]]; then`,
+		"The runner-CLI guard is not in effect.",
+		`mise_binary="$MISE_DATA_DIR/bin/mise"`,
+		`gh_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which gh)"`,
+		`test "$("$gh_binary" version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"`,
+		`"$gh_binary" attestation verify`,
 		"--source-digest \"$SOURCE_COMMIT\"",
 		"--signer-digest \"$SOURCE_COMMIT\"",
 		"--source-ref \"refs/tags/v$CHECKER_VERSION\"",
@@ -1117,6 +1155,19 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 	} {
 		if !strings.Contains(string(reusable), expected) {
 			t.Fatalf("reusable workflow does not enforce %q", expected)
+		}
+	}
+	setupIndex := strings.Index(string(reusable), "name: Set up verified Golden Path executable")
+	consumerInstallIndex := strings.Index(string(reusable), "name: Install consumer-pinned toolchain")
+	if setupIndex < 0 || consumerInstallIndex < 0 || consumerInstallIndex < setupIndex {
+		t.Fatal("reusable workflow installs the consumer toolchain before provenance verification")
+	}
+	for _, forbidden := range []string{
+		`test "$(gh version | awk 'NR == 1 { print $3 }')"`,
+		"\n          gh attestation verify",
+	} {
+		if strings.Contains(string(reusable), forbidden) {
+			t.Fatalf("reusable workflow still depends on runner GitHub CLI through %q", forbidden)
 		}
 	}
 	commonJust := string(fileContent(t, files, "just/common.just"))

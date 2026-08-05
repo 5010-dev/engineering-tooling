@@ -1,11 +1,31 @@
-# Golden Path tooling 1.2.1
+# Golden Path tooling 1.2.2
 
 Patch release for the `2026.08` Developer Tooling Standard. It corrects
-structure-sensitive conformance checks and developer-global Mise isolation
-without changing the `golden-path/v1` compatibility epoch, request or metadata
-schemas, runtime selections, or report-only enforcement.
+the reusable workflow's GitHub CLI verifier bootstrap without changing the
+`golden-path/v1` compatibility epoch, request or metadata schemas, runtime
+selections, or report-only enforcement.
 
-## Corrections from 1.2.0
+## Correction from 1.2.1
+
+- Installs the caller-selected exact GitHub CLI before provenance verification
+  from the release-recorded cross-platform checksums under strict Mise lock
+  enforcement. The Mise `2026.7.18` bootstrap is itself selected by exact
+  platform checksum.
+- Isolates project, parent, global, system, cache, data, and state configuration
+  boundaries so ambient runner configuration cannot add or replace verifier
+  tools. Hostile parent, default-global, and default-system guard entries make
+  any isolation regression fail the strict locked install.
+- Resolves and invokes that exact executable directly instead of trusting the
+  GitHub-hosted runner's bundled `gh` or PATH precedence. A scoped bare-CLI
+  guard makes that independence an executed reusable-workflow invariant.
+- Exercises the released reusable-workflow path against an immutable prior
+  Golden Path release, so a missing or mismatched runner CLI cannot stop the
+  workflow before `just init`, `just ci`, and conformance.
+
+The structure-sensitive conformance and developer-global Mise isolation
+corrections introduced in `1.2.1` remain unchanged and are summarized below.
+
+## Corrections retained from 1.2.1
 
 - Parses workflows by their YAML structure so output names and block-scalar
   text are not mistaken for action or image references.
@@ -121,7 +141,7 @@ reader, migration schema, or new contract epoch is required.
 
 The exact external tools, runtime selections, generated-profile package locks,
 workflow action commits, and Go module graph remain unchanged from `1.1.0`.
-The 2026-08-04 cutoff is retained and binds the corrected `1.2.1` template-bundle
+The 2026-08-04 cutoff is retained and binds the corrected `1.2.2` template-bundle
 identity; no executable tool or generated dependency is silently upgraded.
 
 ## Support and deprecation
@@ -135,17 +155,17 @@ identity; no executable tool or generated dependency is silently upgraded.
 Deprecated `0.x` receives only critical security or integrity fixes. Standard
 `2026.08` remains preferred.
 
-## Upgrade from 1.2.0 or migration from 1.1.0 or 0.2.0
+## Upgrade from 1.2.1 or migration from 1.2.0, 1.1.0, or 0.2.0
 
-1. Download the exact `1.2.1` archive and `release-manifest.json`, then verify
-   their checksums and artifact attestations against the `v1.2.1` tag, source
+1. Download the exact `1.2.2` archive and `release-manifest.json`, then verify
+   their checksums and artifact attestations against the `v1.2.2` tag, source
    commit, signer commit, and release workflow.
 2. Keep an existing request unchanged when the generated baseline describes
    the repository truthfully. Add component `capabilities` and top-level
    `targets` only for behavior and support claims the repository actually
    implements.
 3. Run `golden-path upgrade` without `--write` against the source repository,
-   selected request, and verified `1.2.1` manifest.
+   selected request, and verified `1.2.2` manifest.
 4. Review newly applicable capability-scoped findings. Fix the repository
    implementation or correct an inaccurate declaration; do not add dummy
    evidence merely to obtain a pass.
@@ -182,12 +202,12 @@ the generator never writes into the existing repository.
 
 ## Rollback
 
-Restore the exact immutable `1.2.0` release identity: binary, release manifest,
+Restore the exact immutable `1.2.1` release identity: binary, release manifest,
 archive and executable checksums, generated asset inventory, and full-commit
 workflow/action pins. The patch does not change request or metadata shape, so
 rollback requires no compatibility reader, generated-state migration, or
-consumer-source rewrite. `1.1.0` and `0.2.0` remain verified older migration
-sources.
+consumer-source rewrite. `1.2.0`, `1.1.0`, and `0.2.0` remain verified older
+migration sources.
 
 Re-materialize or upgrade only in a separate candidate directory and review the
 resulting diff. Do not move a tag, replace an asset, overwrite a consumer
