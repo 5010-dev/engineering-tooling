@@ -1,10 +1,14 @@
 package checker
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,6 +23,7 @@ import (
 	hcljson "github.com/hashicorp/hcl/v2/json"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/mod/modfile"
+	"gopkg.in/yaml.v3"
 )
 
 type ruleEvaluator func(root string, metadata Metadata, rule Rule, exceptionsPresent bool) Finding
@@ -484,13 +489,150 @@ func evaluateCommands(root string, _ Metadata, rule Rule, _ bool) Finding {
 	return baseFinding(rule, "pass", name, "The root Just façade exposes init, check, and ci.")
 }
 
-var justRecipePattern = regexp.MustCompile(`(?m)^([A-Za-z_][A-Za-z0-9_-]*)(?:\s+[^:\n]*)?\s*:(?:[ \t]|$)`)
-var justImportPattern = regexp.MustCompile(`(?m)^\s*import(\?)?\s+["']([^"']+)["']\s*(?:#.*)?$`)
-
 func parseJustRecipes(value string) map[string]bool {
 	result := map[string]bool{}
-	for _, match := range justRecipePattern.FindAllStringSubmatch(value, -1) {
-		result[match[1]] = true
+	for _, line := range strings.Split(value, "\n") {
+		if name, ok := justRecipeName(line); ok {
+			result[name] = true
+		}
+	}
+	return result
+}
+
+func justRecipeName(line string) (string, bool) {
+	if line == "" || line[0] == ' ' || line[0] == '\t' {
+		return "", false
+	}
+	if line[0] == '@' {
+		line = line[1:]
+	}
+	end := 0
+	for end < len(line) && justIdentifierCharacter(line[end], end == 0) {
+		end++
+	}
+	if end == 0 {
+		return "", false
+	}
+	name := line[:end]
+	var quote byte
+	escaped := false
+	var round, square, curly int
+	for index := end; index < len(line); index++ {
+		character := line[index]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if character == '\\' && quote == '"' {
+				escaped = true
+				continue
+			}
+			if character == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch character {
+		case '\'', '"', '`':
+			quote = character
+		case '#':
+			return "", false
+		case '(':
+			round++
+		case ')':
+			if round > 0 {
+				round--
+			}
+		case '[':
+			square++
+		case ']':
+			if square > 0 {
+				square--
+			}
+		case '{':
+			curly++
+		case '}':
+			if curly > 0 {
+				curly--
+			}
+		case ':':
+			if round == 0 && square == 0 && curly == 0 {
+				if index+1 < len(line) && line[index+1] == '=' {
+					return "", false
+				}
+				return name, true
+			}
+		}
+	}
+	return "", false
+}
+
+func justIdentifierCharacter(character byte, first bool) bool {
+	if character == '_' || character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' {
+		return true
+	}
+	return !first && (character == '-' || character >= '0' && character <= '9')
+}
+
+type justImport struct {
+	optional bool
+	path     string
+}
+
+func parseJustImports(value string) []justImport {
+	var result []justImport
+	for _, line := range strings.Split(value, "\n") {
+		if line == "" || line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		optional := false
+		remainder := ""
+		switch {
+		case strings.HasPrefix(line, "import? ") || strings.HasPrefix(line, "import?\t"):
+			optional = true
+			remainder = strings.TrimSpace(line[len("import?"):])
+		case strings.HasPrefix(line, "import ") || strings.HasPrefix(line, "import\t"):
+			remainder = strings.TrimSpace(line[len("import"):])
+		default:
+			continue
+		}
+		if len(remainder) < 2 || remainder[0] != '\'' && remainder[0] != '"' {
+			continue
+		}
+		quote := remainder[0]
+		end := 1
+		escaped := false
+		for ; end < len(remainder); end++ {
+			character := remainder[end]
+			if escaped {
+				escaped = false
+				continue
+			}
+			if character == '\\' && quote == '"' {
+				escaped = true
+				continue
+			}
+			if character == quote {
+				break
+			}
+		}
+		if end == len(remainder) {
+			continue
+		}
+		trailing := strings.TrimSpace(remainder[end+1:])
+		if trailing != "" && !strings.HasPrefix(trailing, "#") {
+			continue
+		}
+		importPath := remainder[1:end]
+		if quote == '"' {
+			decoded, err := strconv.Unquote(remainder[:end+1])
+			if err != nil {
+				continue
+			}
+			importPath = decoded
+		}
+		result = append(result, justImport{optional: optional, path: importPath})
 	}
 	return result
 }
@@ -528,10 +670,10 @@ func collectJustRecipes(root, name string, data []byte, state *justTraversal, de
 		return nil, fmt.Errorf("just import bytes exceed limit")
 	}
 	result := parseJustRecipes(string(data))
-	for _, match := range justImportPattern.FindAllStringSubmatch(string(data), -1) {
-		importName := path.Clean(path.Join(path.Dir(name), match[2]))
+	for _, importedFile := range parseJustImports(string(data)) {
+		importName := path.Clean(path.Join(path.Dir(name), importedFile.path))
 		imported, err := readRepositoryFile(root, importName)
-		if errors.Is(err, errNotFound) && match[1] == "?" {
+		if errors.Is(err, errNotFound) && importedFile.optional {
 			continue
 		}
 		if err != nil {
@@ -930,29 +1072,75 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 		return baseFinding(rule, "skip", ".github/workflows", "No GitHub Actions workflow references were detected.")
 	}
 	var remoteCount int
+	var localActions []string
 	for _, name := range files {
 		data, readErr := readRepositoryFile(root, name)
 		if readErr != nil {
 			return inputError(rule, name)
 		}
-		for _, match := range usesPattern.FindAllStringSubmatch(string(data), -1) {
-			reference := strings.Trim(match[1], `"'`)
-			if strings.HasPrefix(reference, "./") {
-				continue
-			}
-			remoteCount++
-			if !immutableActionReference(reference) {
+		references, parseErr := workflowExecutableReferences(data)
+		if parseErr != nil {
+			return inputError(rule, name)
+		}
+		for _, reference := range references {
+			switch reference.kind {
+			case executableLocalAction:
+				localActions = append(localActions, reference.value)
+			case executableAction:
+				remoteCount++
+				if immutableActionReference(reference.value) {
+					continue
+				}
 				finding := baseFinding(rule, deviationStatus(rule), name, "Remote executable reference is not pinned by full commit SHA or image digest.")
-				finding.Secondary = reference
+				finding.Secondary = reference.value
+				return finding
+			case executableImage:
+				remoteCount++
+				if immutableImageReference(reference.value) {
+					continue
+				}
+				finding := baseFinding(rule, deviationStatus(rule), name, "Container image reference is not pinned by SHA-256 digest.")
+				finding.Secondary = reference.value
 				return finding
 			}
 		}
-		for _, match := range imagePattern.FindAllStringSubmatch(string(data), -1) {
-			reference := strings.Trim(match[1], `"'`)
-			remoteCount++
-			if !immutableImageReference(reference) {
-				finding := baseFinding(rule, deviationStatus(rule), name, "Container image reference is not pinned by SHA-256 digest.")
-				finding.Secondary = reference
+	}
+	seenLocalActions := map[string]bool{}
+	for index := 0; index < len(localActions); index++ {
+		if index >= 256 {
+			return inputError(rule, ".github/actions")
+		}
+		metadataPath, data, resolveErr := readLocalActionMetadata(root, localActions[index])
+		if resolveErr != nil {
+			return inputError(rule, localActions[index])
+		}
+		if seenLocalActions[metadataPath] {
+			continue
+		}
+		seenLocalActions[metadataPath] = true
+		references, parseErr := actionExecutableReferences(data)
+		if parseErr != nil {
+			return inputError(rule, metadataPath)
+		}
+		for _, reference := range references {
+			switch reference.kind {
+			case executableLocalAction:
+				localActions = append(localActions, reference.value)
+			case executableAction:
+				remoteCount++
+				if immutableActionReference(reference.value) {
+					continue
+				}
+				finding := baseFinding(rule, deviationStatus(rule), metadataPath, "Remote executable reference is not pinned by full commit SHA or image digest.")
+				finding.Secondary = reference.value
+				return finding
+			case executableImage:
+				remoteCount++
+				if immutableImageReference(reference.value) {
+					continue
+				}
+				finding := baseFinding(rule, deviationStatus(rule), metadataPath, "Container image reference is not pinned by SHA-256 digest.")
+				finding.Secondary = reference.value
 				return finding
 			}
 		}
@@ -966,6 +1154,433 @@ func evaluateImmutableActions(root string, _ Metadata, rule Rule, _ bool) Findin
 		".github/workflows",
 		"Detected workflow action and container references are immutable; archive, binary, VCS, generated-source, and script correlation remains outside this structural check.",
 	)
+}
+
+type executableReferenceKind uint8
+
+const (
+	executableAction executableReferenceKind = iota
+	executableImage
+	executableLocalAction
+)
+
+type executableReference struct {
+	kind  executableReferenceKind
+	value string
+}
+
+func workflowExecutableReferences(data []byte) ([]executableReference, error) {
+	document, err := decodeWorkflowYAML(data)
+	if err != nil {
+		return nil, err
+	}
+	jobs, err := workflowYAMLMappingValue(document, "jobs")
+	if err != nil {
+		return nil, err
+	}
+	if jobs == nil {
+		return nil, nil
+	}
+	jobs, err = dereferenceWorkflowYAMLNode(jobs)
+	if err != nil {
+		return nil, err
+	}
+	if jobs.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("workflow jobs must be a mapping")
+	}
+	var references []executableReference
+	jobEntries, err := workflowYAMLMappingEntries(jobs, "workflow job")
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range jobEntries {
+		jobName := entry.name
+		job, err := dereferenceWorkflowYAMLNode(entry.value)
+		if err != nil {
+			return nil, err
+		}
+		if job.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("workflow job %q must be a mapping", jobName)
+		}
+		uses, err := workflowYAMLMappingValue(job, "uses")
+		if err != nil {
+			return nil, err
+		}
+		if uses != nil {
+			reference, err := workflowYAMLString(uses, "job uses")
+			if err != nil {
+				return nil, err
+			}
+			if !localExecutableReference(reference) {
+				references = append(references, executableReference{kind: executableAction, value: reference})
+			}
+		}
+		container, err := workflowYAMLMappingValue(job, "container")
+		if err != nil {
+			return nil, err
+		}
+		if container != nil {
+			containerReferences, err := containerExecutableReferences(container, "job container")
+			if err != nil {
+				return nil, err
+			}
+			references = append(references, containerReferences...)
+		}
+		services, err := workflowYAMLMappingValue(job, "services")
+		if err != nil {
+			return nil, err
+		}
+		if services != nil {
+			services, err = dereferenceWorkflowYAMLNode(services)
+			if err != nil {
+				return nil, err
+			}
+			if services.Kind != yaml.MappingNode {
+				return nil, fmt.Errorf("workflow job services must be a mapping")
+			}
+			serviceEntries, err := workflowYAMLMappingEntries(services, "workflow service")
+			if err != nil {
+				return nil, err
+			}
+			for _, entry := range serviceEntries {
+				serviceName := entry.name
+				service, err := dereferenceWorkflowYAMLNode(entry.value)
+				if err != nil {
+					return nil, err
+				}
+				if service.Kind != yaml.MappingNode {
+					return nil, fmt.Errorf("workflow service %q must be a mapping", serviceName)
+				}
+				image, err := workflowYAMLMappingValue(service, "image")
+				if err != nil {
+					return nil, err
+				}
+				if image == nil {
+					return nil, fmt.Errorf("workflow service %q is missing image", serviceName)
+				}
+				reference, err := workflowYAMLString(image, "service image")
+				if err != nil {
+					return nil, err
+				}
+				references = append(references, executableReference{kind: executableImage, value: reference})
+			}
+		}
+		steps, err := workflowYAMLMappingValue(job, "steps")
+		if err != nil {
+			return nil, err
+		}
+		if steps != nil {
+			stepReferences, err := stepExecutableReferences(steps)
+			if err != nil {
+				return nil, err
+			}
+			references = append(references, stepReferences...)
+		}
+	}
+	return references, nil
+}
+
+func actionExecutableReferences(data []byte) ([]executableReference, error) {
+	document, err := decodeWorkflowYAML(data)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := workflowYAMLMappingValue(document, "runs")
+	if err != nil {
+		return nil, err
+	}
+	if runs == nil {
+		return nil, fmt.Errorf("action metadata is missing runs")
+	}
+	runs, err = dereferenceWorkflowYAMLNode(runs)
+	if err != nil {
+		return nil, err
+	}
+	if runs.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("action runs must be a mapping")
+	}
+	usingValue, err := workflowYAMLMappingValue(runs, "using")
+	if err != nil {
+		return nil, err
+	}
+	if usingValue == nil {
+		return nil, fmt.Errorf("action metadata is missing runs.using")
+	}
+	using, err := workflowYAMLString(usingValue, "action runs.using")
+	if err != nil {
+		return nil, err
+	}
+	switch using {
+	case "composite":
+		steps, err := workflowYAMLMappingValue(runs, "steps")
+		if err != nil {
+			return nil, err
+		}
+		if steps == nil {
+			return nil, fmt.Errorf("composite action is missing steps")
+		}
+		return stepExecutableReferences(steps)
+	case "docker":
+		imageValue, err := workflowYAMLMappingValue(runs, "image")
+		if err != nil {
+			return nil, err
+		}
+		if imageValue == nil {
+			return nil, fmt.Errorf("docker action is missing runs.image")
+		}
+		image, err := workflowYAMLString(imageValue, "Docker action image")
+		if err != nil {
+			return nil, err
+		}
+		if image == "Dockerfile" || strings.HasPrefix(image, "./") {
+			return nil, nil
+		}
+		if strings.HasPrefix(image, "docker://") {
+			return []executableReference{{kind: executableAction, value: image}}, nil
+		}
+		return []executableReference{{kind: executableImage, value: image}}, nil
+	default:
+		return nil, nil
+	}
+}
+
+func stepExecutableReferences(value *yaml.Node) ([]executableReference, error) {
+	steps, err := dereferenceWorkflowYAMLNode(value)
+	if err != nil {
+		return nil, err
+	}
+	if steps.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("workflow or action steps must be a sequence")
+	}
+	var references []executableReference
+	for index, stepValue := range steps.Content {
+		step, err := dereferenceWorkflowYAMLNode(stepValue)
+		if err != nil {
+			return nil, err
+		}
+		if step.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("step %d must be a mapping", index)
+		}
+		usesValue, err := workflowYAMLMappingValue(step, "uses")
+		if err != nil {
+			return nil, err
+		}
+		if usesValue == nil {
+			continue
+		}
+		reference, err := workflowYAMLString(usesValue, "step uses")
+		if err != nil {
+			return nil, err
+		}
+		kind := executableAction
+		if localExecutableReference(reference) {
+			kind = executableLocalAction
+		}
+		references = append(references, executableReference{kind: kind, value: reference})
+	}
+	return references, nil
+}
+
+func containerExecutableReferences(value *yaml.Node, context string) ([]executableReference, error) {
+	container, err := dereferenceWorkflowYAMLNode(value)
+	if err != nil {
+		return nil, err
+	}
+	if container.Kind == yaml.ScalarNode {
+		image, err := workflowYAMLString(container, context+" image")
+		if err != nil {
+			return nil, err
+		}
+		return []executableReference{{kind: executableImage, value: image}}, nil
+	}
+	if container.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("%s must be a string or mapping", context)
+	}
+	imageValue, err := workflowYAMLMappingValue(container, "image")
+	if err != nil {
+		return nil, err
+	}
+	if imageValue == nil {
+		return nil, fmt.Errorf("%s is missing image", context)
+	}
+	image, err := workflowYAMLString(imageValue, context+" image")
+	if err != nil {
+		return nil, err
+	}
+	return []executableReference{{kind: executableImage, value: image}}, nil
+}
+
+func decodeWorkflowYAML(data []byte) (*yaml.Node, error) {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	var document yaml.Node
+	if err := decoder.Decode(&document); err != nil {
+		return nil, fmt.Errorf("parse workflow YAML: %w", err)
+	}
+	var trailing yaml.Node
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, fmt.Errorf("workflow YAML must contain exactly one document")
+		}
+		return nil, fmt.Errorf("parse trailing workflow YAML: %w", err)
+	}
+	if len(document.Content) != 1 {
+		return nil, fmt.Errorf("workflow YAML must contain exactly one root value")
+	}
+	root, err := dereferenceWorkflowYAMLNode(document.Content[0])
+	if err != nil {
+		return nil, err
+	}
+	if root.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("workflow YAML root must be a mapping")
+	}
+	if err := validateWorkflowYAMLNode(root, map[*yaml.Node]bool{}); err != nil {
+		return nil, err
+	}
+	return root, nil
+}
+
+func dereferenceWorkflowYAMLNode(node *yaml.Node) (*yaml.Node, error) {
+	for depth := 0; node != nil && node.Kind == yaml.AliasNode; depth++ {
+		if depth >= 32 || node.Alias == nil {
+			return nil, fmt.Errorf("workflow YAML alias depth exceeds limit")
+		}
+		node = node.Alias
+	}
+	if node == nil {
+		return nil, fmt.Errorf("workflow YAML node is missing")
+	}
+	return node, nil
+}
+
+func workflowYAMLMappingValue(node *yaml.Node, key string) (*yaml.Node, error) {
+	mapping, err := dereferenceWorkflowYAMLNode(node)
+	if err != nil {
+		return nil, err
+	}
+	if mapping.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("workflow YAML value must be a mapping")
+	}
+	var result *yaml.Node
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		name, err := workflowYAMLString(mapping.Content[index], "workflow YAML mapping key")
+		if err != nil {
+			return nil, err
+		}
+		if name != key {
+			continue
+		}
+		if result != nil {
+			return nil, fmt.Errorf("workflow YAML mapping contains duplicate key %q", key)
+		}
+		result = mapping.Content[index+1]
+	}
+	return result, nil
+}
+
+type workflowYAMLMappingEntry struct {
+	name  string
+	value *yaml.Node
+}
+
+func workflowYAMLMappingEntries(node *yaml.Node, context string) ([]workflowYAMLMappingEntry, error) {
+	mapping, err := dereferenceWorkflowYAMLNode(node)
+	if err != nil {
+		return nil, err
+	}
+	if mapping.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("%s value must be a mapping", context)
+	}
+	entries := make([]workflowYAMLMappingEntry, 0, len(mapping.Content)/2)
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		name, err := workflowYAMLString(mapping.Content[index], context+" name")
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, workflowYAMLMappingEntry{name: name, value: mapping.Content[index+1]})
+	}
+	slices.SortFunc(entries, func(left, right workflowYAMLMappingEntry) int {
+		return strings.Compare(left.name, right.name)
+	})
+	return entries, nil
+}
+
+func validateWorkflowYAMLNode(node *yaml.Node, validated map[*yaml.Node]bool) error {
+	resolved, err := dereferenceWorkflowYAMLNode(node)
+	if err != nil {
+		return err
+	}
+	if validated[resolved] {
+		return nil
+	}
+	validated[resolved] = true
+	switch resolved.Kind {
+	case yaml.MappingNode:
+		seen := map[string]bool{}
+		for index := 0; index+1 < len(resolved.Content); index += 2 {
+			key, err := workflowYAMLString(resolved.Content[index], "workflow YAML mapping key")
+			if err != nil {
+				return err
+			}
+			if seen[key] {
+				return fmt.Errorf("workflow YAML mapping contains duplicate key %q", key)
+			}
+			seen[key] = true
+			if err := validateWorkflowYAMLNode(resolved.Content[index+1], validated); err != nil {
+				return err
+			}
+		}
+	case yaml.SequenceNode:
+		for _, child := range resolved.Content {
+			if err := validateWorkflowYAMLNode(child, validated); err != nil {
+				return err
+			}
+		}
+	case yaml.ScalarNode:
+		return nil
+	default:
+		return fmt.Errorf("workflow YAML contains an unsupported node")
+	}
+	return nil
+}
+
+func workflowYAMLString(value *yaml.Node, context string) (string, error) {
+	scalar, err := dereferenceWorkflowYAMLNode(value)
+	if err != nil {
+		return "", err
+	}
+	if scalar.Kind != yaml.ScalarNode || scalar.Tag != "!!str" {
+		return "", fmt.Errorf("%s must be a non-empty string", context)
+	}
+	reference := strings.TrimSpace(scalar.Value)
+	if reference == "" {
+		return "", fmt.Errorf("%s must be a non-empty string", context)
+	}
+	return reference, nil
+}
+
+func localExecutableReference(reference string) bool {
+	return strings.HasPrefix(reference, "./") || strings.HasPrefix(reference, "$/")
+}
+
+func readLocalActionMetadata(root, reference string) (string, []byte, error) {
+	if !localExecutableReference(reference) {
+		return "", nil, fmt.Errorf("action reference is not repository-local")
+	}
+	clean := path.Clean(reference[2:])
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) || strings.Contains(clean, "\\") {
+		return "", nil, fmt.Errorf("local action reference escapes repository root")
+	}
+	for _, name := range []string{"action.yml", "action.yaml"} {
+		metadataPath := path.Join(clean, name)
+		data, err := readRepositoryFile(root, metadataPath)
+		if err == nil {
+			return metadataPath, data, nil
+		}
+		if !errors.Is(err, errNotFound) {
+			return metadataPath, nil, err
+		}
+	}
+	return clean, nil, errNotFound
 }
 
 func evaluateAssetVersion(_ string, metadata Metadata, rule Rule, _ bool) Finding {
@@ -1164,19 +1779,47 @@ func evaluateGoAuthority(root string, metadata Metadata, rule Rule, _ bool) Find
 			continue
 		}
 		seen[file.path] = true
-		goLine := regexp.MustCompile(`(?m)^go\s+([0-9]+\.[0-9]+(?:\.[0-9]+)?)\s*$`).FindStringSubmatch(string(file.data))
-		if len(goLine) < 2 {
+		goVersion, toolchain, parseErr := goRuntimeDirectives(file.path, file.data)
+		if parseErr != nil || goVersion == "" {
 			return baseFinding(rule, deviationStatus(rule), file.path, "Go runtime declarations are incomplete.")
 		}
-		if compareNumericVersions(goLine[1], miseGo) > 0 {
+		if compareNumericVersions(goVersion, miseGo) > 0 {
 			return baseFinding(rule, deviationStatus(rule), file.path, "The Go directive contradicts the mise-selected runtime.")
 		}
-		toolchainLine := regexp.MustCompile(`(?m)^toolchain\s+(\S+)\s*$`).FindStringSubmatch(string(file.data))
-		if len(toolchainLine) == 2 && toolchainLine[1] != "default" && toolchainLine[1] != "go"+miseGo {
+		if toolchain != "" && toolchain != "default" && toolchain != "go"+miseGo {
 			return baseFinding(rule, deviationStatus(rule), file.path, "The Go toolchain directive contradicts the mise-selected runtime.")
 		}
 	}
 	return baseFinding(rule, "pass", workspace.authorityPath, "Mise and native Go module or workspace runtime declarations align.")
+}
+
+func goRuntimeDirectives(name string, data []byte) (string, string, error) {
+	if strings.HasSuffix(name, "go.work") {
+		workFile, err := modfile.ParseWork(name, data, nil)
+		if err != nil {
+			return "", "", err
+		}
+		var goVersion, toolchain string
+		if workFile.Go != nil {
+			goVersion = workFile.Go.Version
+		}
+		if workFile.Toolchain != nil {
+			toolchain = workFile.Toolchain.Name
+		}
+		return goVersion, toolchain, nil
+	}
+	moduleFile, err := modfile.Parse(name, data, nil)
+	if err != nil {
+		return "", "", err
+	}
+	var goVersion, toolchain string
+	if moduleFile.Go != nil {
+		goVersion = moduleFile.Go.Version
+	}
+	if moduleFile.Toolchain != nil {
+		toolchain = moduleFile.Toolchain.Name
+	}
+	return goVersion, toolchain, nil
 }
 
 func evaluateGoDependencies(root string, metadata Metadata, rule Rule, _ bool) Finding {
@@ -1588,13 +2231,121 @@ func isDirectReference(value string) bool {
 }
 
 func directReferenceIsImmutable(value string) bool {
+	value = strings.TrimSpace(value)
+	if marker := strings.LastIndex(value, " @ "); marker >= 0 {
+		value = strings.TrimSpace(value[marker+3:])
+	}
+	value = stripPEP508EnvironmentMarker(value)
+	if immutableDigestValue(value) || fullCommitOnlyPattern.MatchString(value) {
+		return true
+	}
+
+	candidate := strings.TrimPrefix(value, "git::")
+	parsed, err := url.Parse(candidate)
+	if err != nil {
+		return false
+	}
+	if immutableFragment(parsed.Fragment) {
+		return true
+	}
+	for name, values := range parsed.Query() {
+		lowerName := strings.ToLower(name)
+		for _, queryValue := range values {
+			switch lowerName {
+			case "ref", "rev", "revision", "commit":
+				if fullCommitOnlyPattern.MatchString(queryValue) {
+					return true
+				}
+			case "sha256", "sha512", "checksum", "integrity", "hash":
+				if immutableNamedDigest(lowerName, queryValue) {
+					return true
+				}
+			}
+		}
+	}
+
+	pathValue := parsed.Path
+	if parsed.Opaque != "" {
+		pathValue = parsed.Opaque
+	}
+	if at := strings.LastIndex(pathValue, "@"); at >= 0 && fullCommitOnlyPattern.MatchString(pathValue[at+1:]) {
+		return true
+	}
+	return false
+}
+
+func stripPEP508EnvironmentMarker(value string) string {
+	for index := 1; index < len(value); index++ {
+		if value[index] == ';' && (value[index-1] == ' ' || value[index-1] == '\t') {
+			return strings.TrimSpace(value[:index])
+		}
+	}
+	return value
+}
+
+func immutableFragment(value string) bool {
+	if fullCommitOnlyPattern.MatchString(value) || immutableDigestValue(value) {
+		return true
+	}
+	values, err := url.ParseQuery(value)
+	if err != nil {
+		return false
+	}
+	for name, candidates := range values {
+		lowerName := strings.ToLower(name)
+		for _, candidate := range candidates {
+			switch lowerName {
+			case "ref", "rev", "revision", "commit":
+				if fullCommitOnlyPattern.MatchString(candidate) {
+					return true
+				}
+			case "sha256", "sha512", "checksum", "integrity", "hash":
+				if immutableNamedDigest(lowerName, candidate) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func immutableNamedDigest(name, value string) bool {
+	if immutableDigestValue(value) {
+		return true
+	}
+	switch name {
+	case "sha256":
+		return sha256ValuePattern.MatchString(value)
+	case "sha512":
+		return sha512ValuePattern.MatchString(value)
+	default:
+		return false
+	}
+}
+
+func immutableDigestValue(value string) bool {
+	value = strings.TrimSpace(value)
 	lower := strings.ToLower(value)
-	return fullCommitPattern.MatchString(value) ||
-		strings.Contains(lower, "sha256:") ||
-		strings.Contains(lower, "sha256=") ||
-		strings.Contains(lower, "sha512-") ||
-		strings.Contains(lower, "sha512:") ||
-		strings.Contains(lower, "sha512=")
+	switch {
+	case strings.HasPrefix(lower, "sha256:") || strings.HasPrefix(lower, "sha256="):
+		return sha256ValuePattern.MatchString(value[len("sha256:"):])
+	case strings.HasPrefix(lower, "sha512:") || strings.HasPrefix(lower, "sha512="):
+		return sha512ValuePattern.MatchString(value[len("sha512:"):])
+	case strings.HasPrefix(lower, "sha256-"):
+		return decodedDigestLength(value[len("sha256-"):], 32)
+	case strings.HasPrefix(lower, "sha512-"):
+		return decodedDigestLength(value[len("sha512-"):], 64)
+	default:
+		return false
+	}
+}
+
+func decodedDigestLength(value string, length int) bool {
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		decoded, err = base64.RawStdEncoding.DecodeString(value)
+	}
+	return err == nil && len(decoded) == length
 }
 
 type tomlDirectReference struct {
@@ -1694,7 +2445,6 @@ func immutableImageReference(reference string) bool {
 
 var (
 	floatingPattern            = regexp.MustCompile(`(?i)(?:^|[-./])(?:latest|stable|master|main|nightly)(?:$|[-./])`)
-	fullCommitPattern          = regexp.MustCompile(`(?i)[a-f0-9]{40}`)
 	fullCommitOnlyPattern      = regexp.MustCompile(`(?i)^[a-f0-9]{40}$`)
 	digestPattern              = regexp.MustCompile(`(?i)@sha256:[a-f0-9]{64}$`)
 	sha256ValuePattern         = regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
@@ -1705,8 +2455,6 @@ var (
 	minimumMiseVersionPattern = regexp.MustCompile(
 		`^[0-9]+\.[0-9]+(?:\.[0-9]+)?$`,
 	)
-	usesPattern      = regexp.MustCompile(`(?m)^\s*(?:-\s+)?uses:\s*([^\s#]+)`)
-	imagePattern     = regexp.MustCompile(`(?m)^\s*image:\s*([^\s#]+)`)
 	pnpmExactPattern = regexp.MustCompile(`^pnpm@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$`)
 	calverPattern    = regexp.MustCompile(`^[0-9]{4}\.(0[1-9]|1[0-2])(?:\.[1-9][0-9]*)?$`)
 	semverPattern    = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)

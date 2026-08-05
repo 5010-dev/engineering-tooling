@@ -2,6 +2,7 @@ package checker
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
@@ -484,6 +485,200 @@ jobs:
 	}
 }
 
+func TestWorkflowExecutableReferencesUseYAMLStructure(t *testing.T) {
+	references, err := workflowExecutableReferences([]byte(`name: structure
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - run: |
+          uses: actions/checkout@v5
+          image: node:latest
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(references) != 0 {
+		t.Fatalf("block scalar or output keys became executable references: %+v", references)
+	}
+
+	references, err = workflowExecutableReferences([]byte(`name: structure
+on: push
+jobs:
+  call:
+    uses: octo/example/.github/workflows/quality.yml@0123456789abcdef0123456789abcdef01234567
+  build:
+    runs-on: ubuntu-24.04
+    container: node:latest
+    services:
+      postgres:
+        image: postgres:latest
+    steps:
+      - uses: ./.github/actions/local
+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []executableReference{
+		{kind: executableImage, value: "node:latest"},
+		{kind: executableImage, value: "postgres:latest"},
+		{kind: executableLocalAction, value: "./.github/actions/local"},
+		{kind: executableAction, value: "actions/checkout@0123456789abcdef0123456789abcdef01234567"},
+		{kind: executableAction, value: "octo/example/.github/workflows/quality.yml@0123456789abcdef0123456789abcdef01234567"},
+	}
+	if fmt.Sprint(references) != fmt.Sprint(want) {
+		t.Fatalf("workflow references = %+v, want %+v", references, want)
+	}
+}
+
+func TestWorkflowContainerShorthandFailsRemoteAssetRule(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	writeTestFile(t, root, ".github/workflows/test.yml", `name: test
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    container: node:latest
+    steps:
+      - run: node --version
+`)
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding := findingByRule(result, "DT-ASSET-002")
+	if result.ExitCode != 1 || finding.Status != "fail" || finding.Secondary != "node:latest" {
+		t.Fatalf("unexpected shorthand container result: exit=%d finding=%+v", result.ExitCode, finding)
+	}
+}
+
+func TestLocalActionGraphEvaluatesCompositeAndDockerReferences(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	writeTestFile(t, root, ".github/workflows/test.yml", `name: test
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: ./.github/actions/composite
+      - uses: ./.github/actions/docker
+`)
+	writeTestFile(t, root, ".github/actions/composite/action.yml", `name: composite
+description: test
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v5
+`)
+	writeTestFile(t, root, ".github/actions/docker/action.yml", `name: docker
+description: test
+runs:
+  using: docker
+  image: docker://alpine:latest
+`)
+
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding := findingByRule(result, "DT-ASSET-002")
+	if finding.Status != "fail" || finding.Path != ".github/actions/composite/action.yml" || finding.Secondary != "actions/checkout@v5" {
+		t.Fatalf("mutable composite action reference = %+v", finding)
+	}
+
+	writeTestFile(t, root, ".github/actions/composite/action.yml", `name: composite
+description: test
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+`)
+	result = Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding = findingByRule(result, "DT-ASSET-002")
+	if finding.Status != "fail" || finding.Path != ".github/actions/docker/action.yml" || finding.Secondary != "docker://alpine:latest" {
+		t.Fatalf("mutable Docker action image = %+v", finding)
+	}
+
+	writeTestFile(t, root, ".github/actions/docker/action.yml", `name: docker
+description: test
+runs:
+  using: docker
+  image: docker://alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+`)
+	result = Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding = findingByRule(result, "DT-ASSET-002")
+	if finding.Status != "skip" || !strings.Contains(finding.Message, "references are immutable") {
+		t.Fatalf("immutable local action graph = %+v", finding)
+	}
+}
+
+func TestRepositoryLocalWorkflowDollarReferenceIsNotRemote(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	writeTestFile(t, root, ".github/workflows/test.yml", `name: test
+on: push
+jobs:
+  call:
+    uses: $/.github/workflows/local.yml
+`)
+	writeTestFile(t, root, ".github/workflows/local.yml", `name: local
+on:
+  workflow_call:
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: true
+`)
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if finding := findingByRule(result, "DT-ASSET-002"); finding.Status != "skip" || !strings.Contains(finding.Message, "No remote") {
+		t.Fatalf("same-commit workflow reference = %+v", finding)
+	}
+}
+
+func TestWorkflowYAMLAnchorsPreserveExecutableReferences(t *testing.T) {
+	references, err := workflowExecutableReferences([]byte(`name: anchors
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container: &runtime
+      image: node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    services:
+      mirror: *runtime
+    steps:
+      - &checkout
+        uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - *checkout
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []executableReference{
+		{kind: executableImage, value: "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{kind: executableImage, value: "node@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+		{kind: executableAction, value: "actions/checkout@0123456789abcdef0123456789abcdef01234567"},
+		{kind: executableAction, value: "actions/checkout@0123456789abcdef0123456789abcdef01234567"},
+	}
+	if fmt.Sprint(references) != fmt.Sprint(want) {
+		t.Fatalf("anchored workflow references = %+v, want %+v", references, want)
+	}
+
+	root := copyFixture(t, "positive-go")
+	writeTestFile(t, root, ".github/workflows/anchors.yml", `name: anchors
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - &checkout
+        uses: actions/checkout@0123456789abcdef0123456789abcdef01234567
+      - *checkout
+`)
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if finding := findingByRule(result, "DT-ASSET-002"); finding.Status != "skip" || result.ExitCode != 0 {
+		t.Fatalf("valid anchored workflow = exit %d, finding %+v", result.ExitCode, finding)
+	}
+}
+
 func TestJustImportTraversalHasAggregateFileBound(t *testing.T) {
 	root := t.TempDir()
 	importDirectory := filepath.Join(root, "just")
@@ -535,6 +730,117 @@ ci evaluated_at=evaluation: (check evaluated_at)
 	}
 	if recipes["evaluation"] {
 		t.Fatal("assignment was treated as a recipe")
+	}
+}
+
+func TestJustRecipeParserHandlesQuotedColonsQuietRecipesAndRecipeBodyImports(t *testing.T) {
+	value := `init:
+    true
+@check target='linux:amd64':
+    import 'not-a-just-import.just'
+ci endpoint="https://example.invalid/api": (check endpoint)
+    true
+`
+	recipes := parseJustRecipes(value)
+	for _, expected := range []string{"init", "check", "ci"} {
+		if !recipes[expected] {
+			t.Errorf("recipe %q was not detected", expected)
+		}
+	}
+	if imports := parseJustImports(value); len(imports) != 0 {
+		t.Fatalf("recipe body command became a Just import: %+v", imports)
+	}
+
+	root := copyFixture(t, "positive-go")
+	writeTestFile(t, root, "just/base.just", value)
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if finding := findingByRule(result, "DT-CMD-001"); finding.Status != "pass" {
+		t.Fatalf("valid parameterized Just façade = %+v", finding)
+	}
+}
+
+func TestDirectReferenceImmutabilityRequiresSemanticRevisionOrDigestPosition(t *testing.T) {
+	commit := "0123456789abcdef0123456789abcdef01234567"
+	sha256Digest := strings.Repeat("a", 64)
+	sha512Integrity := "sha512-" + base64.StdEncoding.EncodeToString(make([]byte, 64))
+	sha256UnpaddedIntegrity := "sha256-" + base64.RawStdEncoding.EncodeToString(make([]byte, 32))
+	accepted := []string{
+		"git+https://example.invalid/repository.git#" + commit,
+		"git::https://example.invalid/repository.git?ref=" + commit,
+		"package @ git+https://example.invalid/repository.git@" + commit,
+		"https://example.invalid/archive.tgz#sha256=" + sha256Digest,
+		sha512Integrity,
+		sha256UnpaddedIntegrity,
+		"package @ git+https://example.invalid/repository.git@" + commit + " ; python_version >= '3.12'",
+	}
+	for _, reference := range accepted {
+		if !directReferenceIsImmutable(reference) {
+			t.Errorf("immutable direct reference rejected: %s", reference)
+		}
+	}
+
+	rejected := []string{
+		"https://example.invalid/archive-main-" + commit + ".tgz",
+		"git::https://example.invalid/repository.git?ref=main&cache=" + commit,
+		"https://example.invalid/sha256:" + sha256Digest + "/archive.tgz",
+		"https://example.invalid/archive.tgz?integrity=sha512-not-base64",
+		"git+https://example.invalid/repository.git#v1.2.3",
+		"package @ git+https://example.invalid/repository.git@main ; python_version >= '3.12'",
+	}
+	for _, reference := range rejected {
+		if directReferenceIsImmutable(reference) {
+			t.Errorf("mutable direct reference accepted: %s", reference)
+		}
+	}
+}
+
+func TestDirectDependencyRuleRejectsUnrelatedCommitLookingURLText(t *testing.T) {
+	root := copyFixture(t, "positive-node")
+	commit := "0123456789abcdef0123456789abcdef01234567"
+	writeTestFile(t, root, "package.json", `{
+  "name": "positive-node-fixture",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.0",
+  "dependencies": {
+    "mutable": "https://example.invalid/archive-main-`+commit+`.tgz"
+  }
+}
+`)
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding := findingByRule(result, "DT-DEP-004")
+	if finding.Status != "fail" || finding.Path != "package.json" || finding.Secondary != "mutable" {
+		t.Fatalf("unrelated commit-looking URL text = %+v", finding)
+	}
+
+	writeTestFile(t, root, "package.json", `{
+  "name": "positive-node-fixture",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.0",
+  "dependencies": {
+    "immutable": "git+https://example.invalid/repository.git#`+commit+`"
+  }
+}
+`)
+	result = Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	finding = findingByRule(result, "DT-DEP-004")
+	if finding.Status != "skip" || !strings.Contains(finding.Message, "references are immutable") {
+		t.Fatalf("semantic commit pin = %+v", finding)
+	}
+}
+
+func TestGoAuthorityUsesNativeParserForDirectiveComments(t *testing.T) {
+	root := copyFixture(t, "positive-go")
+	writeTestFile(t, root, "go.mod", `module example.com/positive
+
+go 1.26 // supported runtime line
+
+toolchain go1.26.5 // exact selected toolchain
+`)
+	result := Check(Options{Root: root, EvaluatedAt: fixtureTime, Enforcement: "report-only"})
+	if finding := findingByRule(result, "DT-GO-001"); finding.Status != "pass" {
+		t.Fatalf("native Go directive comments = %+v", finding)
 	}
 }
 
