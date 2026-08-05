@@ -242,16 +242,21 @@ func assertWorkflowActionPins(t *testing.T, root *os.Root, actions []workflowAct
 	if err != nil {
 		t.Fatal(err)
 	}
-	pattern := regexp.MustCompile(`(?m)^\s*uses:\s+["']?([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:/[A-Za-z0-9_./-]+)?@([^"'\s#]+)["']?\s*(?:#\s*(v[0-9]+\.[0-9]+\.[0-9]+))?\s*$`)
 	fullCommit := regexp.MustCompile(`^[a-f0-9]{40}$`)
+	exactVersion := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		data := readFile(t, root, ".github/workflows/"+entry.Name())
-		for _, match := range pattern.FindAllStringSubmatch(string(data), -1) {
-			repository, commit, version := match[1], match[2], match[3]
-			if !fullCommit.MatchString(commit) || version == "" {
+		pins, parseErr := workflowActionPins(data)
+		if parseErr != nil {
+			t.Errorf("workflow %q action references are invalid: %v", entry.Name(), parseErr)
+			continue
+		}
+		for _, pin := range pins {
+			repository, commit, version := pin.Repository, pin.Commit, pin.Version
+			if !fullCommit.MatchString(commit) || !exactVersion.MatchString(version) {
 				t.Errorf("workflow action %q is not pinned by a full commit with an exact version comment", repository)
 				continue
 			}
@@ -268,6 +273,194 @@ func assertWorkflowActionPins(t *testing.T, root *os.Root, actions []workflowAct
 	}
 	if fmt.Sprint(sortedKeys(seen)) != fmt.Sprint(sortedKeys(want)) {
 		t.Fatalf("cutoff workflow action set does not match executable workflows\nseen: %v\ncutoff: %v", sortedKeys(seen), sortedKeys(want))
+	}
+}
+
+func workflowActionPins(data []byte) ([]workflowAction, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return nil, err
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("workflow root must be a mapping")
+	}
+	jobs, err := yamlMappingValue(document.Content[0], "jobs")
+	if err != nil {
+		return nil, err
+	}
+	if jobs == nil {
+		return nil, nil
+	}
+	jobs, err = dereferenceYAMLNode(jobs)
+	if err != nil {
+		return nil, err
+	}
+	if jobs.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("workflow jobs must be a mapping")
+	}
+	var pins []workflowAction
+	for index := 1; index < len(jobs.Content); index += 2 {
+		job, err := dereferenceYAMLNode(jobs.Content[index])
+		if err != nil {
+			return nil, err
+		}
+		if job.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("workflow job must be a mapping")
+		}
+		uses, err := yamlMappingValue(job, "uses")
+		if err != nil {
+			return nil, err
+		}
+		if uses != nil {
+			pin, local, err := workflowActionPin(uses)
+			if err != nil {
+				return nil, err
+			}
+			if !local {
+				pins = append(pins, pin)
+			}
+		}
+		steps, err := yamlMappingValue(job, "steps")
+		if err != nil {
+			return nil, err
+		}
+		if steps == nil {
+			continue
+		}
+		steps, err = dereferenceYAMLNode(steps)
+		if err != nil {
+			return nil, err
+		}
+		if steps.Kind != yaml.SequenceNode {
+			return nil, fmt.Errorf("workflow steps must be a sequence")
+		}
+		for _, stepValue := range steps.Content {
+			step, err := dereferenceYAMLNode(stepValue)
+			if err != nil {
+				return nil, err
+			}
+			if step.Kind != yaml.MappingNode {
+				return nil, fmt.Errorf("workflow step must be a mapping")
+			}
+			uses, err := yamlMappingValue(step, "uses")
+			if err != nil {
+				return nil, err
+			}
+			if uses == nil {
+				continue
+			}
+			pin, local, err := workflowActionPin(uses)
+			if err != nil {
+				return nil, err
+			}
+			if !local {
+				pins = append(pins, pin)
+			}
+		}
+	}
+	return pins, nil
+}
+
+func yamlMappingValue(node *yaml.Node, key string) (*yaml.Node, error) {
+	mapping, err := dereferenceYAMLNode(node)
+	if err != nil {
+		return nil, err
+	}
+	if mapping.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("YAML value must be a mapping")
+	}
+	var result *yaml.Node
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		name, err := yamlString(mapping.Content[index], "YAML mapping key")
+		if err != nil {
+			return nil, err
+		}
+		if name != key {
+			continue
+		}
+		if result != nil {
+			return nil, fmt.Errorf("YAML mapping contains duplicate key %q", key)
+		}
+		result = mapping.Content[index+1]
+	}
+	return result, nil
+}
+
+func dereferenceYAMLNode(node *yaml.Node) (*yaml.Node, error) {
+	for depth := 0; node != nil && node.Kind == yaml.AliasNode; depth++ {
+		if depth >= 32 || node.Alias == nil {
+			return nil, fmt.Errorf("YAML alias depth exceeds limit")
+		}
+		node = node.Alias
+	}
+	if node == nil {
+		return nil, fmt.Errorf("YAML node is missing")
+	}
+	return node, nil
+}
+
+func yamlString(node *yaml.Node, context string) (string, error) {
+	scalar, err := dereferenceYAMLNode(node)
+	if err != nil {
+		return "", err
+	}
+	if scalar.Kind != yaml.ScalarNode || scalar.Tag != "!!str" || strings.TrimSpace(scalar.Value) == "" {
+		return "", fmt.Errorf("%s must be a non-empty string", context)
+	}
+	return strings.TrimSpace(scalar.Value), nil
+}
+
+func workflowActionPin(node *yaml.Node) (workflowAction, bool, error) {
+	scalar, err := dereferenceYAMLNode(node)
+	if err != nil {
+		return workflowAction{}, false, err
+	}
+	reference, err := yamlString(scalar, "workflow uses")
+	if err != nil {
+		return workflowAction{}, false, err
+	}
+	if strings.HasPrefix(reference, "./") || strings.HasPrefix(reference, "$/") {
+		return workflowAction{}, true, nil
+	}
+	at := strings.LastIndex(reference, "@")
+	if at < 0 {
+		return workflowAction{}, false, fmt.Errorf("workflow action %q has no revision", reference)
+	}
+	parts := strings.Split(reference[:at], "/")
+	if len(parts) < 2 {
+		return workflowAction{}, false, fmt.Errorf("workflow action %q has no owner and repository", reference)
+	}
+	version := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(scalar.LineComment), "#"))
+	return workflowAction{Repository: parts[0] + "/" + parts[1], Commit: reference[at+1:], Version: version}, false, nil
+}
+
+func TestWorkflowActionPinsUseParsedYAMLStructure(t *testing.T) {
+	pins, err := workflowActionPins([]byte(`name: test
+on: push
+jobs:
+  call:
+    uses: octo/workflows/.github/workflows/quality.yml@0123456789abcdef0123456789abcdef01234567 # v1.2.3
+  local:
+    uses: $/.github/workflows/local.yml
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - &checkout
+        uses: actions/checkout@89abcdef0123456789abcdef0123456789abcdef # v7.0.1
+      - *checkout
+      - run: |
+          uses: ignored/block-scalar@v1
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []workflowAction{
+		{Repository: "octo/workflows", Commit: "0123456789abcdef0123456789abcdef01234567", Version: "v1.2.3"},
+		{Repository: "actions/checkout", Commit: "89abcdef0123456789abcdef0123456789abcdef", Version: "v7.0.1"},
+		{Repository: "actions/checkout", Commit: "89abcdef0123456789abcdef0123456789abcdef", Version: "v7.0.1"},
+	}
+	if fmt.Sprint(pins) != fmt.Sprint(want) {
+		t.Fatalf("workflow action pins = %+v, want %+v", pins, want)
 	}
 }
 

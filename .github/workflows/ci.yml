@@ -157,8 +157,9 @@ jobs:
           cd "$RUNNER_TEMP/generated"
           mise trust
           mise install --locked
-          printf '%s\n' '[tools]' 'node = "999.0.0"' > "$RUNNER_TEMP/hostile-global-mise.toml"
-          MISE_GLOBAL_CONFIG_FILE="$RUNNER_TEMP/hostile-global-mise.toml" \
+          mkdir -p "$RUNNER_TEMP/hostile-xdg/mise"
+          printf '%s\n' '[tools]' 'node = "999.0.0"' > "$RUNNER_TEMP/hostile-xdg/mise/config.toml"
+          XDG_CONFIG_HOME="$RUNNER_TEMP/hostile-xdg" \
             GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" \
             just init
           GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" just ci
@@ -186,6 +187,12 @@ jobs:
             darwin_arm64_sha256: ecf34a6896e5eaa41815fda018c8bd6920a8fd8d28bd9cd41a8bae3f0e44cbf6
             linux_amd64_sha256: f5020724c216ec467501e5a44b2803897c7cfb010ed4f1299304524344545a2c
             linux_arm64_sha256: 6d80a2310a58c3b5b5146943b22e72c1bdb425e2801bba0a205b6a50e2e26805
+          - prior_version: 1.2.0
+            prior_commit: e5820e01e31c8395c33e4a6087db87600369943f
+            darwin_amd64_sha256: 38780123fe8647043a1ca13bad2a474eac37b0829ee3505e7b7548f4befe94d3
+            darwin_arm64_sha256: df219c0d9cb5e5df90d940bafbda20639a3b4e857b34d28d04fde22debdc09cd
+            linux_amd64_sha256: 61b1de815aafcff6f99c9e0d60c14446d0c6e3865ac09942165dacbba2b2b133
+            linux_arm64_sha256: e0b16544985495cbcfa297c3762f6e19f973ff9c3acb54ce17dbe6cba445f4bb
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -244,7 +251,7 @@ jobs:
             -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
           candidate_version="$("$RUNNER_TEMP/golden-path-under-test" --version)"
           candidate_version="${candidate_version#golden-path }"
-          test "$candidate_version" = "1.2.0"
+          test "$candidate_version" = "1.2.1"
           "$ROLLBACK_BIN" generate \
             --request testdata/generator/requests/single-go.yaml \
             --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
