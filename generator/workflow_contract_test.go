@@ -17,10 +17,20 @@ type workflowContractDocument struct {
 }
 
 type workflowContractJob struct {
-	If             string                 `yaml:"if"`
-	Uses           string                 `yaml:"uses"`
-	TimeoutMinutes int                    `yaml:"timeout-minutes"`
-	Steps          []workflowContractStep `yaml:"steps"`
+	Name           string                   `yaml:"name"`
+	If             string                   `yaml:"if"`
+	Uses           string                   `yaml:"uses"`
+	TimeoutMinutes int                      `yaml:"timeout-minutes"`
+	Strategy       workflowContractStrategy `yaml:"strategy"`
+	Steps          []workflowContractStep   `yaml:"steps"`
+}
+
+type workflowContractStrategy struct {
+	Matrix workflowContractMatrix `yaml:"matrix"`
+}
+
+type workflowContractMatrix struct {
+	Include []map[string]string `yaml:"include"`
 }
 
 type workflowContractStep struct {
@@ -53,6 +63,17 @@ func TestReusableConformanceExecutesCandidateAndBoundsLegacyCost(t *testing.T) {
 	if _, exists := ci.Jobs["legacy-reusable-quality"]; exists {
 		t.Fatal("CI still contains the duplicate legacy reusable-quality matrix")
 	}
+	if name := ci.Jobs["conformance"].Name; name != "Developer Tooling / Quality" {
+		t.Fatalf("repository quality job name = %q, want Developer Tooling / Quality", name)
+	}
+	assertStablePriorReleaseInMatrix(t, ci.Jobs["setup-action"], map[string]string{
+		"prior_version":       "1.2.4",
+		"prior_commit":        "4c078bf7401b10fce9691c521d2887370963e74b",
+		"darwin_amd64_sha256": "faa79fa548d56fd542768c74ac38ace904bf3e1541e8d3de09ae8278a47c8181",
+		"darwin_arm64_sha256": "2e20064590c31fdf39d94483ee691da3f9076f34becebef11fb74c446db2c2d1",
+		"linux_amd64_sha256":  "43e780a52219d3917086cde358959ae53ce1dc6420c00770dec46d4f08c94628",
+		"linux_arm64_sha256":  "8abeb2021d3af995563e1f5f4746c1456c73695fa320cd2c2e3119cfbcb37245",
+	})
 	migration := workflowContractStepNamed(t, ci.Jobs["setup-action"], "Exercise stable migration and rollback without source mutation").Run
 	if !strings.Contains(migration, `manifest_version="$(jq -er '.releaseVersion' testdata/generator/release-manifest.json)"`) {
 		t.Fatal("migration check does not derive the candidate version from the candidate release manifest")
@@ -60,6 +81,22 @@ func TestReusableConformanceExecutesCandidateAndBoundsLegacyCost(t *testing.T) {
 	if !strings.Contains(migration, `test "$candidate_version" = "$manifest_version"`) {
 		t.Fatal("migration check does not bind the candidate binary to the candidate release manifest")
 	}
+}
+
+func assertStablePriorReleaseInMatrix(t *testing.T, job workflowContractJob, expected map[string]string) {
+	t.Helper()
+	for _, release := range job.Strategy.Matrix.Include {
+		if release["prior_version"] != expected["prior_version"] {
+			continue
+		}
+		for key, value := range expected {
+			if release[key] != value {
+				t.Fatalf("stable prior release %s = %q, want %q", key, release[key], value)
+			}
+		}
+		return
+	}
+	t.Fatalf("stable prior release %s is missing from setup-action matrix", expected["prior_version"])
 }
 
 func TestReusableConformanceCallerContractScript(t *testing.T) {
