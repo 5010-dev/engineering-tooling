@@ -11,10 +11,13 @@ or report-only enforcement.
   existing artifact actually spans them, including Python and Rust native
   extensions. Bootstrap retains the narrower combinations its starter source
   templates can materialize safely.
-- Allows multiple artifact components to share one repository-owned native
-  workspace root. Component paths continue to identify artifacts, while
+- Adds executed regression coverage for the existing ability of multiple
+  artifact components to share one repository-owned native workspace root.
+  Component paths continue to identify artifacts, while
   `.github/golden-path-native-roots.yaml` independently identifies dependency
-  manager and lockfile boundaries.
+  manager and lockfile boundaries. This shared-workspace behavior was already
+  accepted by `1.2.3`; the new coverage prevents the adoption correction from
+  regressing it.
 - Applies source-bearing artifact, single-language, single-IaC-engine, and
   Node-hosted code-first IaC starter constraints only to bootstrap. Adoption
   records the existing repository contract and emits no starter source.

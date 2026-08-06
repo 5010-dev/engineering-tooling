@@ -57,10 +57,11 @@ oracle.
    upgradeable baseline without tracking or mutating repository-owned source,
    manifests, locks, commands, or operational contracts. Bootstrap-to-adoption
    planning records retired generated assets and refuses to stage customized
-   retirement conflicts. Adoption accepts cross-language artifacts and multiple
-   components sharing one native workspace root while bootstrap rejects those
-   unsupported starter compositions. Native-root and artifact-component
-   marker failures remain independently covered.
+   retirement conflicts. Adoption accepts cross-language artifacts while
+   bootstrap rejects unsupported cross-language starter compositions. Existing
+   support for multiple artifact components sharing one native workspace root
+   remains covered as a non-regression invariant. Native-root and
+   artifact-component marker failures remain independently covered.
 8. The setup action verifies released `0.2.0`, `1.1.0`, `1.2.0`, `1.2.1`,
    `1.2.2`, and `1.2.3` provenance. Projects materialized by all six releases
    upgrade to a separate `1.2.4` candidate and roll back without source mutation

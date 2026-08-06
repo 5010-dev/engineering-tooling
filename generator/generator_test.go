@@ -483,6 +483,11 @@ roots:
 			if finding := findingByRuleID(t, result, "DT-META-001"); finding.Status != "pass" {
 				t.Fatalf("adoption topology metadata did not pass: %+v", finding)
 			}
+			for _, ruleID := range []string{"DT-DEP-001", "DT-RUST-001"} {
+				if finding := findingByRuleID(t, result, ruleID); finding.Status != "pass" {
+					t.Fatalf("adoption topology did not exercise %s successfully: %+v", ruleID, finding)
+				}
+			}
 		})
 	}
 }
