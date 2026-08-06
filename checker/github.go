@@ -30,6 +30,15 @@ func RenderGitHubSummary(result Result) []byte {
 		result.Summary.Waived,
 		result.Summary.Error,
 	)
+	skipped := skippedFindingBreakdown(result.Findings)
+	fmt.Fprintf(
+		&builder,
+		"Skipped: %d total (%d not applicable, %d manual or hybrid, %d other).\n\n",
+		result.Summary.Skip,
+		skipped.NotApplicable,
+		skipped.ManualOrHybrid,
+		skipped.Other,
+	)
 
 	exceptions := make([]Finding, 0)
 	for _, finding := range result.Findings {

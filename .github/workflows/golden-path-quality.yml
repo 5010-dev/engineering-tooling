@@ -1,4 +1,4 @@
-name: Golden Path / Reusable quality
+name: Developer Tooling / Conformance
 
 on:
   workflow_call:
@@ -9,7 +9,7 @@ on:
         default: ubuntu-24.04
         type: string
       working-directory:
-        description: Repository-relative build root.
+        description: Repository-relative root inspected by the checker.
         required: false
         default: .
         type: string
@@ -17,39 +17,15 @@ on:
         description: Exact JSON array of caller-selected profiles.
         required: true
         type: string
-      checker-version:
-        description: Exact Golden Path release version.
-        required: true
-        type: string
-      source-commit:
-        description: Full source commit bound by the release provenance.
-        required: true
-        type: string
-      github-cli-version:
-        description: Exact GitHub CLI version used for attestation verification.
-        required: true
-        type: string
-      darwin-amd64-sha256:
-        required: true
-        type: string
-      darwin-arm64-sha256:
-        required: true
-        type: string
-      linux-amd64-sha256:
-        required: true
-        type: string
-      linux-arm64-sha256:
-        required: true
-        type: string
 
 permissions:
   contents: read
 
 jobs:
-  quality:
-    name: Quality
+  conformance:
+    name: Conformance
     runs-on: ${{ inputs.runner }}
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Check out consumer repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -57,38 +33,41 @@ jobs:
           persist-credentials: false
 
       - name: Validate immutable caller contract
+        id: caller-contract
         shell: bash
         env:
-          CHECKER_VERSION: ${{ inputs.checker-version }}
-          SOURCE_COMMIT: ${{ inputs.source-commit }}
-          GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
-          DARWIN_AMD64_SHA256: ${{ inputs.darwin-amd64-sha256 }}
-          DARWIN_ARM64_SHA256: ${{ inputs.darwin-arm64-sha256 }}
-          LINUX_AMD64_SHA256: ${{ inputs.linux-amd64-sha256 }}
-          LINUX_ARM64_SHA256: ${{ inputs.linux-arm64-sha256 }}
+          EXPECTED_PROFILES: ${{ inputs.profiles }}
+          CALLER_REPOSITORY: ${{ github.repository }}
+          CALLER_SHA: ${{ github.sha }}
+          WORKFLOW_REF: ${{ job.workflow_ref }}
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
         run: |
           set -euo pipefail
-          [[ "$CHECKER_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]
-          [[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ ]]
-          [[ "$GITHUB_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          for checksum in \
-            "$DARWIN_AMD64_SHA256" "$DARWIN_ARM64_SHA256" \
-            "$LINUX_AMD64_SHA256" "$LINUX_ARM64_SHA256"; do
-            [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
-          done
+          test "$WORKFLOW_REPOSITORY" = '5010-dev/engineering-tooling'
+          [[ "$WORKFLOW_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$EXPECTED_PROFILES" =~ ^\[.*\]$ ]]
+          case "$WORKFLOW_REF" in
+            5010-dev/engineering-tooling/.github/workflows/golden-path-quality.yml@*) ;;
+            *) printf '%s\n' 'Unexpected called-workflow reference.' >&2; exit 2 ;;
+          esac
+          candidate_mode=false
+          if test "$CALLER_REPOSITORY" = "$WORKFLOW_REPOSITORY" && \
+            test "$CALLER_SHA" = "$WORKFLOW_SHA"; then
+            candidate_mode=true
+          else
+            test "$WORKFLOW_REF" = \
+              "5010-dev/engineering-tooling/.github/workflows/golden-path-quality.yml@$WORKFLOW_SHA"
+          fi
+          printf 'candidate-mode=%s\n' "$candidate_mode" >>"$GITHUB_OUTPUT"
 
-      - name: Prepare isolated workflow toolchain
+      - name: Prepare isolated verifier
         id: workflow-toolchain
         shell: bash
         env:
-          GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
-          JUST_VERSION: 1.57.0
+          GITHUB_CLI_VERSION: 2.97.0
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_CLI_VERSION" != '2.97.0' ]]; then
-            printf '%s\n' 'The reusable workflow accepts only its release-pinned GitHub CLI version.' >&2
-            exit 2
-          fi
           case "${RUNNER_OS}/${RUNNER_ARCH}" in
             Linux/X64) mise_sha256=e1fc2899f2bc7dfe9a3553f4c2d5944cf69d11b5f561545504a20f1e11cd6cc5 ;;
             Linux/ARM64) mise_sha256=7d96bad004ba706d7ce4e999113f61296ff317ad23754471743be883817e8a75 ;;
@@ -100,7 +79,6 @@ jobs:
             "$RUNNER_TEMP/golden-path-verifier/config" \
             "$RUNNER_TEMP/golden-path-verifier/project" \
             "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard" \
-            "$RUNNER_TEMP/golden-path-verifier/runner-just-guard" \
             "$RUNNER_TEMP/golden-path-verifier/system-config"
           printf '%s\n' '[tools]' 'node = "999.0.0"' \
             >"$RUNNER_TEMP/golden-path-verifier/mise.toml"
@@ -115,7 +93,6 @@ jobs:
             '' \
             '[tools]' \
             "github-cli = \"$GITHUB_CLI_VERSION\"" \
-            "just = \"$JUST_VERSION\"" \
             '' \
             '[settings]' \
             'lockfile = true' \
@@ -148,47 +125,17 @@ jobs:
           url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_amd64.zip"
           url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108300"
           provenance = "github-attestations"
-
-          [[tools.just]]
-          version = "1.57.0"
-          backend = "aqua:casey/just"
-
-          [tools.just."platforms.linux-arm64"]
-          checksum = "sha256:f225044a81adea6e0b3a8b9370aaf374e6af76c8735ae263ac993df55fd137ec"
-          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-aarch64-unknown-linux-musl.tar.gz"
-          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976912"
-
-          [tools.just."platforms.linux-x64"]
-          checksum = "sha256:45b548094283cb9739af8f13273b8cddeee869f5b4ef2bb631b1f311cb566155"
-          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-x86_64-unknown-linux-musl.tar.gz"
-          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976790"
-
-          [tools.just."platforms.macos-arm64"]
-          checksum = "sha256:0381db216c2f97ce31d838a1562c1064dfbfa73f5a8a81581338a2cd9217df47"
-          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-aarch64-apple-darwin.tar.gz"
-          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976803"
-
-          [tools.just."platforms.macos-x64"]
-          checksum = "sha256:5e6ade3698095576274b2b32cc9e5d467185e8e40b04949004c04cc3d7e962dc"
-          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-x86_64-apple-darwin.tar.gz"
-          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976824"
           EOF
           cat >"$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh" <<'EOF'
           #!/bin/sh
           printf '%s\n' 'The runner-bundled GitHub CLI must not verify Golden Path artifacts.' >&2
           exit 97
           EOF
-          cat >"$RUNNER_TEMP/golden-path-verifier/runner-just-guard/just" <<'EOF'
-          #!/bin/sh
-          printf '%s\n' 'Ambient Just must not execute Golden Path root commands.' >&2
-          exit 98
-          EOF
-          chmod 0755 \
-            "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh" \
-            "$RUNNER_TEMP/golden-path-verifier/runner-just-guard/just"
+          chmod 0755 "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh"
           printf 'mise-sha256=%s\n' "$mise_sha256" >>"$GITHUB_OUTPUT"
 
-      - name: Install exact workflow toolchain
+      - name: Install exact verifier
+        if: ${{ steps.caller-contract.outputs.candidate-mode == 'false' }}
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         env:
           MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache
@@ -213,13 +160,11 @@ jobs:
           export_path: false
 
       - name: Set up verified Golden Path executable
-        id: golden-path
+        if: ${{ steps.caller-contract.outputs.candidate-mode == 'false' }}
+        id: golden-path-release
         shell: bash
         env:
-          CHECKER_VERSION: ${{ inputs.checker-version }}
-          SOURCE_COMMIT: ${{ inputs.source-commit }}
-          GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
-          JUST_VERSION: 1.57.0
+          CHECKER_VERSION: 1.3.0
           GH_TOKEN: ${{ github.token }}
           MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache
           MISE_CEILING_PATHS: ${{ runner.temp }}/golden-path-verifier
@@ -231,10 +176,7 @@ jobs:
           MISE_SYSTEM_CONFIG_DIR: ${{ runner.temp }}/golden-path-verifier/system-config
           MISE_SYSTEM_CONFIG_FILE: ${{ runner.temp }}/golden-path-verifier/system-config/empty.toml
           MISE_TRUSTED_CONFIG_PATHS: ${{ runner.temp }}/golden-path-verifier/project
-          DARWIN_AMD64_SHA256: ${{ inputs.darwin-amd64-sha256 }}
-          DARWIN_ARM64_SHA256: ${{ inputs.darwin-arm64-sha256 }}
-          LINUX_AMD64_SHA256: ${{ inputs.linux-amd64-sha256 }}
-          LINUX_ARM64_SHA256: ${{ inputs.linux-arm64-sha256 }}
+          SOURCE_COMMIT: ${{ job.workflow_sha }}
         run: |
           set -euo pipefail
           export PATH="$RUNNER_TEMP/golden-path-verifier/runner-cli-guard:$PATH"
@@ -245,34 +187,37 @@ jobs:
             exit 3
           fi
           case "${RUNNER_OS}/${RUNNER_ARCH}" in
-            macOS/X64) os=darwin; architecture=amd64; expected="$DARWIN_AMD64_SHA256" ;;
-            macOS/ARM64) os=darwin; architecture=arm64; expected="$DARWIN_ARM64_SHA256" ;;
-            Linux/X64) os=linux; architecture=amd64; expected="$LINUX_AMD64_SHA256" ;;
-            Linux/ARM64) os=linux; architecture=arm64; expected="$LINUX_ARM64_SHA256" ;;
+            macOS/X64) os=darwin; architecture=amd64 ;;
+            macOS/ARM64) os=darwin; architecture=arm64 ;;
+            Linux/X64) os=linux; architecture=amd64 ;;
+            Linux/ARM64) os=linux; architecture=arm64 ;;
             *) printf '%s\n' 'Unsupported Golden Path runner.' >&2; exit 2 ;;
           esac
           archive="golden-path_${CHECKER_VERSION}_${os}_${architecture}.tar.gz"
           staging="$(mktemp -d "${RUNNER_TEMP}/golden-path.XXXXXX")"
           trap 'rm -rf "$staging"' EXIT HUP INT TERM
+          release_url="https://github.com/5010-dev/engineering-tooling/releases/download/v${CHECKER_VERSION}"
           curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --max-time 120 \
-            --output "$staging/$archive" \
-            "https://github.com/5010-dev/engineering-tooling/releases/download/v${CHECKER_VERSION}/$archive"
-          actual="$(shasum -a 256 "$staging/$archive" | awk '{print $1}')"
-          test "$actual" = "$expected"
+            --output "$staging/checksums.txt" "$release_url/checksums.txt"
+          curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --max-time 120 \
+            --output "$staging/$archive" "$release_url/$archive"
           mise_binary="$MISE_DATA_DIR/bin/mise"
           test "$("$mise_binary" --version | awk 'NR == 1 { print $1 }')" = '2026.7.18'
           gh_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which gh)"
-          test "$("$gh_binary" version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"
-          just_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which just)"
-          test -x "$just_binary"
-          test "$("$just_binary" --version | awk 'NR == 1 { print $2 }')" = "$JUST_VERSION"
-          "$gh_binary" attestation verify "$staging/$archive" \
-            --repo 5010-dev/engineering-tooling \
-            --signer-workflow 5010-dev/engineering-tooling/.github/workflows/release.yml \
-            --source-digest "$SOURCE_COMMIT" \
-            --signer-digest "$SOURCE_COMMIT" \
-            --source-ref "refs/tags/v$CHECKER_VERSION" \
-            --deny-self-hosted-runners >/dev/null
+          test "$("$gh_binary" version | awk 'NR == 1 { print $3 }')" = '2.97.0'
+          for subject in "$staging/checksums.txt" "$staging/$archive"; do
+            "$gh_binary" attestation verify "$subject" \
+              --repo 5010-dev/engineering-tooling \
+              --signer-workflow 5010-dev/engineering-tooling/.github/workflows/release.yml \
+              --source-digest "$SOURCE_COMMIT" \
+              --signer-digest "$SOURCE_COMMIT" \
+              --source-ref "refs/tags/v$CHECKER_VERSION" \
+              --deny-self-hosted-runners >/dev/null
+          done
+          expected="$(awk -v name="$archive" '$2 == name { print $1 }' "$staging/checksums.txt")"
+          [[ "$expected" =~ ^[a-f0-9]{64}$ ]]
+          actual="$(shasum -a 256 "$staging/$archive" | awk '{print $1}')"
+          test "$actual" = "$expected"
           mkdir "$staging/unpacked"
           tar -xzf "$staging/$archive" -C "$staging/unpacked"
           candidate="$staging/unpacked/golden-path/golden-path"
@@ -281,87 +226,84 @@ jobs:
           install_directory="$RUNNER_TEMP/golden-path/$CHECKER_VERSION"
           mkdir -p "$install_directory"
           install -m 0755 "$candidate" "$install_directory/golden-path"
-          {
-            printf 'binary-path=%s\n' "$install_directory/golden-path"
-            printf 'just-path=%s\n' "$just_binary"
-            printf 'just-version=%s\n' "$JUST_VERSION"
-          } >> "$GITHUB_OUTPUT"
+          printf 'binary-path=%s\n' "$install_directory/golden-path" >>"$GITHUB_OUTPUT"
 
-      - name: Install consumer-pinned toolchain
+      - name: Install exact candidate compiler
+        if: ${{ steps.caller-contract.outputs.candidate-mode == 'true' }}
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
-          working_directory: ${{ inputs.working-directory }}
+          version: 2026.7.18
+          sha256: ${{ steps.workflow-toolchain.outputs.mise-sha256 }}
+          working_directory: .
           install: true
-          cache: true
+          install_args: go@1.26.5
+          cache: false
+          add_shims_to_path: true
+          env: false
+
+      - name: Build source candidate for workflow validation
+        if: ${{ steps.caller-contract.outputs.candidate-mode == 'true' }}
+        id: golden-path-candidate
+        shell: bash
+        env:
+          CHECKER_VERSION: 1.3.0
+        run: |
+          set -euo pipefail
+          test "$(go env GOVERSION)" = 'go1.26.5'
+          install_directory="$RUNNER_TEMP/golden-path/$CHECKER_VERSION"
+          mkdir -p "$install_directory"
+          go build -mod=readonly -trimpath \
+            -o "$install_directory/golden-path" ./cmd/golden-path
+          test "$("$install_directory/golden-path" --version)" = \
+            "golden-path $CHECKER_VERSION"
+          printf 'binary-path=%s\n' "$install_directory/golden-path" >>"$GITHUB_OUTPUT"
 
       - name: Select one evaluation time
         shell: bash
-        run: echo "GOLDEN_PATH_EVALUATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+        run: echo "GOLDEN_PATH_EVALUATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >>"$GITHUB_ENV"
 
-      - name: Initialize locked dependencies
-        working-directory: ${{ inputs.working-directory }}
-        env:
-          GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
-          GOLDEN_PATH_JUST: ${{ steps.golden-path.outputs.just-path }}
-          GOLDEN_PATH_JUST_VERSION: ${{ steps.golden-path.outputs.just-version }}
-        run: |
-          set -euo pipefail
-          export PATH="$RUNNER_TEMP/golden-path-verifier/runner-just-guard:$PATH"
-          guard_status=0
-          just --version >/dev/null 2>&1 || guard_status=$?
-          test "$guard_status" -eq 98
-          just_directory="$(dirname "$GOLDEN_PATH_JUST")"
-          export PATH="$just_directory:$PATH"
-          hash -r
-          test "$(command -v just)" = "$GOLDEN_PATH_JUST"
-          test "$(just --version)" = "just $GOLDEN_PATH_JUST_VERSION"
-          "$GOLDEN_PATH_JUST" init
-
-      - name: Run canonical quality gate
-        working-directory: ${{ inputs.working-directory }}
-        env:
-          GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
-          GOLDEN_PATH_JUST: ${{ steps.golden-path.outputs.just-path }}
-          GOLDEN_PATH_JUST_VERSION: ${{ steps.golden-path.outputs.just-version }}
-        run: |
-          set -euo pipefail
-          export PATH="$RUNNER_TEMP/golden-path-verifier/runner-just-guard:$PATH"
-          guard_status=0
-          just --version >/dev/null 2>&1 || guard_status=$?
-          test "$guard_status" -eq 98
-          just_directory="$(dirname "$GOLDEN_PATH_JUST")"
-          export PATH="$just_directory:$PATH"
-          hash -r
-          test "$(command -v just)" = "$GOLDEN_PATH_JUST"
-          test "$(just --version)" = "just $GOLDEN_PATH_JUST_VERSION"
-          "$GOLDEN_PATH_JUST" ci
-
-      - name: Publish bounded conformance evidence
-        if: ${{ always() && steps.golden-path.outcome == 'success' }}
+      - name: Run structural conformance
+        id: check
+        continue-on-error: true
         working-directory: ${{ inputs.working-directory }}
         shell: bash
         env:
           EXPECTED_PROFILES: ${{ inputs.profiles }}
-          GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
+          GOLDEN_PATH_BIN: ${{ steps.golden-path-release.outputs.binary-path || steps.golden-path-candidate.outputs.binary-path }}
         run: |
           set -euo pipefail
-          check_arguments=(
-            --root .
-            --evaluated-at "$GOLDEN_PATH_EVALUATED_AT"
-            --json-output "$RUNNER_TEMP/golden-path-result.json"
-            --github-summary-output "$GITHUB_STEP_SUMMARY"
-            --github-annotations
-          )
-          check_help="$("$GOLDEN_PATH_BIN" check --help 2>&1 || true)"
-          if grep -q -- '-expected-profiles' <<<"$check_help"; then
-            check_arguments+=(--expected-profiles "$EXPECTED_PROFILES")
-          else
-            printf '%s\n' 'The selected legacy checker does not support exact caller-profile comparison.' >&2
-          fi
           status=0
-          "$GOLDEN_PATH_BIN" check "${check_arguments[@]}" || status=$?
-          if [[ "$status" -eq 1 ]]; then
-            printf '%s\n' 'Golden Path conformance is report-only; see the emitted evidence.' >&2
-            exit 0
-          fi
+          "$GOLDEN_PATH_BIN" check \
+            --root . \
+            --evaluated-at "$GOLDEN_PATH_EVALUATED_AT" \
+            --expected-profiles "$EXPECTED_PROFILES" \
+            --json-output "$RUNNER_TEMP/golden-path-result.json" \
+            --github-summary-output "$GITHUB_STEP_SUMMARY" \
+            --github-annotations || status=$?
+          printf 'status=%s\n' "$status" >>"$GITHUB_OUTPUT"
           exit "$status"
+
+      - name: Upload complete conformance result
+        if: ${{ always() && steps.check.outputs.status != '' && steps.check.outputs.status != '0' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: golden-path-conformance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/golden-path-result.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve report-only result semantics
+        if: ${{ always() }}
+        shell: bash
+        env:
+          CHECK_STATUS: ${{ steps.check.outputs.status }}
+        run: |
+          case "$CHECK_STATUS" in
+            0) exit 0 ;;
+            1)
+              printf '%s\n' 'Golden Path conformance is report-only; see the emitted evidence.' >&2
+              exit 0
+              ;;
+            2|3) exit "$CHECK_STATUS" ;;
+            *) printf '%s\n' 'Golden Path checker did not report a valid exit status.' >&2; exit 3 ;;
+          esac

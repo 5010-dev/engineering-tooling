@@ -1340,7 +1340,7 @@ func TestUpgradePlansRetiredGeneratedAssetsWithoutMutatingSource(t *testing.T) {
 	}
 }
 
-func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
+func TestGeneratedAutomationPinsCheckerOnlyConformance(t *testing.T) {
 	t.Parallel()
 	files, _, err := Render(fixtureRequest(t, "single-go.yaml"), fixtureRelease(t))
 	if err != nil {
@@ -1351,12 +1351,17 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 	if !strings.Contains(workflow, "uses: 5010-dev/engineering-tooling/.github/workflows/golden-path-quality.yml@"+commit) {
 		t.Fatal("generated caller does not pin the reusable workflow to the release source commit")
 	}
-	for _, expected := range []string{
-		"source-commit: '" + commit + "'",
-		"github-cli-version: '2.97.0'",
+	for _, forbidden := range []string{
+		"checker-version:",
+		"source-commit:",
+		"github-cli-version:",
+		"darwin-amd64-sha256:",
+		"darwin-arm64-sha256:",
+		"linux-amd64-sha256:",
+		"linux-arm64-sha256:",
 	} {
-		if !strings.Contains(workflow, expected) {
-			t.Fatalf("generated caller does not contain %q", expected)
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("generated caller still duplicates release identity through %q", forbidden)
 		}
 	}
 	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
@@ -1372,26 +1377,18 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		t.Fatal("reusable workflow does not declare the read-only baseline permission")
 	}
 	for _, expected := range []string{
-		"name: Prepare isolated workflow toolchain",
+		"name: Prepare isolated verifier",
 		"id: workflow-toolchain",
-		"The reusable workflow accepts only its release-pinned GitHub CLI version.",
 		`"github-cli = \"$GITHUB_CLI_VERSION\""`,
-		`"just = \"$JUST_VERSION\""`,
 		`cat >"$RUNNER_TEMP/golden-path-verifier/project/mise.lock"`,
 		`checksum = "sha256:a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"`,
 		`checksum = "sha256:73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5"`,
 		`checksum = "sha256:63298c998cc2a924c9e254c6af6a1caad6ece281122687a91f079bc0a462700e"`,
 		`checksum = "sha256:a58b8fd77b417a38f47a0b54d1370c59b0fcdb324ccc9ca002b0998f7c4c999e"`,
-		`checksum = "sha256:45b548094283cb9739af8f13273b8cddeee869f5b4ef2bb631b1f311cb566155"`,
-		`checksum = "sha256:f225044a81adea6e0b3a8b9370aaf374e6af76c8735ae263ac993df55fd137ec"`,
-		`checksum = "sha256:5e6ade3698095576274b2b32cc9e5d467185e8e40b04949004c04cc3d7e962dc"`,
-		`checksum = "sha256:0381db216c2f97ce31d838a1562c1064dfbfa73f5a8a81581338a2cd9217df47"`,
 		`runner-cli-guard/gh`,
 		"The runner-bundled GitHub CLI must not verify Golden Path artifacts.",
-		`runner-just-guard/just`,
-		"Ambient Just must not execute Golden Path root commands.",
 		`node = "999.0.0"`,
-		"name: Install exact workflow toolchain",
+		"name: Install exact verifier",
 		"version: 2026.7.18",
 		"sha256: ${{ steps.workflow-toolchain.outputs.mise-sha256 }}",
 		"working_directory: ${{ runner.temp }}/golden-path-verifier/project",
@@ -1417,45 +1414,47 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		"The runner-CLI guard is not in effect.",
 		`mise_binary="$MISE_DATA_DIR/bin/mise"`,
 		`gh_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which gh)"`,
-		`test "$("$gh_binary" version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"`,
-		`just_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which just)"`,
-		`test -x "$just_binary"`,
-		`test "$("$just_binary" --version | awk 'NR == 1 { print $2 }')" = "$JUST_VERSION"`,
-		`printf 'just-path=%s\n' "$just_binary"`,
-		`printf 'just-version=%s\n' "$JUST_VERSION"`,
+		`test "$WORKFLOW_REPOSITORY" = '5010-dev/engineering-tooling'`,
+		`id: caller-contract`,
+		`WORKFLOW_SHA: ${{ job.workflow_sha }}`,
+		`SOURCE_COMMIT: ${{ job.workflow_sha }}`,
+		`golden-path-quality.yml@$WORKFLOW_SHA`,
+		`printf 'candidate-mode=%s\n' "$candidate_mode"`,
+		"name: Build source candidate for workflow validation",
+		`if: ${{ steps.caller-contract.outputs.candidate-mode == 'true' }}`,
+		`CHECKER_VERSION: ` + checker.Version,
+		`checksums.txt`,
 		`"$gh_binary" attestation verify`,
 		"--source-digest \"$SOURCE_COMMIT\"",
 		"--signer-digest \"$SOURCE_COMMIT\"",
 		"--source-ref \"refs/tags/v$CHECKER_VERSION\"",
 		"--deny-self-hosted-runners",
-		"check_help=\"$(\"$GOLDEN_PATH_BIN\" check --help 2>&1 || true)\"",
-		"check_arguments+=(--expected-profiles \"$EXPECTED_PROFILES\")",
-		"if: ${{ always() && steps.golden-path.outcome == 'success' }}",
-		"working_directory: ${{ inputs.working-directory }}",
-		`GOLDEN_PATH_JUST: ${{ steps.golden-path.outputs.just-path }}`,
-		`GOLDEN_PATH_JUST_VERSION: ${{ steps.golden-path.outputs.just-version }}`,
-		`export PATH="$RUNNER_TEMP/golden-path-verifier/runner-just-guard:$PATH"`,
-		`test "$guard_status" -eq 98`,
-		`just_directory="$(dirname "$GOLDEN_PATH_JUST")"`,
-		`export PATH="$just_directory:$PATH"`,
-		`hash -r`,
-		`test "$(command -v just)" = "$GOLDEN_PATH_JUST"`,
-		`test "$(just --version)" = "just $GOLDEN_PATH_JUST_VERSION"`,
-		`"$GOLDEN_PATH_JUST" init`,
-		`"$GOLDEN_PATH_JUST" ci`,
+		`--expected-profiles "$EXPECTED_PROFILES"`,
+		`--json-output "$RUNNER_TEMP/golden-path-result.json"`,
+		"name: Upload complete conformance result",
+		"if: ${{ always() && steps.check.outputs.status != '' && steps.check.outputs.status != '0' }}",
+		"name: Preserve report-only result semantics",
+		"if: ${{ always() }}",
 	} {
 		if !strings.Contains(string(reusable), expected) {
 			t.Fatalf("reusable workflow does not enforce %q", expected)
 		}
 	}
-	setupIndex := strings.Index(string(reusable), "name: Set up verified Golden Path executable")
-	consumerInstallIndex := strings.Index(string(reusable), "name: Install consumer-pinned toolchain")
-	if setupIndex < 0 || consumerInstallIndex < 0 || consumerInstallIndex < setupIndex {
-		t.Fatal("reusable workflow installs the consumer toolchain before provenance verification")
-	}
 	for _, forbidden := range []string{
 		`test "$(gh version | awk 'NR == 1 { print $3 }')"`,
 		"\n          gh attestation verify",
+		"      checker-version:\n",
+		"      source-commit:\n",
+		"      github-cli-version:\n",
+		"      darwin-amd64-sha256:\n",
+		"      darwin-arm64-sha256:\n",
+		"      linux-amd64-sha256:\n",
+		"      linux-arm64-sha256:\n",
+		"Install consumer-pinned toolchain",
+		"Initialize locked dependencies",
+		"Run canonical quality gate",
+		`"$GOLDEN_PATH_JUST" init`,
+		`"$GOLDEN_PATH_JUST" ci`,
 	} {
 		if strings.Contains(string(reusable), forbidden) {
 			t.Fatalf("reusable workflow still depends on runner GitHub CLI through %q", forbidden)

@@ -64,13 +64,13 @@ func evaluateRule(
 	compatibility CompatibilityManifest,
 ) Finding {
 	if rule.RetiredIn != nil {
-		return baseFinding(rule, "skip", ".", "Rule is retired in this standard snapshot.")
+		return skippedFinding(rule, skipCategoryOther, ".", "Rule is retired in this standard snapshot.")
 	}
 	if rule.ID != "DT-META-001" && metadata.Applicability.Status == "not-applicable" {
-		return baseFinding(rule, "skip", ".", "Repository declares Golden Path as not applicable.")
+		return skippedFinding(rule, skipCategoryNotApplicable, ".", "Repository declares Golden Path as not applicable.")
 	}
 	if !ruleApplies(metadata, rule) {
-		return baseFinding(rule, "skip", ".", "Rule does not apply to the declared profiles, artifact types, or capabilities.")
+		return skippedFinding(rule, skipCategoryNotApplicable, ".", "Rule does not apply to the declared profiles, artifact types, or capabilities.")
 	}
 	if rule.Assessment != "automated" {
 		return baseFinding(rule, "skip", ".", "Rule requires hybrid or manual evidence and was not asserted by the structural checker.")
@@ -132,7 +132,7 @@ func evaluateNativeRootRule(
 		}
 	}
 	if selected == nil {
-		return baseFinding(rule, "skip", ".", "Rule does not apply to any declared native root.")
+		return skippedFinding(rule, skipCategoryNotApplicable, ".", "Rule does not apply to any declared native root.")
 	}
 	return *selected
 }
@@ -202,7 +202,7 @@ func evaluateComponentRule(
 		}
 	}
 	if selected == nil {
-		return baseFinding(rule, "skip", ".", "Rule does not apply to any declared component.")
+		return skippedFinding(rule, skipCategoryNotApplicable, ".", "Rule does not apply to any declared component.")
 	}
 	return *selected
 }

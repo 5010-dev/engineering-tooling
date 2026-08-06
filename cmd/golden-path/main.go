@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,6 +57,8 @@ func runCheck(arguments []string, stdout, stderr io.Writer) int {
 	jsonOutput := flags.String("json-output", "-", "JSON output path outside the repository, or - for standard output")
 	githubSummaryOutput := flags.String("github-summary-output", "", "GitHub step summary path outside the repository")
 	githubAnnotations := flags.Bool("github-annotations", false, "emit bounded GitHub workflow annotations")
+	showAll := flags.Bool("show-all", false, "show every passing and skipped finding in human-readable output")
+	verbose := flags.Bool("verbose", false, "alias for --show-all")
 	expectedProfiles := flags.String("expected-profiles", "", "exact JSON profile array declared by the thin caller")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
@@ -136,6 +139,16 @@ func runCheck(arguments []string, stdout, stderr io.Writer) int {
 				Message:     fmt.Sprintf("Thin caller profiles %v do not match repository metadata profiles %v.", expected, result.Profiles),
 				Remediation: "Regenerate the thin caller and repository metadata from the same Golden Path request.",
 			})
+			sort.Slice(result.Findings, func(left, right int) bool {
+				a, b := result.Findings[left], result.Findings[right]
+				if a.RuleID != b.RuleID {
+					return a.RuleID < b.RuleID
+				}
+				if a.Path != b.Path {
+					return a.Path < b.Path
+				}
+				return a.Secondary < b.Secondary
+			})
 			result.Summary.Fail++
 			result.ExitCode = 1
 		}
@@ -148,6 +161,9 @@ func runCheck(arguments []string, stdout, stderr io.Writer) int {
 		return 3
 	}
 	textData := checker.RenderText(result)
+	if *showAll || *verbose {
+		textData = checker.RenderTextAll(result)
+	}
 	if resolvedSummaryOutput != "" {
 		if err := writeOutput(resolvedSummaryOutput, checker.RenderGitHubSummary(result)); err != nil {
 			if !writeMessage(stderr, "unable to write GitHub summary output") {
@@ -294,7 +310,7 @@ func materializationError(stderr io.Writer, context string, err error) int {
 }
 
 func writeUsage(writer io.Writer) bool {
-	return writeMessage(writer, "usage:\n  golden-path check --root <repository> --evaluated-at <RFC3339 UTC> [--expected-profiles <JSON>] [--json-output <path|->] [--github-summary-output <path>] [--github-annotations]\n  golden-path generate --request <path> --release-manifest <path> [--write --output <empty-directory>]\n  golden-path upgrade --root <repository> --request <path> --release-manifest <path> [--write --output <separate-empty-directory>]")
+	return writeMessage(writer, "usage:\n  golden-path check --root <repository> --evaluated-at <RFC3339 UTC> [--expected-profiles <JSON>] [--json-output <path|->] [--github-summary-output <path>] [--github-annotations] [--show-all|--verbose]\n  golden-path generate --request <path> --release-manifest <path> [--write --output <empty-directory>]\n  golden-path upgrade --root <repository> --request <path> --release-manifest <path> [--write --output <separate-empty-directory>]")
 }
 
 func writeMessage(writer io.Writer, message string) bool {

@@ -29,6 +29,14 @@ type cutoffManifest struct {
 	WorkflowActions    []workflowAction  `json:"workflowActions"`
 }
 
+type sourceIntegrityManifest struct {
+	SchemaVersion    string            `json:"schemaVersion"`
+	CheckedAt        string            `json:"checkedAt"`
+	StandardVersion  string            `json:"standardVersion"`
+	ReleaseVersion   string            `json:"releaseVersion"`
+	IntegrityRecords []integrityRecord `json:"integrityRecords"`
+}
+
 type integrityRecord struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
@@ -114,20 +122,17 @@ func TestStableToolingCutoffIsCompleteAndConsistent(t *testing.T) {
 		t.Fatalf("cutoff checkedAt must be canonical UTC: %q", cutoff.CheckedAt)
 	}
 
-	var bundle templateBundle
-	decodeJSON(t, readFile(t, root, "templates/bundle.json"), &bundle)
-	if cutoff.StandardVersion != bundle.StandardVersion || cutoff.ReleaseVersion != bundle.AssetBundleVersion || cutoff.MiseMinimumVersion != bundle.MiseMinimumVersion {
-		t.Fatalf("cutoff identity does not match template bundle: cutoff=%+v bundle=%+v", cutoff, bundle)
+	if cutoff.StandardVersion != "2026.08" || cutoff.ReleaseVersion != "1.2.4" {
+		t.Fatalf("historical cutoff identity changed: standard=%q release=%q", cutoff.StandardVersion, cutoff.ReleaseVersion)
 	}
 	integrity := make(map[string]string, len(cutoff.IntegrityRecords))
+	digestPattern := regexp.MustCompile(`^[a-f0-9]{64}$`)
 	for _, record := range cutoff.IntegrityRecords {
 		if _, duplicate := integrity[record.Path]; duplicate {
 			t.Fatalf("duplicate integrity record %q", record.Path)
 		}
-		data := readFile(t, root, record.Path)
-		actual := fmt.Sprintf("%x", sha256.Sum256(data))
-		if actual != record.SHA256 {
-			t.Fatalf("integrity record %q = %s, want %s", record.Path, record.SHA256, actual)
+		if !digestPattern.MatchString(record.SHA256) {
+			t.Fatalf("historical integrity record %q has invalid digest %q", record.Path, record.SHA256)
 		}
 		integrity[record.Path] = record.SHA256
 	}
@@ -148,13 +153,18 @@ func TestStableToolingCutoffIsCompleteAndConsistent(t *testing.T) {
 	if fmt.Sprint(sortedKeys(referencedIntegrity)) != fmt.Sprint(sortedKeys(integrity)) {
 		t.Fatalf("cutoff contains unreferenced or unbound integrity records\nreferenced: %v\nrecords: %v", sortedKeys(referencedIntegrity), sortedKeys(integrity))
 	}
+	var bundle templateBundle
+	decodeJSON(t, readFile(t, root, "templates/bundle.json"), &bundle)
+	if cutoff.MiseMinimumVersion != bundle.MiseMinimumVersion {
+		t.Fatalf("retained cutoff mise minimum %q differs from bundle %q", cutoff.MiseMinimumVersion, bundle.MiseMinimumVersion)
+	}
 	if fmt.Sprint(sortedPairs(selected)) != fmt.Sprint(sortedPairs(bundle.Tools)) {
 		t.Fatalf("cutoff tools do not match the bundle\ncutoff: %v\nbundle: %v", sortedPairs(selected), sortedPairs(bundle.Tools))
 	}
 
 	var compatibility compatibilityManifest
 	decodeJSON(t, readFile(t, root, "compatibility/manifest.json"), &compatibility)
-	if compatibility.CheckerVersion != cutoff.ReleaseVersion || compatibility.Lifecycle != "stable" || fmt.Sprint(compatibility.Enforcement) != "[report-only]" {
+	if compatibility.Lifecycle != "stable" || fmt.Sprint(compatibility.Enforcement) != "[report-only]" {
 		t.Fatalf("stable compatibility identity is inconsistent: %+v", compatibility)
 	}
 	wantRuntime := make(map[string]bool)
@@ -176,6 +186,49 @@ func TestStableToolingCutoffIsCompleteAndConsistent(t *testing.T) {
 	}
 
 	assertWorkflowActionPins(t, root, cutoff.WorkflowActions)
+}
+
+func TestReleaseSourceIntegrityBindsCurrentBytes(t *testing.T) {
+	root, err := os.OpenRoot("..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := root.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	data := readFile(t, root, "release/source-integrity-2026-08-06.json")
+	validateJSON(t, readFile(t, root, "release/golden-path-source-integrity-v1.schema.json"), data)
+	var sourceIntegrity sourceIntegrityManifest
+	decodeJSON(t, data, &sourceIntegrity)
+	if sourceIntegrity.SchemaVersion != "golden-path-source-integrity/v1" {
+		t.Fatalf("source integrity schema = %q", sourceIntegrity.SchemaVersion)
+	}
+	checkedAt, err := time.Parse(time.RFC3339, sourceIntegrity.CheckedAt)
+	if err != nil || checkedAt.Location() != time.UTC {
+		t.Fatalf("source integrity checkedAt must be canonical UTC: %q", sourceIntegrity.CheckedAt)
+	}
+	var bundle templateBundle
+	decodeJSON(t, readFile(t, root, "templates/bundle.json"), &bundle)
+	if sourceIntegrity.StandardVersion != bundle.StandardVersion || sourceIntegrity.ReleaseVersion != bundle.AssetBundleVersion {
+		t.Fatalf("source integrity identity does not match template bundle: integrity=%+v bundle=%+v", sourceIntegrity, bundle)
+	}
+	seen := make(map[string]bool, len(sourceIntegrity.IntegrityRecords))
+	for _, record := range sourceIntegrity.IntegrityRecords {
+		if seen[record.Path] {
+			t.Fatalf("duplicate source integrity record %q", record.Path)
+		}
+		seen[record.Path] = true
+		actual := fmt.Sprintf("%x", sha256.Sum256(readFile(t, root, record.Path)))
+		if actual != record.SHA256 {
+			t.Fatalf("source integrity %q = %s, want current digest %s", record.Path, record.SHA256, actual)
+		}
+	}
+	if len(seen) != 11 {
+		t.Fatalf("source integrity record count = %d, want 11", len(seen))
+	}
 }
 
 func TestReleaseWorkflowPublishesTheFlatDownloadedBundle(t *testing.T) {

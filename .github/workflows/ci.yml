@@ -354,40 +354,10 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/rollback-candidate" write-tree)" = "$rollback_candidate_tree"
           test -z "$(git -C "$RUNNER_TEMP/rollback-candidate" status --short)"
 
-  reusable-quality:
-    name: Reusable quality / ${{ matrix.contract }}
+  reusable-conformance:
+    name: Reusable conformance / source candidate
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - contract: bootstrap / Mise-owned Just
-            working_directory: testdata/released-provenance/v1.1.0-go
-            checker_version: 1.1.0
-            source_commit: cebac127c71406e7818237fcd83ad39fe7a472bc
-            darwin_amd64_sha256: 6974d3f344b210c592ead03cd444771b9e7bc33369df5c9622028b990286e4b9
-            darwin_arm64_sha256: ecf34a6896e5eaa41815fda018c8bd6920a8fd8d28bd9cd41a8bae3f0e44cbf6
-            linux_amd64_sha256: f5020724c216ec467501e5a44b2803897c7cfb010ed4f1299304524344545a2c
-            linux_arm64_sha256: 6d80a2310a58c3b5b5146943b22e72c1bdb425e2801bba0a205b6a50e2e26805
-          - contract: adoption / workflow-owned Just
-            working_directory: testdata/reusable-quality/adoption-external-just
-            checker_version: 1.2.2
-            source_commit: 3aab60d0770853d45b6da179cbc45f6f6639d40f
-            darwin_amd64_sha256: 5eac78733a7f3448b560d9994dac3e25affef060a23a8cfcb7ff2283865df651
-            darwin_arm64_sha256: e6bd8402f6653945f6a39b575eb3c22e684480f4295a7b4ab89a0d52004ac388
-            linux_amd64_sha256: 7f2dc5fe4665ed014829dffdee5c83ba926ca5014f98d9d69cc592605eb6f20e
-            linux_arm64_sha256: 020f8c5b315f265260dfb0d61a953a3043c90071ca23c3f7ea83666f58062854
     uses: ./.github/workflows/golden-path-quality.yml
     with:
-      # The candidate workflow is unreleased. Exercise it against immutable
-      # released artifacts without weakening configuration-error exit 2.
-      working-directory: ${{ matrix.working_directory }}
       profiles: '["go"]'
-      checker-version: ${{ matrix.checker_version }}
-      source-commit: ${{ matrix.source_commit }}
-      github-cli-version: 2.97.0
-      darwin-amd64-sha256: ${{ matrix.darwin_amd64_sha256 }}
-      darwin-arm64-sha256: ${{ matrix.darwin_arm64_sha256 }}
-      linux-amd64-sha256: ${{ matrix.linux_amd64_sha256 }}
-      linux-arm64-sha256: ${{ matrix.linux_arm64_sha256 }}
