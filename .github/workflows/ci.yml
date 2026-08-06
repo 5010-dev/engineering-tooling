@@ -271,7 +271,8 @@ jobs:
             -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
           candidate_version="$("$RUNNER_TEMP/golden-path-under-test" --version)"
           candidate_version="${candidate_version#golden-path }"
-          test "$candidate_version" = "1.2.4"
+          manifest_version="$(jq -er '.releaseVersion' testdata/generator/release-manifest.json)"
+          test "$candidate_version" = "$manifest_version"
           "$ROLLBACK_BIN" generate \
             --request testdata/generator/requests/single-go.yaml \
             --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \

@@ -53,6 +53,13 @@ func TestReusableConformanceExecutesCandidateAndBoundsLegacyCost(t *testing.T) {
 	if _, exists := ci.Jobs["legacy-reusable-quality"]; exists {
 		t.Fatal("CI still contains the duplicate legacy reusable-quality matrix")
 	}
+	migration := workflowContractStepNamed(t, ci.Jobs["setup-action"], "Exercise stable migration and rollback without source mutation").Run
+	if !strings.Contains(migration, `manifest_version="$(jq -er '.releaseVersion' testdata/generator/release-manifest.json)"`) {
+		t.Fatal("migration check does not derive the candidate version from the candidate release manifest")
+	}
+	if !strings.Contains(migration, `test "$candidate_version" = "$manifest_version"`) {
+		t.Fatal("migration check does not bind the candidate binary to the candidate release manifest")
+	}
 }
 
 func TestReusableConformanceCallerContractScript(t *testing.T) {
