@@ -77,11 +77,12 @@ jobs:
             [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
           done
 
-      - name: Prepare isolated GitHub CLI verifier
-        id: verifier-toolchain
+      - name: Prepare isolated workflow toolchain
+        id: workflow-toolchain
         shell: bash
         env:
           GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
+          JUST_VERSION: 1.57.0
         run: |
           set -euo pipefail
           if [[ "$GITHUB_CLI_VERSION" != '2.97.0' ]]; then
@@ -99,6 +100,7 @@ jobs:
             "$RUNNER_TEMP/golden-path-verifier/config" \
             "$RUNNER_TEMP/golden-path-verifier/project" \
             "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard" \
+            "$RUNNER_TEMP/golden-path-verifier/runner-just-guard" \
             "$RUNNER_TEMP/golden-path-verifier/system-config"
           printf '%s\n' '[tools]' 'node = "999.0.0"' \
             >"$RUNNER_TEMP/golden-path-verifier/mise.toml"
@@ -113,6 +115,7 @@ jobs:
             '' \
             '[tools]' \
             "github-cli = \"$GITHUB_CLI_VERSION\"" \
+            "just = \"$JUST_VERSION\"" \
             '' \
             '[settings]' \
             'lockfile = true' \
@@ -145,16 +148,47 @@ jobs:
           url = "https://github.com/cli/cli/releases/download/v2.97.0/gh_2.97.0_macOS_amd64.zip"
           url_api = "https://api.github.com/repos/cli/cli/releases/assets/496108300"
           provenance = "github-attestations"
+
+          [[tools.just]]
+          version = "1.57.0"
+          backend = "aqua:casey/just"
+
+          [tools.just."platforms.linux-arm64"]
+          checksum = "sha256:f225044a81adea6e0b3a8b9370aaf374e6af76c8735ae263ac993df55fd137ec"
+          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-aarch64-unknown-linux-musl.tar.gz"
+          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976912"
+
+          [tools.just."platforms.linux-x64"]
+          checksum = "sha256:45b548094283cb9739af8f13273b8cddeee869f5b4ef2bb631b1f311cb566155"
+          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-x86_64-unknown-linux-musl.tar.gz"
+          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976790"
+
+          [tools.just."platforms.macos-arm64"]
+          checksum = "sha256:0381db216c2f97ce31d838a1562c1064dfbfa73f5a8a81581338a2cd9217df47"
+          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-aarch64-apple-darwin.tar.gz"
+          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976803"
+
+          [tools.just."platforms.macos-x64"]
+          checksum = "sha256:5e6ade3698095576274b2b32cc9e5d467185e8e40b04949004c04cc3d7e962dc"
+          url = "https://github.com/casey/just/releases/download/1.57.0/just-1.57.0-x86_64-apple-darwin.tar.gz"
+          url_api = "https://api.github.com/repos/casey/just/releases/assets/481976824"
           EOF
           cat >"$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh" <<'EOF'
           #!/bin/sh
           printf '%s\n' 'The runner-bundled GitHub CLI must not verify Golden Path artifacts.' >&2
           exit 97
           EOF
-          chmod 0755 "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh"
+          cat >"$RUNNER_TEMP/golden-path-verifier/runner-just-guard/just" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' 'Ambient Just must not execute Golden Path root commands.' >&2
+          exit 98
+          EOF
+          chmod 0755 \
+            "$RUNNER_TEMP/golden-path-verifier/runner-cli-guard/gh" \
+            "$RUNNER_TEMP/golden-path-verifier/runner-just-guard/just"
           printf 'mise-sha256=%s\n' "$mise_sha256" >>"$GITHUB_OUTPUT"
 
-      - name: Install exact GitHub CLI verifier
+      - name: Install exact workflow toolchain
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         env:
           MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache
@@ -169,7 +203,7 @@ jobs:
           MISE_TRUSTED_CONFIG_PATHS: ${{ runner.temp }}/golden-path-verifier/project
         with:
           version: 2026.7.18
-          sha256: ${{ steps.verifier-toolchain.outputs.mise-sha256 }}
+          sha256: ${{ steps.workflow-toolchain.outputs.mise-sha256 }}
           working_directory: ${{ runner.temp }}/golden-path-verifier/project
           install: true
           install_args: --locked
@@ -185,6 +219,7 @@ jobs:
           CHECKER_VERSION: ${{ inputs.checker-version }}
           SOURCE_COMMIT: ${{ inputs.source-commit }}
           GITHUB_CLI_VERSION: ${{ inputs.github-cli-version }}
+          JUST_VERSION: 1.57.0
           GH_TOKEN: ${{ github.token }}
           MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache
           MISE_CEILING_PATHS: ${{ runner.temp }}/golden-path-verifier
@@ -228,6 +263,9 @@ jobs:
           test "$("$mise_binary" --version | awk 'NR == 1 { print $1 }')" = '2026.7.18'
           gh_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which gh)"
           test "$("$gh_binary" version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"
+          just_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which just)"
+          test -x "$just_binary"
+          test "$("$just_binary" --version | awk 'NR == 1 { print $2 }')" = "$JUST_VERSION"
           "$gh_binary" attestation verify "$staging/$archive" \
             --repo 5010-dev/engineering-tooling \
             --signer-workflow 5010-dev/engineering-tooling/.github/workflows/release.yml \
@@ -243,11 +281,16 @@ jobs:
           install_directory="$RUNNER_TEMP/golden-path/$CHECKER_VERSION"
           mkdir -p "$install_directory"
           install -m 0755 "$candidate" "$install_directory/golden-path"
-          printf 'binary-path=%s\n' "$install_directory/golden-path" >> "$GITHUB_OUTPUT"
+          {
+            printf 'binary-path=%s\n' "$install_directory/golden-path"
+            printf 'just-path=%s\n' "$just_binary"
+            printf 'just-version=%s\n' "$JUST_VERSION"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Install consumer-pinned toolchain
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
+          working_directory: ${{ inputs.working-directory }}
           install: true
           cache: true
 
@@ -259,13 +302,39 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
         env:
           GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
-        run: just init
+          GOLDEN_PATH_JUST: ${{ steps.golden-path.outputs.just-path }}
+          GOLDEN_PATH_JUST_VERSION: ${{ steps.golden-path.outputs.just-version }}
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/golden-path-verifier/runner-just-guard:$PATH"
+          guard_status=0
+          just --version >/dev/null 2>&1 || guard_status=$?
+          test "$guard_status" -eq 98
+          just_directory="$(dirname "$GOLDEN_PATH_JUST")"
+          export PATH="$just_directory:$PATH"
+          hash -r
+          test "$(command -v just)" = "$GOLDEN_PATH_JUST"
+          test "$(just --version)" = "just $GOLDEN_PATH_JUST_VERSION"
+          "$GOLDEN_PATH_JUST" init
 
       - name: Run canonical quality gate
         working-directory: ${{ inputs.working-directory }}
         env:
           GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
-        run: just ci
+          GOLDEN_PATH_JUST: ${{ steps.golden-path.outputs.just-path }}
+          GOLDEN_PATH_JUST_VERSION: ${{ steps.golden-path.outputs.just-version }}
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/golden-path-verifier/runner-just-guard:$PATH"
+          guard_status=0
+          just --version >/dev/null 2>&1 || guard_status=$?
+          test "$guard_status" -eq 98
+          just_directory="$(dirname "$GOLDEN_PATH_JUST")"
+          export PATH="$just_directory:$PATH"
+          hash -r
+          test "$(command -v just)" = "$GOLDEN_PATH_JUST"
+          test "$(just --version)" = "just $GOLDEN_PATH_JUST_VERSION"
+          "$GOLDEN_PATH_JUST" ci
 
       - name: Publish bounded conformance evidence
         if: ${{ always() && steps.golden-path.outcome == 'success' }}

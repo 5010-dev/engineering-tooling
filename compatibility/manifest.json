@@ -1,6 +1,6 @@
 {
   "schemaVersion": "golden-path-checker-compatibility/v1",
-  "checkerVersion": "1.2.2",
+  "checkerVersion": "1.2.3",
   "lifecycle": "stable",
   "enforcement": [
     "report-only"
