@@ -8,29 +8,27 @@ applicability.
 
 - Standard: `2026.08`
 - Contract: `golden-path/v1`
-- Tooling and asset bundle: `1.2.3`
+- Tooling and asset bundle: `1.2.4`
 - Release lifecycle: `stable`
 - Enforcement: `report-only`
 - Normative source commit: `604a40886d5a1cba3b304471e6e072b72cec7601`
 - External-tool cutoff: `2026-08-04T12:54:32Z`
 
-The patch increment corrects the released `1.2.2` reusable workflow's Just
-bootstrap and release-qualification coverage. Request, metadata, and result
-schemas remain unchanged;
-no contract epoch, compatibility reader, or repository migration is introduced.
-Runtime selections, external tools, generated dependency locks, workflow
-actions, and the checker rule catalog remain unchanged. Release-specific
-integrity evidence is bound by
+The patch increment corrects the released `1.2.3` adoption composition and
+native-root validation behavior. It widens the existing request schema's
+adoption branch without changing any schema identifier; no contract epoch,
+compatibility reader, or repository migration is introduced. Runtime
+selections, external tools, generated dependency locks, workflow actions, and
+the checker rule catalog remain unchanged. Release-specific integrity evidence
+is bound by
 [`tooling-cutoff-2026-08-04.json`](./tooling-cutoff-2026-08-04.json).
 
-The candidate must additionally prove that the reusable workflow installs both
-the caller-selected exact GitHub CLI and release-pinned Just from recorded
-checksums under strict Mise lock enforcement. It must invoke the resolved Just
-directly, put it first on `PATH` for nested calls, install the consumer
-toolchain from the selected build root, and reject ambient runner Just through
-an executed guard. The acceptance matrix must exercise both a generated
-bootstrap repository and an adoption repository whose local Mise configuration
-and lock omit Just.
+The candidate must additionally prove that adoption can describe an existing
+cross-language artifact and multiple artifacts sharing one native workspace
+root without materializing starter source. Bootstrap must continue to reject
+the same unsupported starter compositions. Native dependency-root validation
+and artifact-component marker coverage must each retain their own failure
+oracle.
 
 ## Required evidence before tagging
 
@@ -59,11 +57,14 @@ and lock omit Just.
    upgradeable baseline without tracking or mutating repository-owned source,
    manifests, locks, commands, or operational contracts. Bootstrap-to-adoption
    planning records retired generated assets and refuses to stage customized
-   retirement conflicts.
-8. The setup action verifies released `0.2.0`, `1.1.0`, `1.2.0`, `1.2.1`, and
-   `1.2.2` provenance. Projects materialized by all five releases upgrade to a
-   separate `1.2.3` candidate and roll back without source mutation or
-   unresolved conflicts.
+   retirement conflicts. Adoption accepts cross-language artifacts and multiple
+   components sharing one native workspace root while bootstrap rejects those
+   unsupported starter compositions. Native-root and artifact-component
+   marker failures remain independently covered.
+8. The setup action verifies released `0.2.0`, `1.1.0`, `1.2.0`, `1.2.1`,
+   `1.2.2`, and `1.2.3` provenance. Projects materialized by all six releases
+   upgrade to a separate `1.2.4` candidate and roll back without source mutation
+   or unresolved conflicts.
 9. Every generated profile runs on its declared native CI runner. The executed
    reusable-workflow matrix covers an actual `1.1.0` generated bootstrap
    repository and a conformant `1.2.2` adoption repository whose
@@ -84,18 +85,19 @@ predeclared.
 
 ## Compatibility and ownership boundary
 
-The new request fields are optional. Existing repositories do not need to
-change their request, metadata, or generated files unless they adopt `1.2.3`
-through their normal migration workflow. A component declares only capabilities
+The request shape is unchanged. Existing repositories do not need to change
+their request, metadata, or generated files unless they adopt `1.2.4` through
+their normal migration workflow. A component declares only capabilities
 its repository actually implements. Bootstrap merges declarations with its
 materialized baseline; adoption records exactly the declaration. The generator
 does not infer publication or platform support from artifact type, profile, or
 runner and does not create publishing automation, credentials, registry
 configuration, or release evidence.
 
-This is a behavior correction for the released `1.2.2` implementation. Exact
-consumer pins move to the separate immutable `1.2.3` release; no old data or
-request form requires dual parsing, dual writing, or a compatibility path.
+This is a backward-compatible behavior correction for the released `1.2.3`
+implementation. Exact consumer pins move to the separate immutable `1.2.4`
+release; existing `1.2.3` requests remain valid and no old data or request form
+requires dual parsing, dual writing, or a compatibility path.
 
 ## GitHub Free private baseline
 
@@ -105,22 +107,22 @@ private artifact attestation. The reusable workflow preserves findings while
 converting only conformance exit `1` to a report-only job result. Configuration
 and internal errors (`2` and `3`) still fail closed.
 
-The `1.2.3` channel contains only public generic implementation assets. It does
+The `1.2.4` channel contains only public generic implementation assets. It does
 not contain, depend on, or claim support for a restricted implementation.
 
 ## CI cost boundary
 
-Central pull-request validation uses 16 GitHub-hosted jobs: one repository gate,
-four native targets, four generated-profile targets, five migration and
+Central pull-request validation uses 17 GitHub-hosted jobs: one repository gate,
+four native targets, four generated-profile targets, six migration and
 rollback matrix entries, and two reusable-workflow integration matrix entries.
-The maximum configured aggregate runner time is 325 minutes, the longest
+The maximum configured aggregate runner time is 335 minutes, the longest
 individual timeout remains 40 minutes, and the matrix runs only in the public
 implementation repository. The tag-only release path remains seven jobs with
 95 aggregate timeout-minutes.
 
 ## Adoption boundary
 
-New-repository bootstrap records tooling bundle `1.2.3`, emits the complete
+New-repository bootstrap records tooling bundle `1.2.4`, emits the complete
 starter and a thin report-only caller, and writes only to an explicitly selected
 empty staging directory. First adoption for an existing repository emits only
 the canonical request, metadata, generated-asset baseline, immutable bootstrap
@@ -136,12 +138,16 @@ snapshot-manifest hashes, archive hashes, and immutable automation pins.
 
 ## Support, deprecation, and rollback
 
-`1.x` remains the supported stable implementation line. `1.2.2` is the
-immediate immutable rollback source. The 2026-08-01 announcement continues to
-deprecate `0.1.x` and `0.2.x` through 2027-01-28; `0.2.0` remains a verified
-legacy migration source, while `0.1.x` must first advance to `0.2.0`.
+`1.x` remains the supported stable implementation line. `1.2.3` is the
+immediate immutable rollback source for requests within its accepted profile
+composition. The 2026-08-01 announcement continues to deprecate `0.1.x` and
+`0.2.x` through 2027-01-28; `0.2.0` remains a verified legacy migration source,
+while `0.1.x` must first advance to `0.2.0`.
 
 Rollback restores the exact binary, release manifest, archive and executable
 checksums, generated-asset inventory, and full-commit workflow/action pins.
-Rollback to `1.2.2` retains the same request and metadata schema and never
-mutates a published release or consumer default branch.
+Repositories using a composition newly accepted by `1.2.4` also restore their
+previous request and metadata control-plane baseline because `1.2.3` cannot
+decode that widened composition. This does not rewrite repository-owned product
+source, manifests, dependency roots, locks, or runtime contracts, and rollback
+never mutates a published release or consumer default branch.

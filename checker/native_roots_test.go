@@ -65,6 +65,14 @@ func TestNativeRootProfileValidationUnionsProfilesAtOnePath(t *testing.T) {
 	if findingPath, message := validateNativeRootProfileDeclarations(root, roots, nil); message != "" {
 		t.Fatalf("valid profile roots = path %q message %q", findingPath, message)
 	}
+	components := []MetadataComponent{{Path: ".", Profiles: []string{"python", "rust"}}}
+	if findingPath, message := validateNativeRootProfileDeclarations(root, roots, components); message != "" {
+		t.Fatalf("valid cross-language artifact component = path %q message %q", findingPath, message)
+	}
+	components[0].Profiles = []string{"rust"}
+	if findingPath, message := validateNativeRootProfileDeclarations(root, roots, components); findingPath != "pyproject.toml" || !strings.Contains(message, "requires one of the declared profiles: python") {
+		t.Fatalf("under-declared cross-language artifact = path %q message %q", findingPath, message)
+	}
 
 	roots[2].Profiles = []string{"python"}
 	if findingPath, message := validateNativeRootProfileDeclarations(root, roots, nil); findingPath != "apps/web/package.json" || message == "" {
