@@ -1,0 +1,33 @@
+set dotenv-load := false
+
+default:
+    @just --list
+
+init:
+    mkdir -p .cache/mise-config
+    : > .cache/mise-config/global.toml
+    MISE_CONFIG_DIR="$PWD/.cache/mise-config" MISE_GLOBAL_CONFIG_FILE="$PWD/.cache/mise-config/global.toml" mise install --locked
+    test "$(just --version)" = "just 1.57.0"
+    ./scripts/golden-path --install-only
+
+format:
+    gofmt -w .
+
+format-check:
+    test -z "$(gofmt -l .)"
+
+lint:
+    go vet ./...
+
+test:
+    go test -mod=readonly ./...
+
+build:
+    CGO_ENABLED=0 go build -mod=readonly -trimpath -o bin/service ./cmd/service
+    test "$(./bin/service)" = "workflow-owned-just-adoption"
+
+check: format-check lint test
+
+ci:
+    just check
+    just build

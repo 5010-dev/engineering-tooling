@@ -1,0 +1,94 @@
+#!/usr/bin/env sh
+set -eu
+
+version='1.2.2'
+repository='5010-dev/engineering-tooling'
+source_commit='3aab60d0770853d45b6da179cbc45f6f6639d40f'
+github_cli_version='2.97.0'
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+repository_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
+cache_directory=${GOLDEN_PATH_CACHE_DIR:-"$repository_root/.cache/golden-path"}
+
+verify_version() {
+  "$1" --version 2>/dev/null | grep -Fx "golden-path $version" >/dev/null
+}
+
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    printf '%s\n' 'A SHA-256 verification command is required.' >&2
+    exit 2
+  fi
+}
+
+if [ -n "${GOLDEN_PATH_BIN:-}" ]; then
+  if [ ! -x "$GOLDEN_PATH_BIN" ] || ! verify_version "$GOLDEN_PATH_BIN"; then
+    printf '%s\n' 'GOLDEN_PATH_BIN is not the expected executable release.' >&2
+    exit 2
+  fi
+  binary=$GOLDEN_PATH_BIN
+else
+  os=$(uname -s)
+  architecture=$(uname -m)
+  case "$os" in
+    Darwin) os=darwin ;;
+    Linux) os=linux ;;
+    *) printf '%s\n' 'Unsupported Golden Path host operating system.' >&2; exit 2 ;;
+  esac
+  case "$architecture" in
+    x86_64|amd64) architecture=amd64 ;;
+    arm64|aarch64) architecture=arm64 ;;
+    *) printf '%s\n' 'Unsupported Golden Path host architecture.' >&2; exit 2 ;;
+  esac
+  case "$os/$architecture" in
+    darwin/amd64) expected_archive='5eac78733a7f3448b560d9994dac3e25affef060a23a8cfcb7ff2283865df651'; expected_executable='aad0547825d3b984821909993961bdf1104024ca979e02e200bba6718ef2fe75' ;;
+    darwin/arm64) expected_archive='e6bd8402f6653945f6a39b575eb3c22e684480f4295a7b4ab89a0d52004ac388'; expected_executable='5fe1f250da02a77900082bc2ccc393e370f2a2e38080e2722785812dac64a54b' ;;
+    linux/amd64) expected_archive='7f2dc5fe4665ed014829dffdee5c83ba926ca5014f98d9d69cc592605eb6f20e'; expected_executable='a05abad1a149a1b94419d071655b36321c25a3b3b44134c44b62e5ea600285f4' ;;
+    linux/arm64) expected_archive='020f8c5b315f265260dfb0d61a953a3043c90071ca23c3f7ea83666f58062854'; expected_executable='688d452e47c698d22f5d5f7255d356087e2b6329fdd20bdeeea099a32c3df829' ;;
+  esac
+  binary="$cache_directory/$version/golden-path"
+  if [ ! -x "$binary" ] || [ "$(sha256 "$binary")" != "$expected_executable" ] || ! verify_version "$binary"; then
+    archive="golden-path_${version}_${os}_${architecture}.tar.gz"
+    url="https://github.com/$repository/releases/download/v$version/$archive"
+    staging=$(mktemp -d "${TMPDIR:-/tmp}/golden-path.XXXXXX")
+    trap 'rm -rf "$staging"' EXIT HUP INT TERM
+    curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --max-time 120 --output "$staging/$archive" "$url"
+    if [ "$(sha256 "$staging/$archive")" != "$expected_archive" ]; then
+      printf '%s\n' 'Golden Path archive checksum mismatch.' >&2
+      exit 2
+    fi
+    if [ "$(gh version 2>/dev/null | awk 'NR == 1 { print $3 }')" != "$github_cli_version" ]; then
+      printf '%s\n' 'The exact Golden Path GitHub CLI verifier is required.' >&2
+      exit 2
+    fi
+    gh attestation verify "$staging/$archive" \
+      --repo "$repository" \
+      --signer-workflow "$repository/.github/workflows/release.yml" \
+      --source-digest "$source_commit" \
+      --signer-digest "$source_commit" \
+      --source-ref "refs/tags/v$version" \
+      --deny-self-hosted-runners >/dev/null
+    mkdir -p "$staging/unpacked" "$cache_directory/$version"
+    tar -xzf "$staging/$archive" -C "$staging/unpacked"
+    candidate="$staging/unpacked/golden-path/golden-path"
+    chmod 0755 "$candidate"
+    if [ "$(sha256 "$candidate")" != "$expected_executable" ] || ! verify_version "$candidate"; then
+      printf '%s\n' 'Golden Path archive contains an unexpected executable version.' >&2
+      exit 2
+    fi
+    mv "$candidate" "$cache_directory/$version/golden-path.tmp"
+    mv "$cache_directory/$version/golden-path.tmp" "$binary"
+    trap - EXIT HUP INT TERM
+    rm -rf "$staging"
+  fi
+fi
+
+if [ "${1:-}" = '--install-only' ]; then
+  [ "$#" -eq 1 ] || { printf '%s\n' 'Unexpected arguments after --install-only.' >&2; exit 2; }
+  exit 0
+fi
+
+exec "$binary" "$@"

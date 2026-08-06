@@ -1,0 +1,53 @@
+{
+  "artifactTypes": [
+    "binary",
+    "service"
+  ],
+  "assetBundleVersion": "1.2.2",
+  "capabilities": [
+    "build",
+    "format",
+    "lint",
+    "test"
+  ],
+  "contractVersion": "golden-path/v1",
+  "extensions": {
+    "dev.fiftyten.generator": {
+      "components": [
+        {
+          "artifactTypes": [
+            "binary",
+            "service"
+          ],
+          "capabilities": [
+            "build",
+            "format",
+            "lint",
+            "test"
+          ],
+          "path": ".",
+          "profiles": [
+            "go"
+          ]
+        }
+      ],
+      "layout": "single",
+      "materializationMode": "adoption",
+      "requestSHA256": "e07847d8245b9051fd39c87ad4eced314809fcc6af1bbc4f94e0b5df6a7861c9"
+    }
+  },
+  "profiles": [
+    "go"
+  ],
+  "schemaVersion": "golden-path-metadata/v1",
+  "standardVersion": "2026.08",
+  "targets": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "runtime": "go-1.26.5",
+      "tier": "primary",
+      "execution": true
+    }
+  ]
+}

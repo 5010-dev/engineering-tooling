@@ -1105,21 +1105,28 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		t.Fatal("reusable workflow does not declare the read-only baseline permission")
 	}
 	for _, expected := range []string{
-		"name: Prepare isolated GitHub CLI verifier",
-		"id: verifier-toolchain",
+		"name: Prepare isolated workflow toolchain",
+		"id: workflow-toolchain",
 		"The reusable workflow accepts only its release-pinned GitHub CLI version.",
 		`"github-cli = \"$GITHUB_CLI_VERSION\""`,
+		`"just = \"$JUST_VERSION\""`,
 		`cat >"$RUNNER_TEMP/golden-path-verifier/project/mise.lock"`,
 		`checksum = "sha256:a2c9b8497e1f85b1ad0dfcb78b5a622e098801b8e461e459e88e1ee12f018112"`,
 		`checksum = "sha256:73ea440ecad9c9e284429997ee6f93577bc6f7bc6fba357ef62c53ad8fb641a5"`,
 		`checksum = "sha256:63298c998cc2a924c9e254c6af6a1caad6ece281122687a91f079bc0a462700e"`,
 		`checksum = "sha256:a58b8fd77b417a38f47a0b54d1370c59b0fcdb324ccc9ca002b0998f7c4c999e"`,
+		`checksum = "sha256:45b548094283cb9739af8f13273b8cddeee869f5b4ef2bb631b1f311cb566155"`,
+		`checksum = "sha256:f225044a81adea6e0b3a8b9370aaf374e6af76c8735ae263ac993df55fd137ec"`,
+		`checksum = "sha256:5e6ade3698095576274b2b32cc9e5d467185e8e40b04949004c04cc3d7e962dc"`,
+		`checksum = "sha256:0381db216c2f97ce31d838a1562c1064dfbfa73f5a8a81581338a2cd9217df47"`,
 		`runner-cli-guard/gh`,
 		"The runner-bundled GitHub CLI must not verify Golden Path artifacts.",
+		`runner-just-guard/just`,
+		"Ambient Just must not execute Golden Path root commands.",
 		`node = "999.0.0"`,
-		"name: Install exact GitHub CLI verifier",
+		"name: Install exact workflow toolchain",
 		"version: 2026.7.18",
-		"sha256: ${{ steps.verifier-toolchain.outputs.mise-sha256 }}",
+		"sha256: ${{ steps.workflow-toolchain.outputs.mise-sha256 }}",
 		"working_directory: ${{ runner.temp }}/golden-path-verifier/project",
 		"install_args: --locked",
 		"add_shims_to_path: false",
@@ -1144,6 +1151,11 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		`mise_binary="$MISE_DATA_DIR/bin/mise"`,
 		`gh_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which gh)"`,
 		`test "$("$gh_binary" version | awk 'NR == 1 { print $3 }')" = "$GITHUB_CLI_VERSION"`,
+		`just_binary="$("$mise_binary" -C "$RUNNER_TEMP/golden-path-verifier/project" which just)"`,
+		`test -x "$just_binary"`,
+		`test "$("$just_binary" --version | awk 'NR == 1 { print $2 }')" = "$JUST_VERSION"`,
+		`printf 'just-path=%s\n' "$just_binary"`,
+		`printf 'just-version=%s\n' "$JUST_VERSION"`,
 		`"$gh_binary" attestation verify`,
 		"--source-digest \"$SOURCE_COMMIT\"",
 		"--signer-digest \"$SOURCE_COMMIT\"",
@@ -1152,6 +1164,18 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 		"check_help=\"$(\"$GOLDEN_PATH_BIN\" check --help 2>&1 || true)\"",
 		"check_arguments+=(--expected-profiles \"$EXPECTED_PROFILES\")",
 		"if: ${{ always() && steps.golden-path.outcome == 'success' }}",
+		"working_directory: ${{ inputs.working-directory }}",
+		`GOLDEN_PATH_JUST: ${{ steps.golden-path.outputs.just-path }}`,
+		`GOLDEN_PATH_JUST_VERSION: ${{ steps.golden-path.outputs.just-version }}`,
+		`export PATH="$RUNNER_TEMP/golden-path-verifier/runner-just-guard:$PATH"`,
+		`test "$guard_status" -eq 98`,
+		`just_directory="$(dirname "$GOLDEN_PATH_JUST")"`,
+		`export PATH="$just_directory:$PATH"`,
+		`hash -r`,
+		`test "$(command -v just)" = "$GOLDEN_PATH_JUST"`,
+		`test "$(just --version)" = "just $GOLDEN_PATH_JUST_VERSION"`,
+		`"$GOLDEN_PATH_JUST" init`,
+		`"$GOLDEN_PATH_JUST" ci`,
 	} {
 		if !strings.Contains(string(reusable), expected) {
 			t.Fatalf("reusable workflow does not enforce %q", expected)
@@ -1181,6 +1205,40 @@ func TestGeneratedAutomationPinsReleaseIdentityAndVerifierPolicy(t *testing.T) {
 	}
 	if strings.Contains(commonJust, "MISE_GLOBAL_CONFIG_FILE=/dev/null") {
 		t.Fatal("generated init does not isolate developer-global mise tools")
+	}
+	adoptionMiseToml, readErr := os.ReadFile(filepath.Join("..", "testdata", "reusable-quality", "adoption-external-just", "mise.toml"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	adoptionMiseLock, readErr := os.ReadFile(filepath.Join("..", "testdata", "reusable-quality", "adoption-external-just", "mise.lock"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	for name, adoptionMise := range map[string][]byte{
+		"mise.toml": adoptionMiseToml,
+		"mise.lock": adoptionMiseLock,
+	} {
+		if strings.Contains(string(adoptionMise), "just") {
+			t.Fatalf("adoption workflow fixture %s must not declare Just in Mise", name)
+		}
+	}
+	for _, expected := range []string{
+		`[tools.go."platforms.linux-arm64"]
+checksum = "sha256:fe4789e92b1f33358680864bbe8704289e7bb5fc207d80623c308935bd696d49"
+url = "https://dl.google.com/go/go1.26.5.linux-arm64.tar.gz"`,
+		`[tools.go."platforms.linux-x64"]
+checksum = "sha256:5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
+url = "https://dl.google.com/go/go1.26.5.linux-amd64.tar.gz"`,
+		`[tools.go."platforms.macos-arm64"]
+checksum = "sha256:efb87ff28af9a188d0536ef5d42e63dd52ba8263cd7344a993cc48dd11dedb6a"
+url = "https://dl.google.com/go/go1.26.5.darwin-arm64.tar.gz"`,
+		`[tools.go."platforms.macos-x64"]
+checksum = "sha256:6231d8d3b8f5552ec6cbf6d685bdd5482e1e703214b120e89b3bf0d7bf1ef725"
+url = "https://dl.google.com/go/go1.26.5.darwin-amd64.tar.gz"`,
+	} {
+		if !strings.Contains(string(adoptionMiseLock), expected) {
+			t.Fatalf("adoption workflow fixture has an incomplete Go lock; missing %q", expected)
+		}
 	}
 	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
 		if strings.Contains(string(reusable), forbidden) {

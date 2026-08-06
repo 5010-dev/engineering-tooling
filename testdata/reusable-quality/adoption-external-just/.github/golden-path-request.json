@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "golden-path-generator-request/v1",
+  "materializationMode": "adoption",
+  "layout": "single",
+  "projectName": "Workflow-Owned Just Adoption",
+  "projectSlug": "workflow-owned-just-adoption",
+  "targets": [
+    {
+      "os": "linux",
+      "architecture": "amd64",
+      "runtime": "go-1.26.5",
+      "tier": "primary",
+      "execution": true
+    }
+  ],
+  "components": [
+    {
+      "name": "service",
+      "path": ".",
+      "profiles": [
+        "go"
+      ],
+      "artifactTypes": [
+        "binary",
+        "service"
+      ],
+      "capabilities": [
+        "build",
+        "format",
+        "lint",
+        "test"
+      ]
+    }
+  ]
+}
