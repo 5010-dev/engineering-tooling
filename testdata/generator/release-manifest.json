@@ -3,7 +3,7 @@
   "releaseVersion": "1.3.0",
   "lifecycle": "stable",
   "enforcement": ["report-only"],
-  "standardVersion": "2026.08",
+  "standardVersion": "2026.08.1",
   "contractVersion": "golden-path/v1",
   "schemaVersions": [
     "golden-path-metadata/v1",
@@ -30,7 +30,7 @@
     },
     "supportedStandards": [
       {
-        "standardVersion": "2026.08",
+        "standardVersion": "2026.08.1",
         "contractVersion": "golden-path/v1",
         "schemaVersions": [
           "golden-path-metadata/v1",
@@ -40,7 +40,7 @@
           "golden-path-rule-catalog/v1",
           "runtime-support/v1"
         ],
-        "snapshot": "standards/snapshots/2026.08/manifest.json",
+        "snapshot": "standards/snapshots/2026.08.1/manifest.json",
         "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
         "catalogDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "snapshotAggregateDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

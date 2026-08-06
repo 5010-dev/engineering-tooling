@@ -54,7 +54,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	for sourceName, distName := range map[string]string{
 		"compatibility/manifest.json":                                       "compatibility-manifest.json",
 		"compatibility/golden-path-checker-compatibility-v1.schema.json":    "golden-path-checker-compatibility-v1.schema.json",
-		"standards/snapshots/2026.08/manifest.json":                         "standard-snapshot-manifest.json",
+		"standards/snapshots/2026.08.1/manifest.json":                       "standard-snapshot-manifest.json",
 		"release/RELEASE_NOTES.md":                                          "RELEASE_NOTES.md",
 		"release/golden-path-release-manifest-v1.schema.json":               "golden-path-release-manifest-v1.schema.json",
 		"release/golden-path-release-manifest-v2.schema.json":               "golden-path-release-manifest-v2.schema.json",
@@ -111,7 +111,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	if result.ReleaseVersion != "1.3.0" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.3.0" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.3.0" || result.Components.Automation.Digest == "" {
 		t.Fatalf("unexpected manifest: %+v", result)
 	}
-	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree != "ed2bf9ad2f5156c9195365274f0dded5a4b6f8c2" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 8 {
+	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree != "c576c91a672bb2c78ba441773dd757e50f69c9a3" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 8 {
 		t.Fatalf("release evidence is incomplete: %+v", result)
 	}
 	if !slices.Contains(result.SchemaVersions, "golden-path-native-roots/v1") {

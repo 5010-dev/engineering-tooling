@@ -1,12 +1,12 @@
 {
   "schemaVersion": "golden-path-source-integrity/v1",
-  "checkedAt": "2026-08-06T13:49:38Z",
-  "standardVersion": "2026.08",
+  "checkedAt": "2026-08-06T19:21:28Z",
+  "standardVersion": "2026.08.1",
   "releaseVersion": "1.3.0",
   "integrityRecords": [
     {"path":"go.sum","sha256":"9203aa84ace88cad86637acca28de173e5adbf28fd8baa786a1ff32199450cfc"},
     {"path":"mise.lock","sha256":"0720116a8dff9aa53f18af3dca2c19f8e3b07e0d64ed067f4a89408e82b38c71"},
-    {"path":"templates/bundle.json","sha256":"b5fd9336dc740c36420ab7d466daf332264df7ec0ab542599dcb144e6a3176ef"},
+    {"path":"templates/bundle.json","sha256":"33909c5f4f6fea534210e0f2785e33faa2b44eb8929c8bca2d63fed145f1067b"},
     {"path":"templates/profiles/go/go.sum.tmpl","sha256":"17fca5f51216eac1b0741c569ef1456c08acecc99b95327ab66720a3f112348b"},
     {"path":"templates/profiles/node-typescript/pnpm-lock.base.yaml.tmpl","sha256":"b989ffdce281860be196e3da56b183a71854c43fac0e64316db09f941d0c4fe2"},
     {"path":"templates/profiles/node-typescript/pnpm-lock.cdk.yaml.tmpl","sha256":"250306a9792b34ace38a7be5353cea1a2c00cc66ddba3c209cbf6a3ba6cf638f"},
