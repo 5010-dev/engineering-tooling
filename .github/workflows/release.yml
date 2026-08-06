@@ -155,7 +155,7 @@ jobs:
           cp compatibility/manifest.json dist/compatibility-manifest.json
           cp compatibility/golden-path-checker-compatibility-v1.schema.json \
             dist/golden-path-checker-compatibility-v1.schema.json
-          cp standards/snapshots/2026.08/manifest.json dist/standard-snapshot-manifest.json
+          cp standards/snapshots/2026.08.1/manifest.json dist/standard-snapshot-manifest.json
           cp release/RELEASE_NOTES.md dist/RELEASE_NOTES.md
           cp release/golden-path-release-manifest-v1.schema.json \
             dist/golden-path-release-manifest-v1.schema.json

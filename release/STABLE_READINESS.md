@@ -11,7 +11,8 @@ applicability.
 - Tooling and asset bundle: `1.3.0`
 - Release lifecycle: `stable`
 - Enforcement: `report-only`
-- Normative source commit: pending acceptance of the `2026.08.1` policy source
+- Normative source commit: `a4956db0996516089b0c7da56e23c0fa4c72add1`
+- Normative source tree: `c576c91a672bb2c78ba441773dd757e50f69c9a3`
 - External-tool cutoff: `2026-08-04T12:54:32Z` (retained selections)
 - Candidate source integrity: `2026-08-06` (current release bytes)
 

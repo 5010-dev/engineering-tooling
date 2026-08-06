@@ -37,7 +37,7 @@ package-check source_commit:
     version="$(go run -mod=readonly ./cmd/golden-path --version)"; version="${version#golden-path }"; test -n "$version"; \
     cp compatibility/manifest.json dist/compatibility-manifest.json; \
     cp compatibility/golden-path-checker-compatibility-v1.schema.json dist/; \
-    cp standards/snapshots/2026.08/manifest.json dist/standard-snapshot-manifest.json; \
+    cp standards/snapshots/2026.08.1/manifest.json dist/standard-snapshot-manifest.json; \
     cp release/RELEASE_NOTES.md dist/RELEASE_NOTES.md; \
     cp release/golden-path-release-manifest-v1.schema.json dist/; \
     cp release/golden-path-release-manifest-v2.schema.json dist/; \

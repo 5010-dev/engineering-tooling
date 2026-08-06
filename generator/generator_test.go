@@ -689,7 +689,7 @@ func TestRequestCapabilitiesMatchNormativeMetadataCatalog(t *testing.T) {
 	requestCapabilities := schemaStringEnum(t, filepath.Join("schemas", "golden-path-generator-request-v1.schema.json"),
 		"properties", "components", "items", "properties", "capabilities", "items", "enum")
 	metadataCapabilities := schemaStringEnum(t,
-		filepath.Join("..", "standards", "snapshots", "2026.08", "schemas", "golden-path-metadata-v1.schema.json"),
+		filepath.Join("..", "standards", "snapshots", "2026.08.1", "schemas", "golden-path-metadata-v1.schema.json"),
 		"$defs", "capability", "enum")
 	want := append([]string(nil), supportedCapabilities...)
 	slices.Sort(requestCapabilities)
@@ -707,7 +707,7 @@ func TestRequestTargetsMatchNormativeMetadataSchema(t *testing.T) {
 	t.Parallel()
 	requestTarget := schemaValue(t, filepath.Join("schemas", "golden-path-generator-request-v1.schema.json"), "$defs", "target")
 	metadataTarget := schemaValue(t,
-		filepath.Join("..", "standards", "snapshots", "2026.08", "schemas", "golden-path-metadata-v1.schema.json"),
+		filepath.Join("..", "standards", "snapshots", "2026.08.1", "schemas", "golden-path-metadata-v1.schema.json"),
 		"$defs", "target")
 	if !reflect.DeepEqual(requestTarget, metadataTarget) {
 		t.Fatalf("request target schema does not match normative metadata target schema\nrequest: %#v\nmetadata: %#v", requestTarget, metadataTarget)

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "golden-path-native-roots/v1",
+  "roots": [
+    {
+      "id": "python-workspace",
+      "path": ".",
+      "profiles": [
+        "python"
+      ]
+    },
+    {
+      "id": "rust-workspace",
+      "path": ".",
+      "profiles": [
+        "rust"
+      ]
+    },
+    {
+      "id": "web-application",
+      "path": "apps/web",
+      "profiles": [
+        "node-typescript"
+      ]
+    },
+    {
+      "id": "repository-tooling",
+      "path": "tools/repository",
+      "profiles": [
+        "node-typescript"
+      ]
+    }
+  ]
+}

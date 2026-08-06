@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "golden-path-standard-snapshot/v1",
+  "standardVersion": "2026.08.1",
+  "contractVersion": "golden-path/v1",
+  "source": {
+    "repository": "https://github.com/5010-dev/.github",
+    "commit": "a4956db0996516089b0c7da56e23c0fa4c72add1",
+    "path": "docs/standards/developer-tooling",
+    "gitTree": "c576c91a672bb2c78ba441773dd757e50f69c9a3"
+  },
+  "aggregate": {
+    "algorithm": "sha256",
+    "definition": "SHA-256 of UTF-8 lines sorted by snapshot-relative path, each formatted as <file-sha256>  standards/snapshots/2026.08.1/<snapshot-relative-path>\\n, excluding manifest.json",
+    "digest": "7edd0a4f6593c727a843cd6a1abb44e2c4c00baca62bf70c2d21473b0f14f297"
+  },
+  "files": {
+    "rules/catalog.v1.json": "5be4ec1e7477dd5b13230c171f902384aa2b1504b7b4cd2cb4af2267b450fed4",
+    "rules/runtime-support.v1.json": "f081543db821d467488d66b9fb8cf4c3d5e7aa638249ffa4e8abfa6df0db99e5",
+    "schemas/examples/golden-path-checker-output-v1.valid.json": "89ca2011c2c8093c31e14477610216c4b9f5346c4e5c96c0cc037c5780738414",
+    "schemas/examples/golden-path-exceptions-v1.valid.json": "da603f7cbce6759e3a0f6859a8fe5070d9f72228e03f5f8a1333879e8034b662",
+    "schemas/examples/golden-path-metadata-v1.valid.json": "0c8017edf59d9d7cc3c17c7f16aca0c6f362eeb6ab94f8ad70a9ef18b183c299",
+    "schemas/examples/golden-path-native-roots-v1.valid.json": "61c2c6d457a828c5961fcb818c2008e4ac87f80f013812009437859fd59d4eb9",
+    "schemas/golden-path-checker-output-v1.schema.json": "e1c7e586f34e99824350aff8e5daf1eb538182c0533b9472d819d73573ab1c4b",
+    "schemas/golden-path-exceptions-v1.schema.json": "724cf1d02a52d669ed94c36dcd9b88b4d54caa71943bcec6a60ebcfa22e2f436",
+    "schemas/golden-path-metadata-v1.schema.json": "d04625e83c02e77afa67fda94be556bb68b34ac62a1ff4535799b8cba5171050",
+    "schemas/golden-path-native-roots-v1.schema.json": "c7b719a9e2ec7132717cf4a2b1abcd006704067390891f4159b754e77d0113c9",
+    "schemas/golden-path-rule-catalog-v1.schema.json": "c25be6654e9df58dd1b4068dee9ac9bc0f1d5adfe2d64f3258b1c7d6dcc76a0e",
+    "schemas/runtime-support-v1.schema.json": "4b8f009b0670a806f438619b5f918b1ef51aa700da67136bcb0819c7bc5061e3"
+  }
+}

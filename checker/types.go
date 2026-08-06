@@ -5,12 +5,12 @@ import "time"
 
 const (
 	Version                 = "1.3.0"
-	StandardVersion         = "2026.08"
+	StandardVersion         = "2026.08.1"
 	ContractVersion         = "golden-path/v1"
-	CatalogDigest           = "sha256:6e8f0d979f55974dc693f21b0d559ec42cf67aaf48d09d9c8be46fb33fa30f9b"
-	SnapshotAggregateDigest = "sha256:2ccb04cf3c5a9345f632b42be16bd75d8f4c5e1439210b140b57037cf6dc6a17"
-	SnapshotSourceCommit    = "604a40886d5a1cba3b304471e6e072b72cec7601"
-	SnapshotSourceTree      = "ed2bf9ad2f5156c9195365274f0dded5a4b6f8c2"
+	CatalogDigest           = "sha256:5be4ec1e7477dd5b13230c171f902384aa2b1504b7b4cd2cb4af2267b450fed4"
+	SnapshotAggregateDigest = "sha256:7edd0a4f6593c727a843cd6a1abb44e2c4c00baca62bf70c2d21473b0f14f297"
+	SnapshotSourceCommit    = "a4956db0996516089b0c7da56e23c0fa4c72add1"
+	SnapshotSourceTree      = "c576c91a672bb2c78ba441773dd757e50f69c9a3"
 )
 
 type Options struct {

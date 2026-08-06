@@ -40,7 +40,7 @@ func TestDefaultTextIsConciseAndJSONRemainsComplete(t *testing.T) {
 		}
 	}
 	breakdown := skippedFindingBreakdown(result.Findings)
-	if breakdown != (skipBreakdown{NotApplicable: 34, ManualOrHybrid: 25, Other: 5}) {
+	if breakdown != (skipBreakdown{NotApplicable: 33, ManualOrHybrid: 24, Other: 7}) {
 		t.Fatalf("positive fixture skip categories changed: %+v", breakdown)
 	}
 	if breakdown.NotApplicable+breakdown.ManualOrHybrid+breakdown.Other != result.Summary.Skip {

@@ -126,25 +126,18 @@ the repository-owned `.github/golden-path-native-roots.yaml` declaration rather
 than the generated component inventory.
 
 The generated caller owns events, permissions, concurrency, runner, working
-directory, selected profiles, immutable automation source, and release
-checksums and provenance identity. The reusable workflow installs the caller's
-exact GitHub CLI verifier and the release-pinned Just runner from a
-checksum-bearing lock through a fully isolated Mise configuration. It
-checksum-pins the Mise bootstrap, blocks bare `gh`
-during provenance verification, and invokes the resolved verifier executable
-directly, so it never trusts a runner-bundled CLI or ambient configuration. It
-verifies the archive checksum and GitHub artifact attestation against the
-release workflow, source commit, signer commit, and tag. The workflow invokes
-its exact Just binary and places that binary first on `PATH` for each root
-command, so nested Just calls cannot fall back to a runner-bundled tool. The
-consumer's Mise configuration remains authoritative for the rest of its
-toolchain and does not have to own Just. Repository-local
-bootstrap uses the exact GitHub CLI pinned by the repository's `mise.toml` and
-`mise.lock`. The reusable workflow otherwise owns only stable quality
-orchestration and calls the repository's root `just init` and `just ci`. It
-does not require GitHub Environments, protected branches, paid rulesets,
-deployment credentials, or consumer secrets, so private consumers on GitHub
-Free retain the baseline outcome.
+directory, selected profiles, and the immutable automation source. Release
+checksums and provenance identity stay inside the shared release boundary. The
+reusable workflow installs only its exact GitHub CLI verifier through an
+isolated Mise configuration, blocks the runner-bundled `gh`, verifies the
+checker archive against its checksum and GitHub artifact attestation, and then
+runs the structural checker. It does not install Just or the consumer
+toolchain, and it does not invoke repository quality commands. Repository-local
+bootstrap remains separate and uses the exact GitHub CLI pinned by the
+repository's `mise.toml` and `mise.lock` when installing the checker outside the
+reusable workflow. Neither path requires GitHub Environments, protected
+branches, paid rulesets, deployment credentials, or consumer secrets, so
+private consumers on GitHub Free retain the baseline outcome.
 
 Executable artifact types receive native entry points and post-build runtime
 smoke checks for Go, Node.js, Python, Rust, and Zig. Zig and `zig cc` profiles
