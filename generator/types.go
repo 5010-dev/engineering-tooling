@@ -410,32 +410,11 @@ func validateRequest(request *Request) error {
 			}
 		}
 		profileSelection := stringSet(component.Profiles)
-		if (profileSelection["go"] || profileSelection["rust"]) && !hasSourceArtifact(*component) {
+		if materializationMode(*request) == "bootstrap" && (profileSelection["go"] || profileSelection["rust"]) && !hasSourceArtifact(*component) {
 			return fmt.Errorf("component %q with the go or rust profile must declare a source-bearing artifact type", component.Name)
 		}
-		if profileSelection["zig"] && profileSelection["zig-toolchain"] {
-			return fmt.Errorf("component %q cannot combine zig and zig-toolchain", component.Name)
-		}
-		languageCount := 0
-		for _, profile := range []string{"documentation", "go", "node-typescript", "python", "rust", "zig", "zig-toolchain"} {
-			if profileSelection[profile] {
-				languageCount++
-			}
-		}
-		if languageCount > 1 {
-			return fmt.Errorf("component %q must keep independent language roots as separate components", component.Name)
-		}
-		iacCount := 0
-		for _, profile := range []string{"infrastructure-aws-cdk", "infrastructure-terraform", "infrastructure-opentofu", "infrastructure-pulumi"} {
-			if profileSelection[profile] {
-				iacCount++
-			}
-		}
-		if iacCount > 1 {
-			return fmt.Errorf("component %q must select one infrastructure engine", component.Name)
-		}
-		if (profileSelection["infrastructure-aws-cdk"] || profileSelection["infrastructure-pulumi"]) && !profileSelection["node-typescript"] {
-			return fmt.Errorf("component %q must combine the selected code-first IaC profile with node-typescript", component.Name)
+		if err := validateComponentProfileComposition(*request, *component, profileSelection); err != nil {
+			return err
 		}
 		if profileSelection["go"] {
 			if component.ModulePath == "" {
@@ -480,6 +459,42 @@ func validateRequest(request *Request) error {
 	sort.Slice(request.Components, func(left, right int) bool {
 		return request.Components[left].Path < request.Components[right].Path
 	})
+	return nil
+}
+
+func validateComponentProfileComposition(request Request, component Component, profiles map[string]bool) error {
+	codeFirstInfrastructure := profiles["infrastructure-aws-cdk"] || profiles["infrastructure-pulumi"]
+	if materializationMode(request) == "adoption" {
+		if codeFirstInfrastructure && !profiles["node-typescript"] && !profiles["python"] && !profiles["go"] {
+			return fmt.Errorf("adoption component %q must combine a code-first IaC profile with its supported host-language profile", component.Name)
+		}
+		return nil
+	}
+
+	if profiles["zig"] && profiles["zig-toolchain"] {
+		return fmt.Errorf("bootstrap component %q cannot combine zig and zig-toolchain", component.Name)
+	}
+	languageCount := 0
+	for _, profile := range []string{"documentation", "go", "node-typescript", "python", "rust", "zig", "zig-toolchain"} {
+		if profiles[profile] {
+			languageCount++
+		}
+	}
+	if languageCount > 1 {
+		return fmt.Errorf("bootstrap component %q must keep independent language roots as separate components", component.Name)
+	}
+	iacCount := 0
+	for _, profile := range []string{"infrastructure-aws-cdk", "infrastructure-terraform", "infrastructure-opentofu", "infrastructure-pulumi"} {
+		if profiles[profile] {
+			iacCount++
+		}
+	}
+	if iacCount > 1 {
+		return fmt.Errorf("bootstrap component %q must select one infrastructure engine", component.Name)
+	}
+	if codeFirstInfrastructure && !profiles["node-typescript"] {
+		return fmt.Errorf("bootstrap component %q must combine the selected code-first IaC profile with node-typescript", component.Name)
+	}
 	return nil
 }
 

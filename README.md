@@ -104,6 +104,15 @@ infer publication, and declaring `publish` does not create a release workflow.
 The consumer repository still owns the corresponding implementation and
 evidence.
 
+Adoption records the existing artifact composition rather than constraining it
+to starter templates. One component may therefore declare multiple language or
+IaC profiles when the existing artifact actually spans them. Bootstrap keeps
+the narrower profile combinations that its source templates can materialize.
+Artifact components remain distinct from native dependency roots: shared
+workspaces, cross-language roots, and independent same-profile graphs belong in
+the repository-owned `.github/golden-path-native-roots.yaml` declaration rather
+than the generated component inventory.
+
 The generated caller owns events, permissions, concurrency, runner, working
 directory, selected profiles, immutable automation source, and release
 checksums and provenance identity. The reusable workflow installs the caller's

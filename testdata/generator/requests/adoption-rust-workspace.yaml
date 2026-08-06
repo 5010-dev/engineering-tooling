@@ -1,0 +1,32 @@
+schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: monorepo
+projectName: Existing Shared Rust Workspace
+projectSlug: existing-shared-rust-workspace
+targets:
+  - os: linux
+    architecture: amd64
+    runtime: container
+    tier: primary
+    execution: true
+  - os: browser
+    architecture: wasm32
+    targetTriple: wasm32-unknown-unknown
+    tier: secondary
+    execution: true
+components:
+  - name: calculator-service
+    path: apps/calculator-service
+    profiles: [rust]
+    artifactTypes: [container, service]
+    capabilities: [build, test]
+  - name: shared-wasm
+    path: packages/wasm/shared
+    profiles: [rust]
+    artifactTypes: [binary, library, package]
+    capabilities: [build, package, test]
+  - name: tes-wasm
+    path: packages/wasm/tes
+    profiles: [rust]
+    artifactTypes: [binary, library, package]
+    capabilities: [build, package, test]

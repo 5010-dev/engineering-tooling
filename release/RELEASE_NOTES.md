@@ -1,12 +1,40 @@
-# Golden Path tooling 1.2.3
+# Golden Path tooling 1.2.4
 
 Patch release for the `2026.08` Developer Tooling Standard. It corrects
-the reusable workflow's Just bootstrap and expands release qualification to an
-executed adoption path without changing the `golden-path/v1` compatibility
-epoch, request or metadata schemas, runtime selections, or report-only
-enforcement.
+adoption composition and dependency-root validation without changing the
+`golden-path/v1` compatibility epoch, schema identifiers, runtime selections,
+or report-only enforcement.
 
-## Correction from 1.2.2
+## Correction from 1.2.3
+
+- Allows an adoption component to declare multiple language profiles when one
+  existing artifact actually spans them, including Python and Rust native
+  extensions. Bootstrap retains the narrower combinations its starter source
+  templates can materialize safely.
+- Allows multiple artifact components to share one repository-owned native
+  workspace root. Component paths continue to identify artifacts, while
+  `.github/golden-path-native-roots.yaml` independently identifies dependency
+  manager and lockfile boundaries.
+- Applies source-bearing artifact, single-language, single-IaC-engine, and
+  Node-hosted code-first IaC starter constraints only to bootstrap. Adoption
+  records the existing repository contract and emits no starter source.
+- Keeps code-first IaC adoption truthful by requiring a supported host profile
+  (`node-typescript`, `python`, or `go`) without imposing the Node-only
+  bootstrap template constraint.
+- Separates native dependency-root marker validation from artifact-component
+  marker and coverage validation. This preserves detection of undeclared or
+  uncovered manifests without treating a dependency root as an artifact.
+- Adds executed Quant-shaped Python/Rust/native-extension and Core-shaped
+  shared Rust workspace fixtures, plus adoption-only IaC and Zig composition
+  coverage. Existing bootstrap requests remain unchanged and retain their
+  previous validation and rendering behavior.
+
+The reusable-workflow Just bootstrap correction introduced in `1.2.3` remains
+unchanged and is summarized below.
+
+## Corrections retained from 1.2.3
+
+### Just bootstrap correction from 1.2.2
 
 - Installs the release-pinned Just `1.57.0` beside the exact GitHub CLI verifier
   from the existing checksum-bearing isolated Mise lock. The workflow no longer
@@ -164,7 +192,7 @@ reader, migration schema, or new contract epoch is required.
 
 The exact external tools, runtime selections, generated-profile package locks,
 workflow action commits, and Go module graph remain unchanged from `1.1.0`.
-The 2026-08-04 cutoff is retained and binds the corrected `1.2.3` template-bundle
+The 2026-08-04 cutoff is retained and binds the corrected `1.2.4` template-bundle
 identity; no executable tool or generated dependency is silently upgraded.
 
 ## Support and deprecation
@@ -178,17 +206,17 @@ identity; no executable tool or generated dependency is silently upgraded.
 Deprecated `0.x` receives only critical security or integrity fixes. Standard
 `2026.08` remains preferred.
 
-## Upgrade from 1.2.2 or migration from 1.2.1, 1.2.0, 1.1.0, or 0.2.0
+## Upgrade from 1.2.3 or migration from 1.2.2, 1.2.1, 1.2.0, 1.1.0, or 0.2.0
 
-1. Download the exact `1.2.3` archive and `release-manifest.json`, then verify
-   their checksums and artifact attestations against the `v1.2.3` tag, source
+1. Download the exact `1.2.4` archive and `release-manifest.json`, then verify
+   their checksums and artifact attestations against the `v1.2.4` tag, source
    commit, signer commit, and release workflow.
 2. Keep an existing request unchanged when the generated baseline describes
    the repository truthfully. Add component `capabilities` and top-level
    `targets` only for behavior and support claims the repository actually
    implements.
 3. Run `golden-path upgrade` without `--write` against the source repository,
-   selected request, and verified `1.2.3` manifest.
+   selected request, and verified `1.2.4` manifest.
 4. Review newly applicable capability-scoped findings. Fix the repository
    implementation or correct an inaccurate declaration; do not add dummy
    evidence merely to obtain a pass.
@@ -225,12 +253,19 @@ the generator never writes into the existing repository.
 
 ## Rollback
 
-Restore the exact immutable `1.2.2` release identity: binary, release manifest,
-archive and executable checksums, generated asset inventory, and full-commit
-workflow/action pins. The patch does not change request or metadata shape, so
-rollback requires no compatibility reader, generated-state migration, or
-consumer-source rewrite. `1.2.1`, `1.2.0`, `1.1.0`, and `0.2.0` remain
-verified older migration sources.
+For a repository whose request remains within the composition accepted by
+`1.2.3`, restore that exact immutable release identity: binary, release
+manifest, archive and executable checksums, generated asset inventory, and
+full-commit workflow/action pins.
+
+A repository that adopts a cross-language or other composition newly accepted
+by `1.2.4` cannot pass that request directly to `1.2.3`. Its rollback restores
+the previous Golden Path control-plane baseline from repository history as one
+unit, including the prior request, metadata, generated asset inventory, binary,
+and workflow pins. Product source, manifests, dependency roots, locks, and
+runtime contracts remain repository-owned and do not require rewriting. No
+compatibility reader or generated-state migration is introduced. `1.2.2`,
+`1.2.1`, `1.2.0`, `1.1.0`, and `0.2.0` remain verified older migration sources.
 
 Re-materialize or upgrade only in a separate candidate directory and review the
 resulting diff. Do not move a tag, replace an asset, overwrite a consumer

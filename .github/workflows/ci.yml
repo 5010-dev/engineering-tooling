@@ -207,6 +207,12 @@ jobs:
             darwin_arm64_sha256: e6bd8402f6653945f6a39b575eb3c22e684480f4295a7b4ab89a0d52004ac388
             linux_amd64_sha256: 7f2dc5fe4665ed014829dffdee5c83ba926ca5014f98d9d69cc592605eb6f20e
             linux_arm64_sha256: 020f8c5b315f265260dfb0d61a953a3043c90071ca23c3f7ea83666f58062854
+          - prior_version: 1.2.3
+            prior_commit: 36767ad2b289b46e2af1257484c8db27ea45062e
+            darwin_amd64_sha256: f5441ddaebc9cb58d4ff39a0d9d51315a92892a958b7bd08284ff197fe7a65db
+            darwin_arm64_sha256: 32ac3478f5e29d740e82614376b2ce21307e8cd6b95eaede0acceac5b5a374e8
+            linux_amd64_sha256: 1fc67c2f75727c47156dc4db199868659cc86f0b2540279f6698f2e8a1fff1c2
+            linux_arm64_sha256: 4e247b827e71016e88cd4541f2a192663b69a36a88cf1808ea21502d092c23e7
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -265,7 +271,7 @@ jobs:
             -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
           candidate_version="$("$RUNNER_TEMP/golden-path-under-test" --version)"
           candidate_version="${candidate_version#golden-path }"
-          test "$candidate_version" = "1.2.3"
+          test "$candidate_version" = "1.2.4"
           "$ROLLBACK_BIN" generate \
             --request testdata/generator/requests/single-go.yaml \
             --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \

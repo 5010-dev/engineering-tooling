@@ -35,6 +35,7 @@
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,
+            "description": "Profiles implemented by the artifact component. Adoption may combine profiles to describe an existing cross-language artifact; bootstrap remains limited to compositions the starter can materialize safely.",
             "items": {
               "enum": [
                 "documentation", "go", "node-typescript", "python", "rust", "zig", "zig-toolchain",
@@ -64,26 +65,7 @@
             "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?\\.[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?(?:/[A-Za-z0-9](?:[A-Za-z0-9._~-]*[A-Za-z0-9])?)*$",
             "description": "Go module path syntax is additionally validated with golang.org/x/mod/module.CheckPath."
           }
-        },
-        "allOf": [
-          {
-            "if": {
-              "properties": {
-                "profiles": { "contains": { "enum": ["go", "rust"] } }
-              },
-              "required": ["profiles"]
-            },
-            "then": {
-              "properties": {
-                "artifactTypes": {
-                  "contains": {
-                    "enum": ["application", "service", "library", "cli", "package", "binary", "container", "tooling"]
-                  }
-                }
-              }
-            }
-          }
-        ]
+        }
       }
     }
   },
@@ -115,7 +97,24 @@
       "then": {
         "properties": {
           "components": {
-            "items": { "required": ["capabilities"] }
+            "items": {
+              "required": ["capabilities"],
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "profiles": { "contains": { "enum": ["infrastructure-aws-cdk", "infrastructure-pulumi"] } }
+                    },
+                    "required": ["profiles"]
+                  },
+                  "then": {
+                    "properties": {
+                      "profiles": { "contains": { "enum": ["node-typescript", "python", "go"] } }
+                    }
+                  }
+                }
+              ]
+            }
           }
         }
       },
@@ -125,7 +124,57 @@
             "items": {
               "properties": {
                 "capabilities": { "minItems": 1 }
-              }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "profiles": { "contains": { "enum": ["go", "rust"] } }
+                    },
+                    "required": ["profiles"]
+                  },
+                  "then": {
+                    "properties": {
+                      "artifactTypes": {
+                        "contains": {
+                          "enum": ["application", "service", "library", "cli", "package", "binary", "container", "tooling"]
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "profiles": {
+                      "contains": { "enum": ["documentation", "go", "node-typescript", "python", "rust", "zig", "zig-toolchain"] },
+                      "minContains": 0,
+                      "maxContains": 1
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "profiles": {
+                      "contains": { "enum": ["infrastructure-aws-cdk", "infrastructure-terraform", "infrastructure-opentofu", "infrastructure-pulumi"] },
+                      "minContains": 0,
+                      "maxContains": 1
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "profiles": { "contains": { "enum": ["infrastructure-aws-cdk", "infrastructure-pulumi"] } }
+                    },
+                    "required": ["profiles"]
+                  },
+                  "then": {
+                    "properties": {
+                      "profiles": { "contains": { "const": "node-typescript" } }
+                    }
+                  }
+                }
+              ]
             }
           }
         }

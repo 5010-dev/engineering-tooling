@@ -253,6 +253,13 @@ func validateProfileDeclarations(root string, metadata Metadata) (string, string
 }
 
 func validateNativeRootProfileDeclarations(root string, nativeRoots []MetadataNativeRoot, components []MetadataComponent) (string, string) {
+	if findingPath, message := validateNativeDependencyRootMarkers(root, nativeRoots); message != "" {
+		return findingPath, message
+	}
+	return validateArtifactComponentMarkers(root, nativeRoots, components)
+}
+
+func validateNativeDependencyRootMarkers(root string, nativeRoots []MetadataNativeRoot) (string, string) {
 	profilesByPath := map[string]map[string]bool{".": {}}
 	for _, nativeRoot := range nativeRoots {
 		profiles, exists := profilesByPath[nativeRoot.Path]
@@ -278,6 +285,10 @@ func validateNativeRootProfileDeclarations(root string, nativeRoots []MetadataNa
 			return findingPath, message
 		}
 	}
+	return "", ""
+}
+
+func validateArtifactComponentMarkers(root string, nativeRoots []MetadataNativeRoot, components []MetadataComponent) (string, string) {
 	for _, component := range components {
 		componentMetadata := Metadata{Profiles: component.Profiles, ComponentPath: component.Path}
 		if findingPath, message := validateProfileRoot(root, componentMetadata); message != "" {

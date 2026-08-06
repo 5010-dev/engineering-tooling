@@ -23,7 +23,10 @@ import (
 func TestSyntheticRequestMatrixRendersDeterministically(t *testing.T) {
 	t.Parallel()
 	release := fixtureRelease(t)
-	for _, name := range []string{"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml", "zig-profiles.yaml", "node-publisher.yaml", "adoption-go-service.yaml"} {
+	for _, name := range []string{
+		"single-go.yaml", "monorepo.yaml", "documentation.yaml", "all-profiles.yaml", "zig-profiles.yaml",
+		"node-publisher.yaml", "adoption-go-service.yaml", "adoption-polyglot-native.yaml", "adoption-rust-workspace.yaml",
+	} {
 		name := name
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -222,6 +225,265 @@ func TestAdoptionMaterializesOnlyFixedControlPlaneAssets(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(repository, filepath.FromSlash(path))); err != nil {
 			t.Fatalf("repository-owned path %s was not preserved: %v", path, err)
 		}
+	}
+}
+
+func TestAdoptionAcceptsAsBuiltCompositionsWithoutMaterializingStarterSources(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		request string
+	}{
+		{
+			name: "cross-language-native-extension",
+			request: `schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Existing Native Extension
+projectSlug: existing-native-extension
+targets:
+  - os: linux
+    architecture: amd64
+    tier: primary
+components:
+  - name: native-extension
+    path: .
+    profiles: [python, rust]
+    artifactTypes: [library, package]
+    capabilities: [build, native-extension, package]
+`,
+		},
+		{
+			name: "go-hosted-pulumi-infrastructure",
+			request: `schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Existing Go Pulumi Infrastructure
+projectSlug: existing-go-pulumi-infrastructure
+targets:
+  - os: linux
+    architecture: amd64
+    tier: primary
+components:
+  - name: infrastructure
+    path: .
+    profiles: [go, infrastructure-pulumi]
+    artifactTypes: [infrastructure]
+    capabilities: [build]
+`,
+		},
+		{
+			name: "multiple-infrastructure-engines",
+			request: `schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Existing Multi Engine Infrastructure
+projectSlug: existing-multi-engine-infrastructure
+targets:
+  - os: linux
+    architecture: amd64
+    tier: primary
+components:
+  - name: infrastructure
+    path: .
+    profiles: [node-typescript, infrastructure-pulumi, infrastructure-terraform]
+    artifactTypes: [infrastructure]
+    capabilities: [build]
+`,
+		},
+		{
+			name: "zig-source-and-c-toolchain",
+			request: `schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Existing Zig And C Toolchain
+projectSlug: existing-zig-and-c-toolchain
+targets:
+  - os: linux
+    architecture: amd64
+    tier: primary
+components:
+  - name: native-tooling
+    path: .
+    profiles: [zig, zig-toolchain]
+    artifactTypes: [binary, tooling]
+    capabilities: [build]
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request, err := DecodeRequest(strings.NewReader(test.request))
+			if err != nil {
+				t.Fatalf("decode adoption request: %v", err)
+			}
+			data, err := json.Marshal(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			validateAgainstSchema(t, "golden-path-generator-request-v1.schema.json", data)
+
+			files, _, err := Render(request, fixtureRelease(t))
+			if err != nil {
+				t.Fatalf("render adoption request: %v", err)
+			}
+			for _, file := range files {
+				if file.Path == "justfile" || file.Path == "mise.toml" || strings.HasSuffix(file.Path, "/Cargo.toml") || file.Path == "Cargo.toml" || file.Path == "go.mod" || file.Path == "pyproject.toml" || file.Path == "package.json" {
+					t.Fatalf("adoption materialized starter-owned path %q", file.Path)
+				}
+			}
+
+			bootstrap := strings.Replace(test.request, "materializationMode: adoption", "materializationMode: bootstrap", 1)
+			if _, err := DecodeRequest(strings.NewReader(bootstrap)); err == nil {
+				t.Fatal("bootstrap accepted a composition its starter cannot materialize")
+			}
+			var bootstrapDocument any
+			if err := yaml.Unmarshal([]byte(bootstrap), &bootstrapDocument); err != nil {
+				t.Fatal(err)
+			}
+			bootstrapJSON, err := json.Marshal(bootstrapDocument)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if schemaValidationError(t, "golden-path-generator-request-v1.schema.json", bootstrapJSON) == nil {
+				t.Fatal("published schema accepted a bootstrap composition the generator rejects")
+			}
+		})
+	}
+}
+
+func TestAdoptionCodeFirstInfrastructureRequiresSupportedHostProfile(t *testing.T) {
+	t.Parallel()
+	input := `schemaVersion: golden-path-generator-request/v1
+materializationMode: adoption
+layout: single
+projectName: Hostless Pulumi Infrastructure
+projectSlug: hostless-pulumi-infrastructure
+targets:
+  - os: linux
+    architecture: amd64
+    tier: primary
+components:
+  - name: infrastructure
+    path: .
+    profiles: [infrastructure-pulumi]
+    artifactTypes: [infrastructure]
+    capabilities: [build]
+`
+	if _, err := DecodeRequest(strings.NewReader(input)); err == nil {
+		t.Fatal("adoption accepted code-first infrastructure without a supported host-language profile")
+	}
+	var document any
+	if err := yaml.Unmarshal([]byte(input), &document); err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if schemaValidationError(t, "golden-path-generator-request-v1.schema.json", data) == nil {
+		t.Fatal("published schema accepted code-first infrastructure without a supported host-language profile")
+	}
+}
+
+func TestAdoptionPolyglotAndSharedWorkspaceMetadataPassesCheckerConfiguration(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name        string
+		fixture     string
+		nativeRoots string
+		files       map[string]string
+	}{
+		{
+			name:    "polyglot-native-components",
+			fixture: "adoption-polyglot-native.yaml",
+			nativeRoots: `schemaVersion: golden-path-native-roots/v1
+roots:
+  - id: python-workspace
+    path: .
+    profiles: [python]
+  - id: rust-workspace
+    path: .
+    profiles: [rust]
+  - id: web
+    path: apps/web
+    profiles: [node-typescript]
+`,
+			files: map[string]string{
+				"pyproject.toml":                           "[project]\nname = \"polyglot\"\nversion = \"0.0.0\"\n",
+				"uv.lock":                                  "version = 1\nrevision = 3\n",
+				"Cargo.toml":                               "[workspace]\nmembers = [\"crates/liveness-ticker\", \"packages/adapters/rust/python\"]\nresolver = \"3\"\n",
+				"Cargo.lock":                               "version = 4\n",
+				"crates/liveness-ticker/pyproject.toml":    "[project]\nname = \"liveness-ticker\"\nversion = \"0.0.0\"\n",
+				"crates/liveness-ticker/Cargo.toml":        "[package]\nname = \"liveness-ticker\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+				"packages/adapters/pyproject.toml":         "[project]\nname = \"adapters\"\nversion = \"0.0.0\"\n[tool.maturin]\nmanifest-path = \"rust/python/Cargo.toml\"\n",
+				"packages/adapters/rust/python/Cargo.toml": "[package]\nname = \"adapters-python\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+				"apps/web/package.json":                    "{\"name\":\"web\",\"packageManager\":\"pnpm@10.24.0\"}\n",
+				"apps/web/pnpm-lock.yaml":                  "lockfileVersion: '9.0'\n",
+			},
+		},
+		{
+			name:    "shared-rust-workspace",
+			fixture: "adoption-rust-workspace.yaml",
+			nativeRoots: `schemaVersion: golden-path-native-roots/v1
+roots:
+  - id: rust-workspace
+    path: .
+    profiles: [rust]
+`,
+			files: map[string]string{
+				"Cargo.toml":                         "[workspace]\nmembers = [\"apps/calculator-service\", \"packages/wasm/shared\", \"packages/wasm/tes\"]\nresolver = \"3\"\n",
+				"Cargo.lock":                         "version = 4\n",
+				"apps/calculator-service/Cargo.toml": "[package]\nname = \"calculator-service\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+				"packages/wasm/shared/Cargo.toml":    "[package]\nname = \"shared-wasm\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+				"packages/wasm/tes/Cargo.toml":       "[package]\nname = \"tes-wasm\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := fixtureRequest(t, test.fixture)
+			generated, requestDigest, err := Render(request, fixtureRelease(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var generatedAssets AssetManifest
+			if err := json.Unmarshal(fileContent(t, generated, ".github/golden-path-assets.json"), &generatedAssets); err != nil {
+				t.Fatal(err)
+			}
+			for _, asset := range generatedAssets.Files {
+				if asset.Path == ".github/golden-path-native-roots.yaml" {
+					t.Fatal("repository-owned native-root declaration entered the generated asset inventory")
+				}
+			}
+			bundle, err := LoadBundle()
+			if err != nil {
+				t.Fatal(err)
+			}
+			repository := filepath.Join(t.TempDir(), "repository")
+			if err := WriteStaging(repository, generated, GeneratePlan(generated, requestDigest, bundle, fixtureRelease(t))); err != nil {
+				t.Fatal(err)
+			}
+			repositoryFiles := map[string]string{
+				".github/golden-path-native-roots.yaml": test.nativeRoots,
+				"justfile":                              "ci:\n    @echo ci\n",
+				"rust-toolchain.toml":                   "[toolchain]\nchannel = \"1.96.0\"\nprofile = \"minimal\"\n",
+			}
+			for path, content := range test.files {
+				repositoryFiles[path] = content
+			}
+			writeGeneratorTestFiles(t, repository, repositoryFiles)
+
+			result := checker.Check(checker.Options{
+				Root: repository, EvaluatedAt: time.Date(2026, 8, 6, 0, 0, 0, 0, time.UTC), Enforcement: "report-only",
+			})
+			if !result.Complete || result.Summary.Error != 0 {
+				t.Fatalf("checker configuration rejected adoption topology: complete=%t summary=%+v findings=%+v", result.Complete, result.Summary, result.Findings)
+			}
+			if finding := findingByRuleID(t, result, "DT-META-001"); finding.Status != "pass" {
+				t.Fatalf("adoption topology metadata did not pass: %+v", finding)
+			}
+		})
 	}
 }
 
@@ -1540,6 +1802,20 @@ func schemaValue(t *testing.T, path string, keys ...string) any {
 		}
 	}
 	return value
+}
+
+func writeGeneratorTestFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for path, content := range files {
+		absolute := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(absolute), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		// #nosec G306 -- test-owned repository files use conventional source modes.
+		if err := os.WriteFile(absolute, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 func fixtureRequest(t *testing.T, name string) Request {
