@@ -161,8 +161,11 @@ jobs:
             dist/golden-path-release-manifest-v1.schema.json
           cp release/golden-path-release-manifest-v2.schema.json \
             dist/golden-path-release-manifest-v2.schema.json
+          cp release/golden-path-source-integrity-v1.schema.json \
+            dist/golden-path-source-integrity-v1.schema.json
           cp release/golden-path-tooling-cutoff-v1.schema.json \
             dist/golden-path-tooling-cutoff-v1.schema.json
+          cp release/source-integrity-2026-08-06.json dist/source-integrity.json
           cp release/tooling-cutoff-2026-08-04.json dist/tooling-cutoff.json
           cp generator/schemas/*.json dist/
           go run -mod=readonly ./cmd/release-manifest \
@@ -181,6 +184,7 @@ jobs:
               golden-path-*.schema.json \
               RELEASE_NOTES.md \
               release-manifest.json \
+              source-integrity.json \
               standard-snapshot-manifest.json \
               tooling-cutoff.json > checksums.txt
           )

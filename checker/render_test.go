@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestTextAndJSONDescribeSameFindingSet(t *testing.T) {
+func TestDefaultTextIsConciseAndJSONRemainsComplete(t *testing.T) {
 	result := Check(Options{
 		Root:        filepath.Join("..", "testdata", "positive-go"),
 		EvaluatedAt: fixtureTime,
@@ -18,9 +18,90 @@ func TestTextAndJSONDescribeSameFindingSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	jsonText := string(jsonData)
+	for _, expected := range []string{
+		"summary pass=",
+		"skipped=",
+		"not-applicable=",
+		"manual-or-hybrid=",
+		"Actionable findings: none",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Errorf("default text does not contain %q", expected)
+		}
+	}
 	for _, finding := range result.Findings {
-		if !strings.Contains(text, finding.RuleID) || !strings.Contains(jsonText, `"`+finding.RuleID+`"`) {
-			t.Errorf("finding %s is not represented in both outputs", finding.RuleID)
+		if !strings.Contains(jsonText, `"`+finding.RuleID+`"`) {
+			t.Errorf("JSON omits finding %s", finding.RuleID)
+		}
+		if finding.Status == "pass" || finding.Status == "skip" {
+			if strings.Contains(text, finding.RuleID) {
+				t.Errorf("default text includes non-actionable finding %s", finding.RuleID)
+			}
+		}
+	}
+	breakdown := skippedFindingBreakdown(result.Findings)
+	if breakdown != (skipBreakdown{NotApplicable: 34, ManualOrHybrid: 25, Other: 5}) {
+		t.Fatalf("positive fixture skip categories changed: %+v", breakdown)
+	}
+	if breakdown.NotApplicable+breakdown.ManualOrHybrid+breakdown.Other != result.Summary.Skip {
+		t.Fatalf("skip breakdown = %+v, want total %d", breakdown, result.Summary.Skip)
+	}
+	for index := range result.Findings {
+		finding := &result.Findings[index]
+		if finding.Status != "skip" {
+			continue
+		}
+		category, _ := finding.Extensions[skipCategoryExtension].(string)
+		if category != skipCategoryNotApplicable && category != skipCategoryManualOrHybrid && category != skipCategoryOther {
+			t.Fatalf("skip finding %s has no explicit category: %#v", finding.RuleID, finding.Extensions)
+		}
+		finding.Message = "wording changed without changing semantics"
+	}
+	if after := skippedFindingBreakdown(result.Findings); after != breakdown {
+		t.Fatalf("skip breakdown depends on human wording: before=%+v after=%+v", breakdown, after)
+	}
+}
+
+func TestDefaultTextIncludesEveryActionableStatus(t *testing.T) {
+	result := Result{
+		StandardVersion: StandardVersion, ContractVersion: ContractVersion,
+		CheckerVersion: Version, Enforcement: "report-only", Complete: true,
+		Findings: []Finding{
+			{RuleID: "DT-TEST-PASS", Status: "pass", Path: ".", Message: "pass"},
+			{RuleID: "DT-TEST-SKIP", Status: "skip", Path: ".", Message: "skip", Extensions: map[string]any{skipCategoryExtension: skipCategoryOther}},
+			{RuleID: "DT-TEST-ERROR", Status: "error", Path: "error", Message: "configuration error", Remediation: "fix configuration"},
+			{RuleID: "DT-TEST-FAIL", Status: "fail", Path: "fail", Message: "contract failed", Remediation: "fix contract"},
+			{RuleID: "DT-TEST-EXPIRED", Status: "fail", Path: "expired", Message: "Matching exception expired before evaluation.", Remediation: "remove or renew exception"},
+			{RuleID: "DT-TEST-WARN", Status: "warn", Path: "warn", Message: "warning", Remediation: "review warning"},
+			{RuleID: "DT-TEST-WAIVED", Status: "waived", Path: "waived", Message: "waived", Remediation: "remove waiver"},
+		},
+	}
+	result.Summary = summarize(result.Findings)
+	text := string(RenderText(result))
+	for _, finding := range result.Findings {
+		contained := strings.Contains(text, finding.RuleID)
+		if finding.Status == "pass" || finding.Status == "skip" {
+			if contained {
+				t.Errorf("default text includes %s finding %s", finding.Status, finding.RuleID)
+			}
+			continue
+		}
+		if !contained || !strings.Contains(text, finding.Remediation) {
+			t.Errorf("default text hides actionable finding %s or its remediation", finding.RuleID)
+		}
+	}
+}
+
+func TestExhaustiveTextDescribesCompleteFindingSet(t *testing.T) {
+	result := Check(Options{
+		Root:        filepath.Join("..", "testdata", "positive-go"),
+		EvaluatedAt: fixtureTime,
+		Enforcement: "report-only",
+	})
+	text := string(RenderTextAll(result))
+	for _, finding := range result.Findings {
+		if !strings.Contains(text, finding.RuleID) {
+			t.Errorf("exhaustive text omits finding %s", finding.RuleID)
 		}
 	}
 }

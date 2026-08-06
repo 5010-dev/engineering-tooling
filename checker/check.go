@@ -410,7 +410,7 @@ func baseFinding(rule Rule, status, findingPath, message string) Finding {
 	if status == "warn" {
 		severity = "warning"
 	}
-	return Finding{
+	finding := Finding{
 		RuleID:      rule.ID,
 		Status:      status,
 		Severity:    severity,
@@ -420,6 +420,20 @@ func baseFinding(rule Rule, status, findingPath, message string) Finding {
 		Remediation: rule.Remediation,
 		ExceptionID: nil,
 	}
+	if status == "skip" {
+		category := skipCategoryOther
+		if rule.Assessment == "manual" || rule.Assessment == "hybrid" {
+			category = skipCategoryManualOrHybrid
+		}
+		finding.Extensions = map[string]any{skipCategoryExtension: category}
+	}
+	return finding
+}
+
+func skippedFinding(rule Rule, category, findingPath, message string) Finding {
+	finding := baseFinding(rule, "skip", findingPath, message)
+	finding.Extensions[skipCategoryExtension] = category
+	return finding
 }
 
 func deviationStatus(rule Rule) string {

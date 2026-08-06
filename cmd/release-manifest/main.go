@@ -256,6 +256,10 @@ func run(arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("read tooling cutoff: %w", err)
 	}
+	_, sourceIntegrityData, err := matchingEvidence(root, distRoot, "release/source-integrity-2026-08-06.json", "source-integrity.json")
+	if err != nil {
+		return fmt.Errorf("read source integrity: %w", err)
+	}
 	compatibilityFile, _, err := matchingEvidence(root, distRoot, "compatibility/manifest.json", "compatibility-manifest.json")
 	if err != nil {
 		return fmt.Errorf("bind compatibility manifest: %w", err)
@@ -280,10 +284,21 @@ func run(arguments []string, stderr io.Writer) error {
 	}
 	if err := json.Unmarshal(cutoffData, &cutoff); err != nil ||
 		cutoff.SchemaVersion != "golden-path-tooling-cutoff/v1" ||
-		cutoff.StandardVersion != checker.StandardVersion ||
-		cutoff.ReleaseVersion != checker.Version ||
 		cutoff.CheckedAt == "" {
-		return fmt.Errorf("tooling cutoff identity does not match the release")
+		return fmt.Errorf("retained tooling cutoff is invalid")
+	}
+	var sourceIntegrity struct {
+		SchemaVersion   string `json:"schemaVersion"`
+		CheckedAt       string `json:"checkedAt"`
+		StandardVersion string `json:"standardVersion"`
+		ReleaseVersion  string `json:"releaseVersion"`
+	}
+	if err := json.Unmarshal(sourceIntegrityData, &sourceIntegrity); err != nil ||
+		sourceIntegrity.SchemaVersion != "golden-path-source-integrity/v1" ||
+		sourceIntegrity.StandardVersion != checker.StandardVersion ||
+		sourceIntegrity.ReleaseVersion != checker.Version ||
+		sourceIntegrity.CheckedAt == "" {
+		return fmt.Errorf("source integrity identity does not match the release")
 	}
 	var snapshot snapshotDocument
 	if err := json.Unmarshal(snapshotData, &snapshot); err != nil || !validSnapshotIdentity(snapshot, standard) {
@@ -414,6 +429,7 @@ func collectSchemaEvidence(sourceRoot, distRoot *os.Root) ([]schemaEvidence, err
 		{ID: "golden-path-materialization-plan/v1", SourceName: "generator/schemas/golden-path-materialization-plan-v1.schema.json", DistName: "golden-path-materialization-plan-v1.schema.json"},
 		{ID: "golden-path-release-manifest/v1", SourceName: "release/golden-path-release-manifest-v1.schema.json", DistName: "golden-path-release-manifest-v1.schema.json"},
 		{ID: "golden-path-release-manifest/v2", SourceName: "release/golden-path-release-manifest-v2.schema.json", DistName: "golden-path-release-manifest-v2.schema.json"},
+		{ID: "golden-path-source-integrity/v1", SourceName: "release/golden-path-source-integrity-v1.schema.json", DistName: "golden-path-source-integrity-v1.schema.json"},
 		{ID: "golden-path-tooling-cutoff/v1", SourceName: "release/golden-path-tooling-cutoff-v1.schema.json", DistName: "golden-path-tooling-cutoff-v1.schema.json"},
 	}
 	result := make([]schemaEvidence, 0, len(assets))

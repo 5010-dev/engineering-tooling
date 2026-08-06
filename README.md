@@ -27,11 +27,13 @@ go run ./cmd/golden-path check \
 current UTC evaluation time lazily; deterministic replays can set
 `GOLDEN_PATH_EVALUATED_AT` or pass the timestamp as the recipe argument.
 
-The text result is written to standard output. The JSON result is written to
-the explicitly selected path. Use `--json-output -` to write JSON to standard
-output and text to standard error. CI callers can additionally select
-`--github-summary-output "$GITHUB_STEP_SUMMARY"` and
-`--github-annotations`; both outputs are bounded, while JSON remains the
+The default text result contains identity, status counts, a categorized skip
+summary, and actionable findings only. Pass and skip detail is available
+explicitly with `--show-all` or `--verbose`. The JSON result always retains the
+complete finding set and is written to the selected path. Use `--json-output -`
+to write JSON to standard output and text to standard error. CI callers can
+additionally select `--github-summary-output "$GITHUB_STEP_SUMMARY"` and
+`--github-annotations`; both human surfaces are bounded, while JSON remains the
 complete record. File outputs must resolve outside the checked repository,
 including through symbolic-link parents.
 
@@ -39,6 +41,16 @@ The `1.x` compatibility contract is stable. Conformance remains report-only:
 the CLI preserves exit codes and evidence, while the reusable workflow does not
 establish or claim a merge policy. A later enforcement decision is independent
 of implementation stability.
+
+The generated conformance caller invokes the immutable
+`golden-path-quality.yml` reusable workflow with only its runner, working
+directory, and expected profiles. The reusable workflow derives its release
+identity from the called workflow SHA, verifies the matching release archive,
+runs the structural checker, and uploads the complete JSON result only for a
+non-passing result. Passing runs keep the bounded summary without duplicate
+artifact storage. It does not install the consumer toolchain, run `just init`,
+or run `just ci`; the consumer
+repository's ordinary quality CI owns that execution exactly once.
 
 ## Golden Path materialization
 
@@ -147,7 +159,7 @@ can pass or fail; non-applicable, hybrid, manual, or only partially evaluated
 rules are explicit `skip` findings. The checker never converts missing evidence
 into a pass.
 
-The compatibility manifest maps the `2026.08` runtime lines to exact Node.js,
+The compatibility manifest maps the selected standard's runtime lines to exact Node.js,
 Python, Go, Rust, and Zig patch releases. Mise selectors may use an exact
 release or a major/minor selector that a committed `mise.lock` resolves to one
 exact release. The resolved patch must still appear in the immutable runtime

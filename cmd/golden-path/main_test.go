@@ -2,10 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/5010-dev/engineering-tooling/checker"
 )
 
 func TestRunWritesJSONAndText(t *testing.T) {
@@ -25,6 +29,30 @@ func TestRunWritesJSONAndText(t *testing.T) {
 	if !strings.Contains(stderr.String(), "Golden Path Conformance") {
 		t.Fatal("stderr does not contain text output")
 	}
+	if strings.Contains(stderr.String(), "[PASS]") || strings.Contains(stderr.String(), "[SKIP]") {
+		t.Fatal("default text output includes non-actionable finding detail")
+	}
+}
+
+func TestRunShowsAllFindingsOnlyWhenRequested(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "positive-go")
+	for _, option := range []string{"--show-all", "--verbose"} {
+		t.Run(option, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := run([]string{
+				"check",
+				"--root", root,
+				"--evaluated-at", "2026-07-31T00:00:00Z",
+				option,
+			}, &stdout, &stderr)
+			if code != 0 {
+				t.Fatalf("exit = %d, stderr=%s", code, stderr.String())
+			}
+			if !strings.Contains(stderr.String(), "[PASS]") || !strings.Contains(stderr.String(), "[SKIP]") {
+				t.Fatal("explicit exhaustive output omits pass or skip findings")
+			}
+		})
+	}
 }
 
 func TestRunChecksThinCallerProfiles(t *testing.T) {
@@ -41,6 +69,21 @@ func TestRunChecksThinCallerProfiles(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "caller-profile-contract") {
 		t.Fatal("result does not contain thin-caller profile mismatch evidence")
+	}
+	var result checker.Result
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.IsSortedFunc(result.Findings, func(left, right checker.Finding) int {
+		if result := strings.Compare(left.RuleID, right.RuleID); result != 0 {
+			return result
+		}
+		if result := strings.Compare(left.Path, right.Path); result != 0 {
+			return result
+		}
+		return strings.Compare(left.Secondary, right.Secondary)
+	}) {
+		t.Fatal("caller profile finding breaks canonical rule, path, secondary ordering")
 	}
 }
 

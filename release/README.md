@@ -31,9 +31,11 @@ Each release must contain:
 - `golden-path-materialization-plan-v1.schema.json`
 - `golden-path-release-manifest-v1.schema.json`
 - `golden-path-release-manifest-v2.schema.json`
+- `golden-path-source-integrity-v1.schema.json`
 - `golden-path-tooling-cutoff-v1.schema.json`
 - `RELEASE_NOTES.md`
 - `release-manifest.json`
+- `source-integrity.json`
 - `standard-snapshot-manifest.json`
 - `tooling-cutoff.json`
 - generated GitHub artifact attestations
@@ -50,9 +52,11 @@ bootstrap are not supported.
 
 Release manifest v2 separates implementation lifecycle from enforcement and
 binds the exact normative source, supported compatibility set, published
-schemas, checker, generator, asset bundle, reusable automation, tooling cutoff,
-and release notes with SHA-256 digests. The v1 schema remains available only to
-interpret immutable `0.x` releases.
+schemas, checker, generator, asset bundle, reusable automation, retained
+external-tool cutoff, and release notes with SHA-256 digests. The release
+checksums and attestations separately bind current source integrity without
+changing the published v2 manifest shape. The v1 schema remains available only
+to interpret immutable `0.x` releases.
 
 Build and assembly jobs hold only `contents: read`. The final job receives
 `contents`, `attestations`, and `id-token` write permissions after downloading
