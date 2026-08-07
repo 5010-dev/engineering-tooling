@@ -1,0 +1,28 @@
+name: Developer Tooling / Release smoke
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/release-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  passing:
+    name: Released conformance / passing
+    uses: 5010-dev/engineering-tooling/.github/workflows/golden-path-quality.yml@58b9cee44a7442899ab399ef1d04b0b2ba45052d
+    with:
+      runner: ubuntu-24.04
+      working-directory: testdata/positive-go
+      profiles: '["go"]'
+
+  non-passing:
+    name: Released conformance / report-only non-pass
+    uses: 5010-dev/engineering-tooling/.github/workflows/golden-path-quality.yml@58b9cee44a7442899ab399ef1d04b0b2ba45052d
+    with:
+      runner: ubuntu-24.04
+      working-directory: testdata/positive-go
+      profiles: '["python"]'
