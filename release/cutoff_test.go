@@ -199,7 +199,7 @@ func TestReleaseSourceIntegrityBindsCurrentBytes(t *testing.T) {
 		}
 	}()
 
-	data := readFile(t, root, "release/source-integrity-2026-08-06.json")
+	data := readFile(t, root, "release/source-integrity-2026-08-07.json")
 	validateJSON(t, readFile(t, root, "release/golden-path-source-integrity-v1.schema.json"), data)
 	var sourceIntegrity sourceIntegrityManifest
 	decodeJSON(t, data, &sourceIntegrity)

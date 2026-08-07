@@ -256,7 +256,7 @@ func run(arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("read tooling cutoff: %w", err)
 	}
-	_, sourceIntegrityData, err := matchingEvidence(root, distRoot, "release/source-integrity-2026-08-06.json", "source-integrity.json")
+	_, sourceIntegrityData, err := matchingEvidence(root, distRoot, "release/source-integrity-2026-08-07.json", "source-integrity.json")
 	if err != nil {
 		return fmt.Errorf("read source integrity: %w", err)
 	}
@@ -264,7 +264,7 @@ func run(arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("bind compatibility manifest: %w", err)
 	}
-	snapshotFile, snapshotData, err := matchingEvidence(root, distRoot, "standards/snapshots/2026.08.1/manifest.json", "standard-snapshot-manifest.json")
+	snapshotFile, snapshotData, err := matchingEvidence(root, distRoot, "standards/snapshots/2026.08.2/manifest.json", "standard-snapshot-manifest.json")
 	if err != nil {
 		return fmt.Errorf("bind standard snapshot manifest: %w", err)
 	}
