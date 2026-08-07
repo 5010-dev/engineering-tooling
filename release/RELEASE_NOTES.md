@@ -1,47 +1,53 @@
-# Golden Path tooling 1.3.0
+# Golden Path tooling 1.4.0
 
-Compatible minor release for the `2026.08.1` Developer Tooling Standard. It
-separates structural conformance from repository quality execution and makes
-human evidence concise without changing `golden-path/v1`, the v1 JSON finding
-contract, runtime selections, or report-only enforcement.
+Compatible minor release for the `2026.08.2` Developer Tooling Standard. It
+completes the new-repository bootstrap path while narrowing long-lived generator
+ownership to the five Golden Path integration assets. It does not change the
+`golden-path/v1` contract epoch, structural report-only enforcement, or the
+repository-owned quality boundary introduced in 1.3.0.
 
 ## Outcome
 
-- A generated conformance caller passes only `runner`, `working-directory`,
-  and `profiles` to the immutable reusable workflow.
-- The published entrypoint remains `.github/workflows/golden-path-quality.yml`
-  so released manifest v2 keeps its existing automation identity; its workflow
-  and job display contract is now `Developer Tooling / Conformance`.
-- The reusable workflow derives release identity from the called workflow's
-  full commit SHA, verifies the matching attested release checksums and archive,
-  and runs only the structural checker.
-- It no longer installs the consumer toolchain or runs `just init` and
-  `just ci`. Repository-owned quality CI remains the single owner of that
-  execution.
-- The default CLI text and GitHub summary show identity, status counts,
-  categorized skip counts, and actionable findings. `--show-all` and
-  `--verbose` retain exhaustive human diagnostics.
-- The complete `golden-path-checker-output/v1` JSON finding set remains the
-  canonical output. Non-passing workflow runs retain it as a short-lived
-  artifact; passing runs avoid duplicate storage.
+- Bootstrap now emits a root onboarding README and a repository-owned
+  `.github/workflows/quality.yml` that installs the pinned toolchain, runs
+  `just init`, and executes `just ci` once.
+- The generated quality workflow targets the organization `dev` branch flow;
+  generated Dependabot entries also target `dev`.
+- A bootstrap request may omit targets while the new repository has no truthful
+  production or release representative. Adoption still requires at least one
+  primary or secondary target.
+- Bootstrap output is split into a small managed integration set and one-time
+  repository-owned scaffold. Upgrade rewrites only the managed set.
+- Materialization plans remain command output and external review evidence.
+  Neither bootstrap nor upgrade writes `golden-path-plan.json` into a
+  candidate repository.
+- Node starters ignore exactly the five managed integration files during
+  Prettier checks, so generated JSON/YAML/shell assets do not hide
+  repository-owned formatting problems.
 
-## Caller and evidence simplification
+## Ownership boundary
 
-The caller no longer duplicates checker version, source commit, GitHub CLI
-version, or four platform archive checksums. Those values remain inside the
-immutable shared release boundary. The full workflow SHA is still visible and
-reviewable in every consumer repository.
+The generator continues to manage only:
 
-Pass and skip details are not deleted. They remain in canonical JSON and
-explicit exhaustive text mode. A compatible `extensions.skipCategory` value
-classifies skip totals without deriving semantics from message wording.
-Report-only finding exit `1` remains visible evidence but does not make the
-workflow a merge gate; configuration and internal exits `2` and `3` still fail
-the workflow.
+1. `.github/golden-path-assets.json`
+2. `.github/golden-path-request.json`
+3. `.github/golden-path.yaml`
+4. `.github/workflows/developer-tooling.yml`
+5. `scripts/golden-path`
+
+The inventory itself is tracked implicitly because it cannot include its own
+digest. README, source, native manifests and locks, Mise and Just files,
+Dependabot configuration, and repository quality CI become repository-owned
+immediately after bootstrap.
+
+Upgrade accepts the released 1.3.0 full-scaffold inventory, verifies the prior
+managed bytes and modes, and performs a bounded handoff to the five-file
+inventory. Local changes to repository-owned scaffold do not create upgrade
+conflicts. Deleted or modified managed assets still do.
 
 ## Compatibility
 
-- Standard: `2026.08.1` (`preferred`)
+- Standard: `2026.08.2` (`preferred`)
 - Contract: `golden-path/v1`
 - Metadata: `golden-path-metadata/v1`
 - Native roots: `golden-path-native-roots/v1`
@@ -54,66 +60,66 @@ the workflow.
 - Source integrity: `golden-path-source-integrity/v1`
 - Enforcement: `report-only`
 
-The `1.2.4` release and all earlier published tags and assets remain immutable.
-The `1.2.4` polyglot-adoption and shared-native-workspace corrections are
-retained with their regression fixtures. No compatibility reader, generated
-state migration, dual workflow, or new contract epoch is introduced.
+The 2026.08.2 snapshot keeps the existing 73-rule catalog and v1 schemas. Its
+accepted standard identity is bound to the organization-policy source commit
+and subtree, and its changed normative bytes only advance embedded standard
+identity.
 
-The August 4 external-tool cutoff is retained unchanged from `1.2.4` because
-the selections did not move. A separate August 6 source-integrity record binds
-the `1.3.0` locks and generated bundle, so dated evidence is not overwritten.
+The 1.3.0 release and all earlier tags and assets remain immutable. The August
+4 external-tool cutoff is retained because the selected tools and locks did not
+move. A separate August 7 source-integrity record binds the 1.4.0 bundle
+identity without rewriting historical evidence.
 
 ## Support and upgrade policy
 
 | Line | Status | Required action |
 | --- | --- | --- |
-| `1.3.x` | Preferred | Default for new adoption |
+| `1.4.x` | Preferred | Default for new bootstrap and adoption |
+| `1.3.x` | Supported | Upgrade on the consumer's normal maintenance cadence |
 | `1.2.x` | Supported | Upgrade on the consumer's normal maintenance cadence |
 | `1.1.x` | Supported | Upgrade on the consumer's normal maintenance cadence |
 | `0.2.x` | Deprecated until 2027-01-28 | Migrate through the documented supported `1.x` path |
 | `0.1.x` | Deprecated until 2027-01-28 | Advance to `0.2.0`, then migrate to supported `1.x` |
 
-A central locator update does not require an immediate consumer pull request.
-This release is recommended where duplicate `just ci` execution materially
-affects cost or feedback time; otherwise compatible upgrades may be batched.
+A central locator update does not require every consumer to open an immediate
+upgrade pull request. Existing 1.x consumers may batch compatible maintenance
+unless a later release is explicitly classified as a security, integrity,
+material false-failure, or unusable-workflow replacement.
 
-## Upgrade from 1.2.4
+## Upgrade from 1.3.0
 
-1. Download the exact `1.3.0` release manifest, checksum list, and platform
-   archive. Verify their attestations against the `v1.3.0` tag, source commit,
+1. Download the exact 1.4.0 release manifest, checksum list, and platform
+   archive. Verify attestations against the `v1.4.0` tag, source commit,
    signer commit, and release workflow.
-2. Run `golden-path upgrade` without `--write` using the repository's existing
-   request and the verified `1.3.0` manifest.
-3. Review the generated candidate. The conformance caller changes to the new
-   checker-only workflow and removes duplicated release inputs; product source,
-   native manifests, locks, runtime behavior, quality CI, and deployment
-   contracts remain repository-owned.
-4. Materialize only into a separate empty candidate, review the diff, and run
-   the consumer repository's native quality gate once plus structural
-   conformance separately.
+2. Run `golden-path upgrade` without `--write` using the repository's
+   existing request and verified 1.4.0 manifest.
+3. Review the plan emitted on standard output and the separate candidate. The
+   candidate contains only the five managed integration files.
+4. Preserve repository-owned README, source, manifests, locks, Just/Mise files,
+   dependency automation, quality CI, release, and deployment behavior.
+5. Run the repository's own `just ci` once and structural conformance
+   separately before integrating the managed update.
 
-An existing adoption request does not need capability, target, profile, or
-component changes merely to upgrade tooling. Do not mix unrelated dependency,
-runtime, product, or deployment hardening into this maintenance change.
+Do not add a target merely to satisfy bootstrap. Declare targets only when the
+repository has a real production or release representative. Adoption continues
+to require that evidence.
 
 ## Rollback
 
-Restore the complete prior `1.2.4` Golden Path control-plane baseline from
-repository history: request, metadata, generated asset inventory, bootstrap
-script, binary identity, and workflow pin. The `1.2.4` reusable workflow owns
-its previous caller inputs and quality execution; the `1.3.0` workflow owns the
-new checker-only contract. Do not combine the workflow from one release with
-generated inputs from the other.
+Restore the complete prior 1.3.0 managed control-plane baseline from repository
+history: request, metadata, generated asset inventory, bootstrap script, binary
+identity, and full-commit workflow pin. Repository-owned scaffold, product
+source, locks, quality commands, deployment behavior, runtime state, and durable
+data do not need rollback or migration.
 
-Rollback does not require changing product source, manifests, locks, quality
-commands, deployment behavior, runtime state, or durable data. Re-materialize
-only in a separate candidate directory. Never move a tag or replace a published
-asset.
+Never combine the workflow or setup action from one release with generated
+inputs from another, move a tag, or replace published assets.
 
 ## Limitations
 
-Structural conformance still does not prove runtime behavior, hosting-plan
-settings, merge protection, advisory state, release publication, deployment,
-or production capacity. Manual, hybrid, and inapplicable rules remain explicit
-skip findings in the complete JSON result. This release does not establish
-branch protection, a ruleset, `policy-required`, or `platform-enforced` status.
+Generated quality CI proves only the repository's declared `just ci` contract
+on its configured hosted runner. Structural conformance still does not prove
+runtime behavior, hosting settings, merge protection, advisory state, release
+publication, deployment, production capacity, or a target that the repository
+does not actually declare. This release establishes no branch protection,
+ruleset, `policy-required`, or `platform-enforced` status.

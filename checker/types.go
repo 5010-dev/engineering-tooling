@@ -4,13 +4,13 @@ package checker
 import "time"
 
 const (
-	Version                 = "1.3.0"
-	StandardVersion         = "2026.08.1"
+	Version                 = "1.4.0"
+	StandardVersion         = "2026.08.2"
 	ContractVersion         = "golden-path/v1"
-	CatalogDigest           = "sha256:5be4ec1e7477dd5b13230c171f902384aa2b1504b7b4cd2cb4af2267b450fed4"
-	SnapshotAggregateDigest = "sha256:7edd0a4f6593c727a843cd6a1abb44e2c4c00baca62bf70c2d21473b0f14f297"
-	SnapshotSourceCommit    = "a4956db0996516089b0c7da56e23c0fa4c72add1"
-	SnapshotSourceTree      = "c576c91a672bb2c78ba441773dd757e50f69c9a3"
+	CatalogDigest           = "sha256:5454ca9e8629bfa4c0da3b0577ef7604349296a7a37ecc4acabd7d84ca1d40b3"
+	SnapshotAggregateDigest = "sha256:2d45f59962bb426b350d35d96fca50f0d0db3932f608e0ce18a24a740c10e812"
+	SnapshotSourceCommit    = "58f48c7f29a567f201c4302c3b81d34051c2d1ff"
+	SnapshotSourceTree      = "62e80b0920f75528f6b3d8d6c3bd82f27e928ecd"
 )
 
 type Options struct {

@@ -30,10 +30,10 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	}()
 
 	for _, name := range []string{
-		"golden-path_1.3.0_darwin_amd64.tar.gz",
-		"golden-path_1.3.0_darwin_arm64.tar.gz",
-		"golden-path_1.3.0_linux_amd64.tar.gz",
-		"golden-path_1.3.0_linux_arm64.tar.gz",
+		"golden-path_1.4.0_darwin_amd64.tar.gz",
+		"golden-path_1.4.0_darwin_arm64.tar.gz",
+		"golden-path_1.4.0_linux_amd64.tar.gz",
+		"golden-path_1.4.0_linux_arm64.tar.gz",
 	} {
 		archive := fixtureArchive(t, name)
 		if err := root.WriteFile(name, archive, 0o600); err != nil {
@@ -54,13 +54,13 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	for sourceName, distName := range map[string]string{
 		"compatibility/manifest.json":                                       "compatibility-manifest.json",
 		"compatibility/golden-path-checker-compatibility-v1.schema.json":    "golden-path-checker-compatibility-v1.schema.json",
-		"standards/snapshots/2026.08.1/manifest.json":                       "standard-snapshot-manifest.json",
+		"standards/snapshots/2026.08.2/manifest.json":                       "standard-snapshot-manifest.json",
 		"release/RELEASE_NOTES.md":                                          "RELEASE_NOTES.md",
 		"release/golden-path-release-manifest-v1.schema.json":               "golden-path-release-manifest-v1.schema.json",
 		"release/golden-path-release-manifest-v2.schema.json":               "golden-path-release-manifest-v2.schema.json",
 		"release/golden-path-source-integrity-v1.schema.json":               "golden-path-source-integrity-v1.schema.json",
 		"release/golden-path-tooling-cutoff-v1.schema.json":                 "golden-path-tooling-cutoff-v1.schema.json",
-		"release/source-integrity-2026-08-06.json":                          "source-integrity.json",
+		"release/source-integrity-2026-08-07.json":                          "source-integrity.json",
 		"release/tooling-cutoff-2026-08-04.json":                            "tooling-cutoff.json",
 		"generator/schemas/golden-path-generated-assets-v1.schema.json":     "golden-path-generated-assets-v1.schema.json",
 		"generator/schemas/golden-path-generator-request-v1.schema.json":    "golden-path-generator-request-v1.schema.json",
@@ -79,7 +79,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	if err := run([]string{
 		"--source", repository,
 		"--dist", directory,
-		"--tag", "v1.3.0",
+		"--tag", "v1.4.0",
 		"--source-commit", "0123456789abcdef0123456789abcdef01234567",
 		"--output", output,
 	}, &stderr); err != nil {
@@ -108,10 +108,10 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateDocument(t, releaseSchema, data)
-	if result.ReleaseVersion != "1.3.0" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.3.0" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.3.0" || result.Components.Automation.Digest == "" {
+	if result.ReleaseVersion != "1.4.0" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.4.0" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.4.0" || result.Components.Automation.Digest == "" {
 		t.Fatalf("unexpected manifest: %+v", result)
 	}
-	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree != "c576c91a672bb2c78ba441773dd757e50f69c9a3" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 8 {
+	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree != "62e80b0920f75528f6b3d8d6c3bd82f27e928ecd" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 8 {
 		t.Fatalf("release evidence is incomplete: %+v", result)
 	}
 	if !slices.Contains(result.SchemaVersions, "golden-path-native-roots/v1") {
@@ -218,7 +218,7 @@ func TestRunRequiresExactCleanCheckoutWhenRequested(t *testing.T) {
 	var stderr bytes.Buffer
 	err := run([]string{
 		"--source", filepath.Join("..", ".."),
-		"--tag", "v1.3.0",
+		"--tag", "v1.4.0",
 		"--source-commit", strings.Repeat("a", 40),
 		"--output", filepath.Join(t.TempDir(), "release-manifest.json"),
 		"--require-clean-checkout",

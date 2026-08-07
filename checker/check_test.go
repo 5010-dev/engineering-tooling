@@ -297,7 +297,7 @@ func TestUnsupportedStandardIsConfigurationError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = []byte(strings.Replace(string(data), `"2026.08.1"`, `"2026.07"`, 1))
+	data = []byte(strings.Replace(string(data), `"2026.08.2"`, `"2026.07"`, 1))
 	if err := rootFS.WriteFile(".github/golden-path.yaml", data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1178,7 +1178,7 @@ func TestSnapshotCatalogIdentity(t *testing.T) {
 	if len(catalog.Rules) != 73 {
 		t.Fatalf("rule count = %d, want 73", len(catalog.Rules))
 	}
-	const want = "sha256:5be4ec1e7477dd5b13230c171f902384aa2b1504b7b4cd2cb4af2267b450fed4"
+	const want = "sha256:5454ca9e8629bfa4c0da3b0577ef7604349296a7a37ecc4acabd7d84ca1d40b3"
 	if digest != want {
 		t.Fatalf("catalog digest = %q, want %q", digest, want)
 	}
