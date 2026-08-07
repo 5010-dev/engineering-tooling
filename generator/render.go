@@ -123,6 +123,10 @@ type dependabotModel struct {
 	Dependabot []dependabotEntry
 }
 
+type onboardingModel struct {
+	ProjectName string
+}
+
 func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 	request = cloneRequest(request)
 	if err := validateRequest(&request); err != nil {
@@ -176,11 +180,14 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 	if mode == "bootstrap" {
 		recipes := buildRecipeModel(request)
 		dependabot := buildDependabotModel(request)
+		onboarding := onboardingModel{ProjectName: request.ProjectName}
 		commonTemplates = append(commonTemplates,
+			templateAsset{"README.md", "common/README.md.tmpl", 0o644, onboarding},
 			templateAsset{"justfile", "common/justfile.tmpl", 0o644, recipes},
 			templateAsset{"just/common.just", "common/just/common.just.tmpl", 0o644, recipes},
 			templateAsset{".github/dependabot.yml", "common/.github/dependabot.yml.tmpl", 0o644, dependabot},
 			templateAsset{".github/golden-path-exceptions.yaml", "common/.github/golden-path-exceptions.yaml.tmpl", 0o644, nil},
+			templateAsset{".github/workflows/quality.yml", "common/.github/workflows/quality.yml.tmpl", 0o644, nil},
 			templateAsset{".gitignore", "common/.gitignore.tmpl", 0o644, nil},
 		)
 	}
@@ -258,6 +265,9 @@ func Render(request Request, release ReleaseManifest) ([]File, string, error) {
 		Files:              make([]GeneratedAsset, 0, len(files)),
 	}
 	for _, file := range files {
+		if !isManagedAssetPath(file.Path) {
+			continue
+		}
 		assetManifest.Files = append(assetManifest.Files, GeneratedAsset{
 			Path: file.Path, Mode: fmt.Sprintf("%04o", file.Mode.Perm()), SHA256: digest(file.Content), Source: file.Source,
 		})
@@ -384,7 +394,8 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 			{"package.json", "profiles/node-typescript/package.json.tmpl"}, {"pnpm-lock.yaml", lockSource},
 			{"pnpm-workspace.yaml", "profiles/node-typescript/pnpm-workspace.yaml.tmpl"},
 			{"tsconfig.json", "profiles/node-typescript/tsconfig.json.tmpl"}, {"tsconfig.build.json", "profiles/node-typescript/tsconfig.build.json.tmpl"},
-			{"eslint.config.js", "profiles/node-typescript/eslint.config.js.tmpl"}, {".prettierrc.json", "profiles/node-typescript/.prettierrc.json.tmpl"},
+			{"eslint.config.js", "profiles/node-typescript/eslint.config.js.tmpl"}, {".prettierignore", "profiles/node-typescript/.prettierignore.tmpl"},
+			{".prettierrc.json", "profiles/node-typescript/.prettierrc.json.tmpl"},
 			{"scripts/pnpm", "profiles/node-typescript/scripts/pnpm.tmpl"}, {"src/index.ts", "profiles/node-typescript/index.ts.tmpl"},
 			{"tests/index.test.ts", "profiles/node-typescript/index.test.ts.tmpl"},
 		} {
@@ -454,7 +465,7 @@ func renderComponent(component Component, request Request, bundle Bundle) ([]Fil
 			return nil, err
 		}
 	}
-	if profiles["documentation"] {
+	if profiles["documentation"] && component.Path != "." {
 		if err := add("README.md", "profiles/documentation/README.md.tmpl", 0o644); err != nil {
 			return nil, err
 		}

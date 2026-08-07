@@ -10,9 +10,12 @@ _common-check:
     #!/usr/bin/env sh
     set -eu
     git diff --check
+    git diff --cached --check
     evaluated_at="${GOLDEN_PATH_EVALUATED_AT:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}"
+    result="${TMPDIR:-/tmp}/golden-path-result-$$.json"
+    trap 'rm -f "$result"' EXIT HUP INT TERM
     status=0
-    ./scripts/golden-path check --root . --evaluated-at "$evaluated_at" --json-output - || status=$?
+    ./scripts/golden-path check --root . --evaluated-at "$evaluated_at" --json-output "$result" || status=$?
     if [ "$status" -eq 1 ]; then
       printf '%s\n' 'Golden Path conformance is report-only; violations remain visible above.' >&2
       exit 0

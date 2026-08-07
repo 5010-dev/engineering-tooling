@@ -126,10 +126,13 @@ func TestRunGeneratesOnlyIntoExplicitStaging(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("write exit = %d; stderr=%s", code, stderr.String())
 	}
-	for _, name := range []string{"justfile", "go.mod", "go.sum", "mise.lock", "golden-path-plan.json", ".github/golden-path-assets.json", ".github/golden-path-request.json"} {
+	for _, name := range []string{"justfile", "go.mod", "go.sum", "mise.lock", ".github/golden-path-assets.json", ".github/golden-path-request.json"} {
 		if _, err := os.Stat(filepath.Join(output, name)); err != nil {
 			t.Fatalf("missing generated %s: %v", name, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(output, "golden-path-plan.json")); !os.IsNotExist(err) {
+		t.Fatalf("generated plan unexpectedly entered the candidate: %v", err)
 	}
 	info, err := os.Stat(filepath.Join(output, "scripts", "golden-path"))
 	if err != nil {
@@ -158,11 +161,13 @@ func TestRunMaterializesAdoptionCandidateWithoutProductAssets(t *testing.T) {
 		".github/golden-path.yaml",
 		".github/workflows/developer-tooling.yml",
 		"scripts/golden-path",
-		"golden-path-plan.json",
 	} {
 		if _, err := os.Stat(filepath.Join(output, filepath.FromSlash(name))); err != nil {
 			t.Fatalf("missing adoption candidate path %s: %v", name, err)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(output, "golden-path-plan.json")); !os.IsNotExist(err) {
+		t.Fatalf("adoption plan unexpectedly entered the candidate: %v", err)
 	}
 	for _, name := range []string{"cmd", "go.mod", "justfile", "mise.toml", ".github/dependabot.yml", ".github/golden-path-exceptions.yaml"} {
 		if _, err := os.Stat(filepath.Join(output, filepath.FromSlash(name))); !os.IsNotExist(err) {
@@ -183,9 +188,10 @@ func TestRunDoesNotWriteUpgradeCandidateWithConflicts(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("generate exit = %d; stderr=%s", code, stderr.String())
 	}
-	customized := []byte("# consumer-owned customization\n")
+	customized := []byte("# managed integration customization\n")
+	managedPath := filepath.Join(repository, ".github", "golden-path.yaml")
 	// #nosec G306 -- the test intentionally models a conventional repository file.
-	if err := os.WriteFile(filepath.Join(repository, "justfile"), customized, 0o644); err != nil {
+	if err := os.WriteFile(managedPath, customized, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	candidate := filepath.Join(t.TempDir(), "candidate")
@@ -206,7 +212,7 @@ func TestRunDoesNotWriteUpgradeCandidateWithConflicts(t *testing.T) {
 		t.Fatalf("conflicted upgrade materialized candidate: %v", err)
 	}
 	// #nosec G304 -- repository is a test-owned temporary directory.
-	after, err := os.ReadFile(filepath.Join(repository, "justfile"))
+	after, err := os.ReadFile(managedPath)
 	if err != nil {
 		t.Fatal(err)
 	}

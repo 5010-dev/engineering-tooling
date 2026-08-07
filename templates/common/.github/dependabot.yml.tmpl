@@ -2,10 +2,11 @@ version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
-      interval: weekly
-[[range .Dependabot]]  - package-ecosystem: [[.Ecosystem]]
+      interval: weekly[[range .Dependabot]]
+  - package-ecosystem: [[.Ecosystem]]
     directory: [[.Directory]]
+    target-branch: dev
     schedule:
-      interval: weekly
-[[end]]
+      interval: weekly[[end]]

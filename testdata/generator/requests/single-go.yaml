@@ -1,4 +1,5 @@
 schemaVersion: golden-path-generator-request/v1
+materializationMode: bootstrap
 layout: single
 projectName: Example Go Service
 projectSlug: example-go-service

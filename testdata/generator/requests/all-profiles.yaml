@@ -1,4 +1,5 @@
 schemaVersion: golden-path-generator-request/v1
+materializationMode: bootstrap
 layout: polyglot
 projectName: Synthetic {{Golden Path}} Matrix
 projectSlug: synthetic-golden-path-matrix

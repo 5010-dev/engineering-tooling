@@ -48,6 +48,9 @@ func UpgradePlan(repository string, files []File, requestDigest string, bundle B
 	}
 	desiredPaths := make(map[string]bool, len(files))
 	for _, file := range files {
+		if !isManagedAssetPath(file.Path) {
+			continue
+		}
 		desiredPaths[file.Path] = true
 		previousAsset, tracked := previous[file.Path]
 		change := FileChange{
@@ -154,6 +157,9 @@ func WriteStaging(output string, files []File, plan Plan) error {
 	}
 	defer func() { _ = root.Close() }()
 	for _, file := range files {
+		if plan.Operation == "upgrade" && !isManagedAssetPath(file.Path) {
+			continue
+		}
 		name := filepath.FromSlash(file.Path)
 		if err := root.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 			return fmt.Errorf("create staging directory for %q: %w", file.Path, err)
@@ -164,13 +170,6 @@ func WriteStaging(output string, files []File, plan Plan) error {
 		if err := root.Chmod(name, file.Mode); err != nil {
 			return fmt.Errorf("set staged file mode %q: %w", file.Path, err)
 		}
-	}
-	planData, err := indentJSON(plan)
-	if err != nil {
-		return err
-	}
-	if err := root.WriteFile("golden-path-plan.json", planData, 0o644); err != nil {
-		return fmt.Errorf("write staged plan: %w", err)
 	}
 	return nil
 }
@@ -214,13 +213,17 @@ func readPreviousAssets(root *os.Root) (map[string]GeneratedAsset, error) {
 		return nil, fmt.Errorf("previous generated-assets manifest must contain exactly one JSON document")
 	}
 	result := make(map[string]GeneratedAsset, len(manifest.Files))
+	seenPaths := make(map[string]bool, len(manifest.Files))
 	for _, file := range manifest.Files {
 		cleaned, pathErr := cleanRelativePath(file.Path)
-		_, duplicate := result[file.Path]
+		duplicate := seenPaths[file.Path]
 		if pathErr != nil || cleaned == "." || file.Path == ".github/golden-path-assets.json" || !fullDigest(file.SHA256) || duplicate || (file.Mode != "0644" && file.Mode != "0755") || file.Source == "" {
 			return nil, fmt.Errorf("previous generated-assets manifest contains an invalid file record")
 		}
-		result[file.Path] = file
+		seenPaths[file.Path] = true
+		if isManagedAssetPath(file.Path) {
+			result[file.Path] = file
+		}
 	}
 	result[".github/golden-path-assets.json"] = GeneratedAsset{
 		Path: ".github/golden-path-assets.json", Mode: "0644", SHA256: digest(data), Source: "generator/assets-manifest",
