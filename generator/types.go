@@ -171,6 +171,22 @@ type AssetManifest struct {
 	Files              []GeneratedAsset `json:"files"`
 }
 
+// isManagedAssetPath identifies the small set of Golden Path integration files
+// that remain generator-owned after bootstrap. Every other bootstrap output is
+// a one-time scaffold and becomes repository-owned as soon as it is generated.
+func isManagedAssetPath(value string) bool {
+	switch value {
+	case ".github/golden-path-assets.json",
+		".github/golden-path-request.json",
+		".github/golden-path.yaml",
+		".github/workflows/developer-tooling.yml",
+		"scripts/golden-path":
+		return true
+	default:
+		return false
+	}
+}
+
 func DecodeRequest(reader io.Reader) (Request, error) {
 	data, err := io.ReadAll(reader)
 	if err != nil {
@@ -309,8 +325,8 @@ func validateRequest(request *Request) error {
 	if request.Targets != nil && len(request.Targets) == 0 {
 		return fmt.Errorf("targets must be omitted or declare at least one target")
 	}
-	if request.MaterializationMode != "" && len(request.Targets) == 0 {
-		return fmt.Errorf("explicit materializationMode requires at least one target")
+	if request.MaterializationMode == "adoption" && len(request.Targets) == 0 {
+		return fmt.Errorf("adoption requires at least one production or release representative target")
 	}
 	targets := cloneTargets(request.Targets)
 	sort.Slice(targets, func(left, right int) bool {

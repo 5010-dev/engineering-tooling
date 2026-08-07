@@ -113,6 +113,18 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-24.04
+            target: documentation/linux/amd64
+            request: documentation.yaml
+          - runner: ubuntu-24.04
+            target: single-go/linux/amd64
+            request: single-go.yaml
+          - runner: ubuntu-24.04
+            target: monorepo/linux/amd64
+            request: monorepo.yaml
+          - runner: ubuntu-24.04
+            target: node-publisher/linux/amd64
+            request: node-publisher.yaml
+          - runner: ubuntu-24.04
             target: full/linux/amd64
             request: all-profiles.yaml
           - runner: ubuntu-24.04-arm
@@ -151,6 +163,35 @@ jobs:
           git -C "$RUNNER_TEMP/generated" add .
           git -C "$RUNNER_TEMP/generated" commit -m "test: materialize fixture"
 
+      - name: Verify repository-owned edits do not block upgrade
+        env:
+          REQUEST: ${{ matrix.request }}
+        run: |
+          set -euo pipefail
+          printf '\nRepository-owned onboarding extension.\n' >> "$RUNNER_TEMP/generated/README.md"
+          printf '\n# Repository-owned workflow extension.\n' >> "$RUNNER_TEMP/generated/.github/workflows/quality.yml"
+          "$RUNNER_TEMP/golden-path-under-test" upgrade \
+            --root "$RUNNER_TEMP/generated" \
+            --request "testdata/generator/requests/$REQUEST" \
+            --release-manifest testdata/generator/release-manifest.json \
+            --write \
+            --output "$RUNNER_TEMP/upgrade-candidate" \
+            > "$RUNNER_TEMP/upgrade-plan.json"
+          jq -e '
+            .operation == "upgrade" and
+            .conflictCount == 0 and
+            all(.changes[]; .path == ".github/golden-path-assets.json" or
+              .path == ".github/golden-path-request.json" or
+              .path == ".github/golden-path.yaml" or
+              .path == ".github/workflows/developer-tooling.yml" or
+              .path == "scripts/golden-path")
+          ' "$RUNNER_TEMP/upgrade-plan.json" >/dev/null
+          test ! -e "$RUNNER_TEMP/upgrade-candidate/README.md"
+          test ! -e "$RUNNER_TEMP/upgrade-candidate/.github/workflows/quality.yml"
+          test ! -e "$RUNNER_TEMP/upgrade-candidate/golden-path-plan.json"
+          git -C "$RUNNER_TEMP/generated" add README.md .github/workflows/quality.yml
+          git -C "$RUNNER_TEMP/generated" commit -m "test: model repository-owned edits"
+
       - name: Execute generated project contract
         run: |
           set -euo pipefail
@@ -164,7 +205,7 @@ jobs:
             MISE_GLOBAL_CONFIG_FILE="$RUNNER_TEMP/hostile-global-mise.toml" \
             GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" \
             just init
-          GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" just ci
+          GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" mise exec -- just ci
           test -z "$(git status --short)"
 
   setup-action:
@@ -219,6 +260,12 @@ jobs:
             darwin_arm64_sha256: 2e20064590c31fdf39d94483ee691da3f9076f34becebef11fb74c446db2c2d1
             linux_amd64_sha256: 43e780a52219d3917086cde358959ae53ce1dc6420c00770dec46d4f08c94628
             linux_arm64_sha256: 8abeb2021d3af995563e1f5f4746c1456c73695fa320cd2c2e3119cfbcb37245
+          - prior_version: 1.3.0
+            prior_commit: 58b9cee44a7442899ab399ef1d04b0b2ba45052d
+            darwin_amd64_sha256: aa7a3f74663db5a61671f6a4a1c54f1ac9bf78b97dd512ee00b77bebd47fb111
+            darwin_arm64_sha256: 5394df0241333bcf40dba3cd755d6930367fc0815b2c47728b449aa6319a894f
+            linux_amd64_sha256: 55b01b9c4d210fec22a9e5056efc440b12b237e0fda45c7c141be925e747b6de
+            linux_arm64_sha256: 5d5ba18a6bf3c766ce5527632611e4b173b02258c95180392cc9c56988c502ee
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -279,8 +326,11 @@ jobs:
           candidate_version="${candidate_version#golden-path }"
           manifest_version="$(jq -er '.releaseVersion' testdata/generator/release-manifest.json)"
           test "$candidate_version" = "$manifest_version"
+          sed '/^materializationMode:/d' \
+            testdata/generator/requests/single-go.yaml \
+            > "$RUNNER_TEMP/legacy-single-go.yaml"
           "$ROLLBACK_BIN" generate \
-            --request testdata/generator/requests/single-go.yaml \
+            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
             --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
             --write \
             --output "$RUNNER_TEMP/rollback-repository"
@@ -292,20 +342,18 @@ jobs:
           source_tree="$(git -C "$RUNNER_TEMP/rollback-repository" write-tree)"
           "$RUNNER_TEMP/golden-path-under-test" upgrade \
             --root "$RUNNER_TEMP/rollback-repository" \
-            --request testdata/generator/requests/single-go.yaml \
+            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
             --release-manifest testdata/generator/release-manifest.json \
             > "$RUNNER_TEMP/stable-migration-preview.json"
           "$RUNNER_TEMP/golden-path-under-test" upgrade \
             --root "$RUNNER_TEMP/rollback-repository" \
-            --request testdata/generator/requests/single-go.yaml \
+            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
             --release-manifest testdata/generator/release-manifest.json \
             --write \
             --output "$RUNNER_TEMP/stable-migration-candidate" \
             > "$RUNNER_TEMP/stable-migration-write.json"
           cmp "$RUNNER_TEMP/stable-migration-preview.json" \
             "$RUNNER_TEMP/stable-migration-write.json"
-          cmp "$RUNNER_TEMP/stable-migration-preview.json" \
-            "$RUNNER_TEMP/stable-migration-candidate/golden-path-plan.json"
           jq -e --arg candidate "$candidate_version" '
             .operation == "upgrade" and
             .releaseVersion == $candidate and
@@ -322,20 +370,18 @@ jobs:
           rollback_source_tree="$(git -C "$RUNNER_TEMP/stable-migration-candidate" write-tree)"
           "$ROLLBACK_BIN" upgrade \
             --root "$RUNNER_TEMP/stable-migration-candidate" \
-            --request testdata/generator/requests/single-go.yaml \
+            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
             --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
             > "$RUNNER_TEMP/rollback-preview.json"
           "$ROLLBACK_BIN" upgrade \
             --root "$RUNNER_TEMP/stable-migration-candidate" \
-            --request testdata/generator/requests/single-go.yaml \
+            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
             --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
             --write \
             --output "$RUNNER_TEMP/rollback-candidate" \
             > "$RUNNER_TEMP/rollback-write.json"
           cmp "$RUNNER_TEMP/rollback-preview.json" \
             "$RUNNER_TEMP/rollback-write.json"
-          cmp "$RUNNER_TEMP/rollback-preview.json" \
-            "$RUNNER_TEMP/rollback-candidate/golden-path-plan.json"
           jq -e --arg prior "$PRIOR_VERSION" '
             .operation == "upgrade" and
             .releaseVersion == $prior and

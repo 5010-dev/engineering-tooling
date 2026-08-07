@@ -70,6 +70,17 @@ func TestExplicitCapabilitiesArePreservedAndActivateConditionalRules(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	prettierIgnore := string(fileContent(t, files, ".prettierignore"))
+	wantPrettierIgnore := strings.Join([]string{
+		".github/golden-path-assets.json",
+		".github/golden-path-request.json",
+		".github/golden-path.yaml",
+		".github/workflows/developer-tooling.yml",
+		"scripts/golden-path",
+	}, "\n") + "\n"
+	if prettierIgnore != wantPrettierIgnore {
+		t.Fatalf("Node formatter ignore = %q, want exact managed asset set %q", prettierIgnore, wantPrettierIgnore)
+	}
 
 	var metadata struct {
 		Capabilities []string `json:"capabilities"`
@@ -117,7 +128,9 @@ func TestExplicitCapabilitiesArePreservedAndActivateConditionalRules(t *testing.
 
 func TestLegacyRequestDigestAndCanonicalShapeRemainStable(t *testing.T) {
 	t.Parallel()
-	files, requestDigest, err := Render(fixtureRequest(t, "single-go.yaml"), fixtureRelease(t))
+	request := fixtureRequest(t, "single-go.yaml")
+	request.MaterializationMode = ""
+	files, requestDigest, err := Render(request, fixtureRelease(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +142,88 @@ func TestLegacyRequestDigestAndCanonicalShapeRemainStable(t *testing.T) {
 		if bytes.Contains(canonicalRequest, []byte(field)) {
 			t.Fatalf("legacy canonical request gained absent optional field %s", field)
 		}
+	}
+}
+
+func TestExplicitBootstrapWithoutTargetsIsAccepted(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "documentation.yaml")
+	if request.MaterializationMode != "bootstrap" || request.Targets != nil {
+		t.Fatalf("bootstrap fixture mode=%q targets=%+v", request.MaterializationMode, request.Targets)
+	}
+	canonical, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validateAgainstSchema(t, "golden-path-generator-request-v1.schema.json", canonical)
+	service := fixtureRequest(t, "single-go.yaml")
+	if service.MaterializationMode != "bootstrap" || service.Targets != nil {
+		t.Fatalf("source-only service fixture mode=%q targets=%+v", service.MaterializationMode, service.Targets)
+	}
+	native := fixtureRequest(t, "zig-profiles.yaml")
+	if native.MaterializationMode != "bootstrap" || len(native.Targets) != 4 {
+		t.Fatalf("native release fixture mode=%q targets=%+v", native.MaterializationMode, native.Targets)
+	}
+	for _, target := range native.Targets {
+		if target.TargetTriple == nil || target.Execution == nil || !*target.Execution {
+			t.Fatalf("native release fixture contains a non-executable or unspecified target: %+v", target)
+		}
+	}
+}
+
+func TestAdoptionWithoutTargetsIsRejected(t *testing.T) {
+	t.Parallel()
+	request := fixtureRequest(t, "adoption-go-service.yaml")
+	request.Targets = nil
+	if _, _, err := Render(request, fixtureRelease(t)); err == nil || !strings.Contains(err.Error(), "adoption requires") {
+		t.Fatalf("adoption without targets error = %v", err)
+	}
+}
+
+func TestBootstrapSeparatesManagedAssetsFromRepositoryOwnedScaffold(t *testing.T) {
+	t.Parallel()
+	files, _, err := Render(fixtureRequest(t, "single-go.yaml"), fixtureRelease(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"README.md", ".github/workflows/quality.yml", "justfile", "go.mod"} {
+		_ = fileContent(t, files, path)
+	}
+	readme := string(fileContent(t, files, "README.md"))
+	for _, fragment := range []string{"mise trust", "MISE_CONFIG_DIR", "MISE_GLOBAL_CONFIG_FILE", "mise install --locked", "mise exec -- just init", "mise exec -- just ci", "mise exec -- gh pr create --base dev", "git init -b main", "git add .", "repository-owned scaffolding"} {
+		if !strings.Contains(readme, fragment) {
+			t.Fatalf("bootstrap README omits %q", fragment)
+		}
+	}
+	if strings.Contains(readme, "mise exec -- just check\nmise exec -- just ci") {
+		t.Fatal("bootstrap README runs the optional check immediately before the complete CI gate")
+	}
+	quality := string(fileContent(t, files, ".github/workflows/quality.yml"))
+	for _, fragment := range []string{"name: Repository / Quality", "run: just init", "run: just ci", "pull_request:", "- dev", "- main"} {
+		if !strings.Contains(quality, fragment) {
+			t.Fatalf("bootstrap quality workflow omits %q", fragment)
+		}
+	}
+	dependabot := string(fileContent(t, files, ".github/dependabot.yml"))
+	if strings.Count(dependabot, "target-branch: dev") != 2 {
+		t.Fatalf("bootstrap Dependabot target branches are incomplete:\n%s", dependabot)
+	}
+	var manifest AssetManifest
+	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path-assets.json"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	actual := make([]string, 0, len(manifest.Files))
+	for _, asset := range manifest.Files {
+		actual = append(actual, asset.Path)
+	}
+	want := []string{
+		".github/golden-path-request.json",
+		".github/golden-path.yaml",
+		".github/workflows/developer-tooling.yml",
+		"scripts/golden-path",
+	}
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf("managed asset inventory = %v, want %v", actual, want)
 	}
 }
 
@@ -1036,7 +1131,7 @@ func TestGoAndRustArtifactPowerSetRejectsOrRendersSource(t *testing.T) {
 	}
 }
 
-func TestBootstrapToAdoptionUpgradePlansRetirementAndProtectsCustomization(t *testing.T) {
+func TestBootstrapToAdoptionUpgradePreservesRepositoryOwnedScaffold(t *testing.T) {
 	t.Parallel()
 	bootstrap := fixtureRequest(t, "single-go.yaml")
 	release := fixtureRelease(t)
@@ -1074,8 +1169,8 @@ func TestBootstrapToAdoptionUpgradePlansRetirementAndProtectsCustomization(t *te
 		statuses[change.Path] = change.Status
 	}
 	for _, path := range []string{"go.mod", "justfile", "mise.toml", "cmd/example-go-service/main.go"} {
-		if statuses[path] != "remove" {
-			t.Fatalf("retired bootstrap asset %s status = %q, want remove", path, statuses[path])
+		if status, planned := statuses[path]; planned {
+			t.Fatalf("repository-owned bootstrap scaffold %s entered the upgrade plan with status %q", path, status)
 		}
 	}
 	candidate := filepath.Join(t.TempDir(), "candidate")
@@ -1098,22 +1193,22 @@ func TestBootstrapToAdoptionUpgradePlansRetirementAndProtectsCustomization(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if conflicted.ConflictCount != 1 {
-		t.Fatalf("customized bootstrap-to-adoption transition has %d conflicts, want 1", conflicted.ConflictCount)
+	if conflicted.ConflictCount != 0 {
+		t.Fatalf("repository-owned bootstrap customization produced %d conflicts", conflicted.ConflictCount)
 	}
 	conflictStatuses := make(map[string]string, len(conflicted.Changes))
 	for _, change := range conflicted.Changes {
 		conflictStatuses[change.Path] = change.Status
 	}
-	if conflictStatuses["go.mod"] != "conflict" {
-		t.Fatalf("customized retired go.mod status = %q, want conflict", conflictStatuses["go.mod"])
+	if status, planned := conflictStatuses["go.mod"]; planned {
+		t.Fatalf("customized repository-owned go.mod entered the upgrade plan with status %q", status)
 	}
 	conflictedCandidate := filepath.Join(t.TempDir(), "conflicted-candidate")
-	if err := WriteStaging(conflictedCandidate, adoptionFiles, conflicted); err == nil {
-		t.Fatal("materialized a bootstrap-to-adoption candidate with an unresolved customization conflict")
+	if err := WriteStaging(conflictedCandidate, adoptionFiles, conflicted); err != nil {
+		t.Fatalf("materialize adoption candidate after repository-owned customization: %v", err)
 	}
-	if _, err := os.Stat(conflictedCandidate); !os.IsNotExist(err) {
-		t.Fatalf("conflicted adoption staging directory exists: %v", err)
+	if _, err := os.Stat(filepath.Join(conflictedCandidate, "go.mod")); !os.IsNotExist(err) {
+		t.Fatalf("upgrade candidate unexpectedly copied repository-owned go.mod: %v", err)
 	}
 }
 
@@ -1134,7 +1229,7 @@ func TestUpgradeTreatsDeletedAndModeChangedGeneratedAssetsAsConflicts(t *testing
 		path   string
 		mutate func(string) error
 	}{
-		{name: "deleted", path: "justfile", mutate: os.Remove},
+		{name: "deleted", path: ".github/golden-path.yaml", mutate: os.Remove},
 		{name: "mode-changed", path: "scripts/golden-path", mutate: func(name string) error {
 			// #nosec G302 -- the fixture intentionally models executable-bit drift.
 			return os.Chmod(name, 0o644)
@@ -1202,7 +1297,7 @@ components:
 	}
 }
 
-func TestUpgradeClassifiesLocalCustomizationWithoutMutatingSource(t *testing.T) {
+func TestUpgradeIgnoresRepositoryOwnedScaffoldCustomization(t *testing.T) {
 	t.Parallel()
 	request := fixtureRequest(t, "single-go.yaml")
 	release := fixtureRelease(t)
@@ -1218,44 +1313,56 @@ func TestUpgradeClassifiesLocalCustomizationWithoutMutatingSource(t *testing.T) 
 	if err := WriteStaging(repository, files, GeneratePlan(files, requestDigest, bundle, release)); err != nil {
 		t.Fatal(err)
 	}
-	customized := []byte("# consumer-owned customization\n")
-	// #nosec G306 -- the test intentionally models a repository-owned 0644 source file.
-	if err := os.WriteFile(filepath.Join(repository, "justfile"), customized, 0o644); err != nil {
-		t.Fatal(err)
+	customizations := map[string][]byte{
+		"justfile":                            []byte("# consumer-owned Just customization\n"),
+		"README.md":                           []byte("# Consumer onboarding\n"),
+		".github/workflows/quality.yml":       []byte("name: Consumer quality workflow\n"),
+		"cmd/example-go-service/main.go":      []byte("package main\n\nfunc main() {}\n"),
+		"cmd/example-go-service/main_test.go": []byte("package main\n"),
+	}
+	for path, customized := range customizations {
+		// #nosec G306 -- the test intentionally models repository-owned 0644 files.
+		if err := os.WriteFile(filepath.Join(repository, filepath.FromSlash(path)), customized, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	plan, err := UpgradePlan(repository, files, requestDigest, bundle, release)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ConflictCount != 1 {
-		t.Fatalf("conflict count = %d, want 1", plan.ConflictCount)
+	if plan.ConflictCount != 0 {
+		t.Fatalf("repository-owned customization produced %d conflicts", plan.ConflictCount)
 	}
 	for _, change := range plan.Changes {
-		if change.Path == "justfile" && change.Status != "conflict" {
-			t.Fatalf("customized justfile status = %q", change.Status)
+		if _, scaffold := customizations[change.Path]; scaffold {
+			t.Fatalf("repository-owned scaffold %s entered upgrade plan with status %q", change.Path, change.Status)
 		}
 	}
-	// #nosec G304 -- repository is a test-owned temporary directory.
-	after, err := os.ReadFile(filepath.Join(repository, "justfile"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(after, customized) {
-		t.Fatal("upgrade planning mutated the source repository")
+	for path, customized := range customizations {
+		// #nosec G304 -- repository is a test-owned temporary directory.
+		after, readErr := os.ReadFile(filepath.Join(repository, filepath.FromSlash(path)))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if !bytes.Equal(after, customized) {
+			t.Fatalf("upgrade planning mutated repository-owned %s", path)
+		}
 	}
 	staging := filepath.Join(t.TempDir(), "candidate")
 	if err := ValidateSeparateOutput(repository, staging); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteStaging(staging, files, plan); err == nil {
-		t.Fatal("materialized a candidate with unresolved conflicts")
+	if err := WriteStaging(staging, files, plan); err != nil {
+		t.Fatalf("materialize managed-only upgrade candidate: %v", err)
 	}
-	if _, err := os.Stat(staging); !os.IsNotExist(err) {
-		t.Fatalf("conflicted staging directory exists: %v", err)
+	for path := range customizations {
+		if _, err := os.Stat(filepath.Join(staging, filepath.FromSlash(path))); !os.IsNotExist(err) {
+			t.Fatalf("upgrade candidate unexpectedly copied repository-owned %s: %v", path, err)
+		}
 	}
 }
 
-func TestUpgradePlansRetiredGeneratedAssetsWithoutMutatingSource(t *testing.T) {
+func TestUpgradeHandsLegacyScaffoldInventoryToRepositoryOwnership(t *testing.T) {
 	t.Parallel()
 	request := fixtureRequest(t, "single-go.yaml")
 	release := fixtureRelease(t)
@@ -1308,18 +1415,17 @@ func TestUpgradePlansRetiredGeneratedAssetsWithoutMutatingSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.ConflictCount != 1 {
-		t.Fatalf("conflict count = %d, want 1", plan.ConflictCount)
+	if plan.ConflictCount != 0 {
+		t.Fatalf("legacy repository-owned scaffold produced %d conflicts", plan.ConflictCount)
 	}
 	statuses := map[string]string{}
 	for _, change := range plan.Changes {
 		statuses[change.Path] = change.Status
 	}
-	if statuses["retired-clean.txt"] != "remove" {
-		t.Fatalf("clean retired file status = %q, want remove", statuses["retired-clean.txt"])
-	}
-	if statuses["retired-customized.txt"] != "conflict" {
-		t.Fatalf("customized retired file status = %q, want conflict", statuses["retired-customized.txt"])
+	for _, path := range []string{"retired-clean.txt", "retired-customized.txt"} {
+		if status, planned := statuses[path]; planned {
+			t.Fatalf("legacy repository-owned scaffold %s entered upgrade plan with status %q", path, status)
+		}
 	}
 	planData, err := json.Marshal(plan)
 	if err != nil {
@@ -1367,6 +1473,15 @@ func TestGeneratedAutomationPinsCheckerOnlyConformance(t *testing.T) {
 	for _, forbidden := range []string{"pull_request_target:", "secrets:", "environment:", "contents: write"} {
 		if strings.Contains(workflow, forbidden) {
 			t.Fatalf("generated GitHub Free baseline caller contains %q", forbidden)
+		}
+	}
+	quality := string(fileContent(t, files, ".github/workflows/quality.yml"))
+	if strings.Count(quality, "run: just ci") != 1 {
+		t.Fatalf("repository quality workflow must execute just ci exactly once:\n%s", quality)
+	}
+	for _, forbidden := range []string{"engineering-tooling/.github/workflows/golden-path-quality.yml", "scripts/golden-path check", "just check"} {
+		if strings.Contains(quality, forbidden) {
+			t.Fatalf("repository quality workflow duplicates conformance through %q", forbidden)
 		}
 	}
 	reusable, err := os.ReadFile(filepath.Join("..", ".github", "workflows", "golden-path-quality.yml"))
@@ -1464,6 +1579,7 @@ func TestGeneratedAutomationPinsCheckerOnlyConformance(t *testing.T) {
 	for _, expected := range []string{
 		`: > .cache/golden-path/mise-config/global.toml`,
 		`MISE_CONFIG_DIR="$PWD/.cache/golden-path/mise-config" MISE_GLOBAL_CONFIG_FILE="$PWD/.cache/golden-path/mise-config/global.toml" mise install --locked`,
+		`--json-output "$result"`,
 	} {
 		if !strings.Contains(commonJust, expected) {
 			t.Fatalf("generated init does not enforce %q", expected)
@@ -1471,6 +1587,9 @@ func TestGeneratedAutomationPinsCheckerOnlyConformance(t *testing.T) {
 	}
 	if strings.Contains(commonJust, "MISE_GLOBAL_CONFIG_FILE=/dev/null") {
 		t.Fatal("generated init does not isolate developer-global mise tools")
+	}
+	if strings.Contains(commonJust, "--json-output -") {
+		t.Fatal("generated just check still streams the complete JSON result by default")
 	}
 	adoptionMiseToml, readErr := os.ReadFile(filepath.Join("..", "testdata", "reusable-quality", "adoption-external-just", "mise.toml"))
 	if readErr != nil {
@@ -1693,12 +1812,13 @@ func TestPublishedRequestSchemaRejectsInputsRejectedByGeneratorSemantics(t *test
 		{name: "empty-materialization-mode", mutate: func(document map[string]any) {
 			document["materializationMode"] = ""
 		}},
-		{name: "explicit-mode-without-target", mutate: func(document map[string]any) {
-			document["materializationMode"] = "bootstrap"
-		}},
 		{name: "adoption-without-explicit-capability", mutate: func(document map[string]any) {
 			document["materializationMode"] = "adoption"
 			document["targets"] = []any{map[string]any{"os": "linux", "architecture": "amd64", "tier": "primary"}}
+		}},
+		{name: "adoption-without-targets", mutate: func(document map[string]any) {
+			document["materializationMode"] = "adoption"
+			document["components"].([]any)[0].(map[string]any)["capabilities"] = []any{}
 		}},
 		{name: "empty-targets", mutate: func(document map[string]any) {
 			document["targets"] = []any{}

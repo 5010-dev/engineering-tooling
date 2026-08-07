@@ -73,34 +73,45 @@ golden-path upgrade \
 
 New repositories use an explicit `materializationMode: bootstrap` request.
 Existing repositories use `materializationMode: adoption` for their first
-Golden Path baseline. Adoption emits only the canonical request, truthful
+Golden Path baseline. Bootstrap creates a complete starter, root onboarding,
+and a repository-owned quality workflow that prepares the pinned environment
+and runs `just ci` once. Adoption emits only the canonical request, truthful
 metadata, generated-asset inventory, immutable bootstrap script, and thin
 caller workflow. It does not generate or replace source entry points, native
 manifests or locks, Mise and Just configuration, dependency automation, or
 repository-specific build, smoke, release, and deployment behavior. Generate
 the adoption candidate into an empty directory, integrate its fixed asset set
 through the consumer repository's normal review, retain
-`golden-path-plan.json` as staging evidence rather than managed repository
-configuration, and use `upgrade` only after that baseline inventory is
-committed.
+the plan emitted on standard output as external staging evidence rather than
+repository configuration, and use `upgrade` only after that baseline inventory
+is committed. A written candidate never contains `golden-path-plan.json`.
 
-An explicit materialization mode requires at least one production or release
-representative `target` in the `primary` or `secondary` tier. Evaluation-only
-targets cannot satisfy that boundary. Each target records OS, architecture,
-support tier, and optional runtime, target triple, and semantic-execution
-claim. The generator preserves these declarations exactly and never infers
-support from a profile, runner label, or compilation result. Legacy requests
-that omit both new fields retain their canonical request shape and implicit
-bootstrap behavior.
+New requests state their materialization mode explicitly. Bootstrap targets
+remain optional when a documentation, source-only, or otherwise pre-release
+starter has no truthful production or release representative. Adoption of an
+existing repository still requires its actual production or release
+representative targets. When targets are declared, at least one uses the
+`primary` or `secondary` tier;
+evaluation-only targets cannot satisfy that boundary. Each target records OS,
+architecture, support tier, and optional runtime, target triple, and
+semantic-execution claim. The generator preserves these declarations exactly
+and never infers support from a profile, runner label, or compilation result.
+Legacy requests that omit the mode retain their canonical request shape and
+implicit bootstrap behavior.
 
 Generation records the standard, asset bundle, release source commit, request
-digest, canonical request, and every generated file digest and mode. Upgrade
-reads that inventory to distinguish unchanged generated files from consumer
-customization. A deleted managed file or changed executable mode is a conflict,
-not an implicit create or update. An unresolved conflict returns exit `1` and
-never materializes a candidate. A conflict-free upgrade writes a separate
-candidate and `golden-path-plan.json`; it never writes to the source repository
-or a default branch.
+digest, canonical request, and the digest and mode of the long-lived managed
+integration set. That set is the request, metadata, inventory itself,
+conformance caller, and `scripts/golden-path`; the inventory is tracked
+implicitly because it cannot hash itself. Source, README, native manifests and
+locks, Mise/Just files, Dependabot configuration, and repository quality CI are
+one-time scaffold and become repository-owned immediately. Upgrade reads only
+the managed set, including the bounded handoff from older inventories that
+listed scaffold. A deleted managed file, local managed-file customization, or
+changed managed executable mode is a conflict. Repository-owned edits are not.
+An unresolved conflict returns exit `1` and never materializes a candidate. A
+conflict-free upgrade writes only managed files to a separate candidate; it
+never writes to the source repository or a default branch.
 
 Each request component may declare `capabilities` from the published request
 schema when the repository really provides behavior such as `package`,

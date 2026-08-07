@@ -1,4 +1,5 @@
 schemaVersion: golden-path-generator-request/v1
+materializationMode: bootstrap
 layout: documentation
 projectName: Example Documentation
 projectSlug: example-documentation

@@ -9,7 +9,7 @@
     "schemaVersion": { "const": "golden-path-generator-request/v1" },
     "materializationMode": {
       "enum": ["bootstrap", "adoption"],
-      "description": "Bootstrap materializes a complete starter. Adoption materializes only the fixed Golden Path control-plane asset set for integration into an existing repository. Omission preserves the legacy bootstrap request shape."
+      "description": "Bootstrap materializes a complete starter and may omit targets when no production or release representative exists yet. Adoption materializes only the fixed Golden Path control-plane asset set for integration into an existing repository and requires declared targets. Omission preserves the legacy bootstrap request shape."
     },
     "layout": { "enum": ["single", "monorepo", "polyglot", "documentation"] },
     "projectName": { "type": "string", "minLength": 2, "maxLength": 100, "pattern": "^[^\\s\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}](?:[^\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]*[^\\s\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}])?$" },
@@ -71,10 +71,6 @@
   },
   "allOf": [
     {
-      "if": { "required": ["materializationMode"] },
-      "then": { "required": ["targets"] }
-    },
-    {
       "if": { "required": ["targets"] },
       "then": {
         "properties": {
@@ -95,6 +91,7 @@
         "required": ["materializationMode"]
       },
       "then": {
+        "required": ["targets"],
         "properties": {
           "components": {
             "items": {

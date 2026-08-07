@@ -1,4 +1,5 @@
 schemaVersion: golden-path-generator-request/v1
+materializationMode: bootstrap
 layout: single
 projectName: Published Node Package
 projectSlug: published-node-package
