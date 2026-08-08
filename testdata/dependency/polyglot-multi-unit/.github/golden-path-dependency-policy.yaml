@@ -1,0 +1,53 @@
+schemaVersion: golden-path-dependency-policy/v1
+releaseUnits:
+  path: .github/release-units.json
+adapter: dependabot
+defaults:
+  owner:
+    kind: team
+    reference: platform-runtime
+  releaseFlow:
+    integrationBranch: dev
+    releaseBranch: main
+  canonicalGate:
+    command:
+      kind: just-recipe
+      workingDirectory: .
+      recipe: ci
+    ciEvidence:
+      - kind: github-actions-job
+        workflow: .github/workflows/ci.yml
+        job: check
+  routine: {}
+  securityFallback:
+    owner:
+      kind: operational-queue
+      reference: security-remediation
+    canonicalGate:
+      command:
+        kind: just-recipe
+        workingDirectory: .
+        recipe: ci
+rootBindings:
+  - nativeRootRef: python-workspace
+    classificationState: classified
+    affectedArtifacts:
+      - releaseUnitRef: api-oci
+      - releaseUnitRef: worker-oci
+    validationOnly:
+      - kind: contract
+        invariantReleaseUnitRef: event-envelope
+      - kind: migration
+        invariantReleaseUnitRef: database-migrations
+  - nativeRootRef: rust-workspace
+    classificationState: classified
+    affectedArtifacts:
+      - releaseUnitRef: api-oci
+      - releaseUnitRef: worker-oci
+    validationOnly:
+      - kind: contract
+        invariantReleaseUnitRef: event-envelope
+  - nativeRootRef: web-workspace
+    classificationState: classified
+    affectedArtifacts:
+      - releaseUnitRef: api-oci

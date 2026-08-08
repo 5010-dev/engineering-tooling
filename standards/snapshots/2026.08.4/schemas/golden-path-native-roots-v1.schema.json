@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:5010-dev:golden-path:schema:native-roots:v1",
+  "title": "Golden Path native dependency roots v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "roots"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri-reference"
+    },
+    "schemaVersion": {
+      "const": "golden-path-native-roots/v1"
+    },
+    "roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/root"
+      }
+    }
+  },
+  "$defs": {
+    "root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "profiles"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?:\\.|[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*)$"
+        },
+        "profiles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nativeProfile"
+          }
+        }
+      }
+    },
+    "nativeProfile": {
+      "enum": [
+        "node-typescript",
+        "python",
+        "go",
+        "rust",
+        "zig",
+        "zig-toolchain",
+        "infrastructure-aws-cdk",
+        "infrastructure-terraform",
+        "infrastructure-opentofu",
+        "infrastructure-pulumi"
+      ]
+    }
+  }
+}

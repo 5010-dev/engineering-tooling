@@ -1,6 +1,6 @@
 schemaVersion: golden-path-metadata/v1
 contractVersion: golden-path/v1
-standardVersion: "2026.08.2"
+standardVersion: "2026.08.4"
 assetBundleVersion: 0.1.0
 applicability:
   status: applicable

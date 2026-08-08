@@ -186,7 +186,7 @@ func TestBootstrapSeparatesManagedAssetsFromRepositoryOwnedScaffold(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"README.md", ".github/workflows/quality.yml", "justfile", "go.mod"} {
+	for _, path := range []string{"README.md", ".github/CODEOWNERS", ".github/workflows/quality.yml", ".github/golden-path-dependency-policy.yaml", "justfile", "go.mod"} {
 		_ = fileContent(t, files, path)
 	}
 	readme := string(fileContent(t, files, "README.md"))
@@ -205,8 +205,17 @@ func TestBootstrapSeparatesManagedAssetsFromRepositoryOwnedScaffold(t *testing.T
 		}
 	}
 	dependabot := string(fileContent(t, files, ".github/dependabot.yml"))
-	if strings.Count(dependabot, "target-branch: dev") != 2 {
-		t.Fatalf("bootstrap Dependabot target branches are incomplete:\n%s", dependabot)
+	if strings.Count(dependabot, "target-branch: dev") != 2 || strings.Count(dependabot, "open-pull-requests-limit: 0") != 2 {
+		t.Fatalf("bootstrap Dependabot target or pending-root budgets are incomplete:\n%s", dependabot)
+	}
+	policy := string(fileContent(t, files, ".github/golden-path-dependency-policy.yaml"))
+	for _, expected := range []string{"schemaVersion: golden-path-dependency-policy/v1", "path: .github/release-units.json", "rootBindings: []", "workflow: .github/workflows/quality.yml", "job: quality"} {
+		if !strings.Contains(policy, expected) {
+			t.Fatalf("bootstrap dependency policy omits %q:\n%s", expected, policy)
+		}
+	}
+	if codeowners := string(fileContent(t, files, ".github/CODEOWNERS")); codeowners != "* @5010-dev/platform-dev\n" {
+		t.Fatalf("bootstrap CODEOWNERS route = %q", codeowners)
 	}
 	var manifest AssetManifest
 	if err := json.Unmarshal(fileContent(t, files, ".github/golden-path-assets.json"), &manifest); err != nil {
@@ -784,7 +793,7 @@ func TestRequestCapabilitiesMatchNormativeMetadataCatalog(t *testing.T) {
 	requestCapabilities := schemaStringEnum(t, filepath.Join("schemas", "golden-path-generator-request-v1.schema.json"),
 		"properties", "components", "items", "properties", "capabilities", "items", "enum")
 	metadataCapabilities := schemaStringEnum(t,
-		filepath.Join("..", "standards", "snapshots", "2026.08.2", "schemas", "golden-path-metadata-v1.schema.json"),
+		filepath.Join("..", "standards", "snapshots", "2026.08.4", "schemas", "golden-path-metadata-v1.schema.json"),
 		"$defs", "capability", "enum")
 	want := append([]string(nil), supportedCapabilities...)
 	slices.Sort(requestCapabilities)
@@ -802,7 +811,7 @@ func TestRequestTargetsMatchNormativeMetadataSchema(t *testing.T) {
 	t.Parallel()
 	requestTarget := schemaValue(t, filepath.Join("schemas", "golden-path-generator-request-v1.schema.json"), "$defs", "target")
 	metadataTarget := schemaValue(t,
-		filepath.Join("..", "standards", "snapshots", "2026.08.2", "schemas", "golden-path-metadata-v1.schema.json"),
+		filepath.Join("..", "standards", "snapshots", "2026.08.4", "schemas", "golden-path-metadata-v1.schema.json"),
 		"$defs", "target")
 	if !reflect.DeepEqual(requestTarget, metadataTarget) {
 		t.Fatalf("request target schema does not match normative metadata target schema\nrequest: %#v\nmetadata: %#v", requestTarget, metadataTarget)

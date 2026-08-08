@@ -1,6 +1,6 @@
 {
   "schemaVersion": "golden-path-checker-compatibility/v1",
-  "checkerVersion": "1.4.0",
+  "checkerVersion": "1.5.0",
   "lifecycle": "stable",
   "enforcement": [
     "report-only"
@@ -8,20 +8,25 @@
   "exceptionExpiryWarningDays": 30,
   "standards": [
     {
-      "standardVersion": "2026.08.2",
+      "standardVersion": "2026.08.4",
       "contractVersion": "golden-path/v1",
       "schemaVersions": [
         "golden-path-metadata/v1",
         "golden-path-native-roots/v1",
+        "golden-path-dependency-policy/v1",
+        "golden-path-dependency-defers/v1",
+        "golden-path-dependency-observation/v1",
+        "golden-path-dependency-candidate/v1",
+        "golden-path-dependency-report/v1",
         "golden-path-exceptions/v1",
         "golden-path-checker-output/v1",
         "golden-path-rule-catalog/v1",
         "runtime-support/v1"
       ],
-      "snapshot": "standards/snapshots/2026.08.2/manifest.json",
-      "sourceCommit": "58f48c7f29a567f201c4302c3b81d34051c2d1ff",
-      "catalogDigest": "sha256:5454ca9e8629bfa4c0da3b0577ef7604349296a7a37ecc4acabd7d84ca1d40b3",
-      "snapshotAggregateDigest": "sha256:2d45f59962bb426b350d35d96fca50f0d0db3932f608e0ce18a24a740c10e812"
+      "snapshot": "standards/snapshots/2026.08.4/manifest.json",
+      "sourceCommit": "416dec3053befbc5f54371bbb51950dd5cdee305",
+      "catalogDigest": "sha256:ebe93eec9b095e8d6763207ffcac12b9836eb6bae366084a9f98d2cdbb4fddd9",
+      "snapshotAggregateDigest": "sha256:55cc033ca9df35837c6b5f2b7424128d6899cab02978ae90db8595538ee0f881"
     }
   ],
   "runtimeSelections": [

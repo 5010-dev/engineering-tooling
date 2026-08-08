@@ -104,11 +104,12 @@ digest, canonical request, and the digest and mode of the long-lived managed
 integration set. That set is the request, metadata, inventory itself,
 conformance caller, and `scripts/golden-path`; the inventory is tracked
 implicitly because it cannot hash itself. Source, README, native manifests and
-locks, Mise/Just files, Dependabot configuration, and repository quality CI are
-one-time scaffold and become repository-owned immediately. Upgrade reads only
-the managed set, including the bounded handoff from older inventories that
-listed scaffold. A deleted managed file, local managed-file customization, or
-changed managed executable mode is a conflict. Repository-owned edits are not.
+locks, Mise/Just files, dependency policy, Dependabot configuration, and
+repository quality CI are one-time scaffold and become repository-owned
+immediately. Upgrade reads only the managed set, including the bounded handoff
+from older inventories that listed scaffold. A deleted managed file, local
+managed-file customization, or changed managed executable mode is a conflict.
+Repository-owned edits are not.
 An unresolved conflict returns exit `1` and never materializes a candidate. A
 conflict-free upgrade writes only managed files to a separate candidate; it
 never writes to the source repository or a default branch.
@@ -177,9 +178,46 @@ repository metadata contract does not yet define that evidence. Until a future
 contract represents it, the previous Zig stable fails as unsupported rather
 than passing without the required evidence.
 
+## Dependency operations
+
+The dependency compiler consumes repository-owned facts and produces a
+deterministic review candidate. It never edits the repository, runs `just ci`,
+creates release units, infers impact from component paths, or owns native
+manifests and locks.
+
+```sh
+golden-path dependency check --root /path/to/repository
+
+golden-path dependency preview \
+  --root /path/to/repository \
+  --observation /path/to/sealed-observation.json \
+  --write \
+  --output /tmp/dependency-candidate
+```
+
+`compile` is an alias for `preview`. Both write only to an explicitly selected
+separate empty staging directory. Exit `0` is semantically aligned, `1` is a
+reviewable policy/adapter difference, `2` is a repository declaration error,
+and `3` is a tooling failure. An unknown routine surface remains
+`pending-classification` at budget zero; classified roots default to three
+open routine PRs unless a dated, owned override says otherwise.
+
+Typed gate references bind repository `just ci` and optional workflow/job
+evidence without executing the gate. Dependabot security routing is conditional
+and independent from routine budgets. Existing guarded routers are preserved,
+and no candidate removes or delays a security PR because routine regrouping is
+pending.
+
+Live reports require a sealed observation whose identity covers observation
+time, collection query and scope, repository/default-branch identities, PR
+refs/checks, alerts, native-manager sources, and SHA-256. Synthetic fixtures
+exercise compiler behavior only and are never represented as live organization
+evidence.
+
 ## Repository layout
 
 - `checker/`: checker library and stable result contract
+- `dependency/`: repository-fact compiler, semantic checker, and evidence reports
 - `generator/`: deterministic materialization and conflict-aware upgrade logic
 - `templates/`: versioned common, profile, lock, and thin-caller assets
 - `actions/`: reusable checksum- and provenance-verifying setup action

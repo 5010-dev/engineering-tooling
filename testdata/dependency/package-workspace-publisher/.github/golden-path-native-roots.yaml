@@ -1,0 +1,5 @@
+schemaVersion: golden-path-native-roots/v1
+roots:
+  - id: package-workspace
+    path: .
+    profiles: [node-typescript]

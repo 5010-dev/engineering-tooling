@@ -561,7 +561,7 @@ func TestCheckAcceptsPolyglotSamePathNativeRoots(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, ".github/golden-path.yaml", `schemaVersion: golden-path-metadata/v1
 contractVersion: golden-path/v1
-standardVersion: "2026.08.2"
+standardVersion: "2026.08.4"
 assetBundleVersion: 1.1.0
 profiles:
   - node-typescript

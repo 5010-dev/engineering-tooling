@@ -1,0 +1,26 @@
+schemaVersion: golden-path-dependency-policy/v1
+releaseUnits: {path: .github/release-units.json}
+adapter: dependabot
+defaults:
+  owner: {kind: codeowners, reference: packages}
+  releaseFlow: {integrationBranch: dev, releaseBranch: main}
+  canonicalGate:
+    command: {kind: just-recipe, workingDirectory: ., recipe: ci}
+    ciEvidence:
+      - {kind: github-actions-job, workflow: .github/workflows/ci.yml, job: check}
+  routine: {}
+  securityFallback:
+    owner: {kind: team, reference: package-security}
+    canonicalGate:
+      command: {kind: just-recipe, workingDirectory: ., recipe: ci}
+rootBindings:
+  - nativeRootRef: package-workspace
+    classificationState: classified
+    affectedArtifacts:
+      - releaseUnitRef: design-package
+    routine:
+      maxOpenPullRequests: 2
+      budgetOverride:
+        reason: package publication is intentionally serialized
+        owner: {kind: team, reference: package-maintainers}
+        reviewAfter: 2026-09-01
