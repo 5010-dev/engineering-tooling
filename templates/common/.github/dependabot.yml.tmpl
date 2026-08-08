@@ -3,10 +3,12 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     target-branch: dev
+    open-pull-requests-limit: 0
     schedule:
       interval: weekly[[range .Dependabot]]
   - package-ecosystem: [[.Ecosystem]]
     directory: [[.Directory]]
     target-branch: dev
+    open-pull-requests-limit: 0
     schedule:
       interval: weekly[[end]]

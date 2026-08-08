@@ -1,125 +1,112 @@
-# Golden Path tooling 1.4.0
+# Golden Path tooling 1.5.0
 
-Compatible minor release for the `2026.08.2` Developer Tooling Standard. It
-completes the new-repository bootstrap path while narrowing long-lived generator
-ownership to the five Golden Path integration assets. It does not change the
-`golden-path/v1` contract epoch, structural report-only enforcement, or the
-repository-owned quality boundary introduced in 1.3.0.
+Stable implementation release for the `2026.08.4` Developer Tooling Standard.
+It adds the repository-fact dependency operations contract without changing the
+`golden-path/v1` epoch, the report-only enforcement boundary, or repository
+ownership of native dependency graphs, release units, manifests, locks, and
+canonical quality CI.
+
+Boundary classification: unreleased — corrected in place.
+
+The dependency implementation was completed as one v1 contract before its
+first tooling release. No intermediate dependency wire shape, migration,
+dual-reader, mixed-version rollout, or compatibility adapter is published.
+The organization standard's incomplete `2026.08.3` observation shape remains
+immutable; `2026.08.4` is the authoritative bounded correction imported here.
 
 ## Outcome
 
-- Bootstrap now emits a root onboarding README and a repository-owned
-  `.github/workflows/quality.yml` that installs the pinned toolchain, runs
-  `just init`, and executes `just ci` once.
-- The generated quality workflow targets the organization `dev` branch flow;
-  generated Dependabot entries also target `dev`.
-- A bootstrap request may omit targets while the new repository has no truthful
-  production or release representative. Adoption still requires at least one
-  primary or secondary target.
-- Bootstrap output is split into a small managed integration set and one-time
-  repository-owned scaffold. Upgrade rewrites only the managed set.
-- Materialization plans remain command output and external review evidence.
-  Neither bootstrap nor upgrade writes `golden-path-plan.json` into a
-  candidate repository.
-- Node starters ignore exactly the five managed integration files during
-  Prettier checks, so generated JSON/YAML/shell assets do not hide
-  repository-owned formatting problems.
-
-## Ownership boundary
-
-The generator continues to manage only:
-
-1. `.github/golden-path-assets.json`
-2. `.github/golden-path-request.json`
-3. `.github/golden-path.yaml`
-4. `.github/workflows/developer-tooling.yml`
-5. `scripts/golden-path`
-
-The inventory itself is tracked implicitly because it cannot include its own
-digest. README, source, native manifests and locks, Mise and Just files,
-Dependabot configuration, and repository quality CI become repository-owned
-immediately after bootstrap.
-
-Upgrade accepts the released 1.3.0 full-scaffold inventory, verifies the prior
-managed bytes and modes, and performs a bounded handoff to the five-file
-inventory. Local changes to repository-owned scaffold do not create upgrade
-conflicts. Deleted or modified managed assets still do.
+- `golden-path dependency check` performs semantic, read-only validation with
+  stable exit meanings: `0` aligned, `1` reviewable policy drift, `2`
+  repository declaration/configuration error, and `3` tooling failure.
+- `dependency preview` and its `compile` alias produce a deterministic candidate
+  and may write only to an explicitly selected separate empty staging
+  directory. They never mutate the source repository.
+- Root bindings reference existing `.github/golden-path-native-roots.yaml` IDs
+  and repository-owned `.github/release-units.json` IDs. The compiler neither
+  creates release units nor infers impact from component paths.
+- Canonical gates are typed references to repository `just ci` and optional
+  GitHub Actions workflow/job evidence. Structural conformance verifies those
+  references and never re-executes repository `just ci`.
+- The default routine PR budget is three per classified root. A root override
+  requires a positive value plus a reason, owner, and review date. Unknown or
+  unmatched surfaces stay `pending-classification` with a compiled budget of
+  zero.
+- Existing secure Dependabot routers are preserved. Where a `main` release
+  branch and `dev` integration branch differ, the candidate conditionally emits
+  a guarded same-repository Dependabot security router independent of routine
+  budget findings.
+- Explicit Dependabot/Renovate manager overlap is rejected. No central approval
+  queue, CI command registry, hand-maintained package map, dummy manifest, or
+  second dependency manager is introduced.
+- The 1.5.0 compiler implements the organization-default Dependabot adapter.
+  A repository that explicitly selects Renovate receives configuration exit
+  `2`; it is never silently interpreted through Dependabot semantics.
+- Sealed observations bind observation time, query scope, repository/default
+  branch identity, PR refs and checks, alerts, native-manager evidence, source
+  identity, and SHA-256. Organization reports retain that identity and remain
+  distinct from synthetic compiler fixtures.
+- Three synthetic repository fixtures cover a polyglot multi-unit repository,
+  a package-workspace publisher, and a single OCI service. These fixtures prove
+  compiler behavior only; they are not live organization or pilot evidence.
+- New bootstrap repositories start routine Dependabot lanes at zero with an
+  empty root-binding policy. Repository owners must classify actual native
+  roots before enabling a routine budget. Security handling is not coupled to
+  that routine state.
 
 ## Compatibility
 
-- Standard: `2026.08.2` (`preferred`)
+- Standard: `2026.08.4` (`preferred`)
 - Contract: `golden-path/v1`
-- Metadata: `golden-path-metadata/v1`
-- Native roots: `golden-path-native-roots/v1`
-- Exceptions: `golden-path-exceptions/v1`
-- Output: `golden-path-checker-output/v1`
-- Generator request: `golden-path-generator-request/v1`
-- Generated asset inventory: `golden-path-generated-assets/v1`
-- Materialization plan: `golden-path-materialization-plan/v1`
+- Tooling and asset bundle: `1.5.0`
+- Dependency policy: `golden-path-dependency-policy/v1`
+- Dependency defers: `golden-path-dependency-defers/v1`
+- Dependency observation: `golden-path-dependency-observation/v1`
+- Dependency candidate: `golden-path-dependency-candidate/v1`
+- Dependency report: `golden-path-dependency-report/v1`
 - Release manifest: `golden-path-release-manifest/v2`
-- Source integrity: `golden-path-source-integrity/v1`
 - Enforcement: `report-only`
 
-The 2026.08.2 snapshot keeps the existing 73-rule catalog and v1 schemas. Its
-accepted standard identity is bound to the organization-policy source commit
-and subtree, and its changed normative bytes only advance embedded standard
-identity.
+The `2026.08.4` snapshot is bound to organization-policy source commit
+`416dec3053befbc5f54371bbb51950dd5cdee305`, source tree
+`61b248457e0f2210da3acc4dd8138350bcee270e`, catalog digest
+`sha256:ebe93eec9b095e8d6763207ffcac12b9836eb6bae366084a9f98d2cdbb4fddd9`,
+and aggregate digest
+`sha256:55cc033ca9df35837c6b5f2b7424128d6899cab02978ae90db8595538ee0f881`.
+The retained August 4 tooling cutoff is unchanged because external tool and
+runtime selections did not move. The August 9 source-integrity record binds the
+current 1.5.0 lock and template bytes without rewriting earlier evidence.
 
-The 1.3.0 release and all earlier tags and assets remain immutable. The August
-4 external-tool cutoff is retained because the selected tools and locks did not
-move. A separate August 7 source-integrity record binds the 1.4.0 bundle
-identity without rewriting historical evidence.
+## Upgrade from 1.4.0
 
-## Support and upgrade policy
+1. Verify the exact 1.5.0 release manifest, checksums, archive, source commit,
+   tag, release workflow, and GitHub artifact attestations.
+2. Run the ordinary Golden Path adoption or upgrade preview into a separate
+   empty candidate directory. Preserve repository-owned manifests, locks,
+   native roots, release units, Dependabot configuration, and CI.
+3. Add a repository-owned dependency policy only from confirmed repository
+   facts. Leave an unclear routine root pending with budget zero; do not invent
+   release units or package mappings.
+4. Run `golden-path dependency preview` and review its separate staged output.
+   Apply only the approved repository-owned diff.
+5. Run the repository's `just ci` once in repository CI and run structural
+   conformance separately. The shared conformance workflow does not run it.
 
-| Line | Status | Required action |
-| --- | --- | --- |
-| `1.4.x` | Preferred | Default for new bootstrap and adoption |
-| `1.3.x` | Supported | Upgrade on the consumer's normal maintenance cadence |
-| `1.2.x` | Supported | Upgrade on the consumer's normal maintenance cadence |
-| `1.1.x` | Supported | Upgrade on the consumer's normal maintenance cadence |
-| `0.2.x` | Deprecated until 2027-01-28 | Migrate through the documented supported `1.x` path |
-| `0.1.x` | Deprecated until 2027-01-28 | Advance to `0.2.0`, then migrate to supported `1.x` |
-
-A central locator update does not require every consumer to open an immediate
-upgrade pull request. Existing 1.x consumers may batch compatible maintenance
-unless a later release is explicitly classified as a security, integrity,
-material false-failure, or unusable-workflow replacement.
-
-## Upgrade from 1.3.0
-
-1. Download the exact 1.4.0 release manifest, checksum list, and platform
-   archive. Verify attestations against the `v1.4.0` tag, source commit,
-   signer commit, and release workflow.
-2. Run `golden-path upgrade` without `--write` using the repository's
-   existing request and verified 1.4.0 manifest.
-3. Review the plan emitted on standard output and the separate candidate. The
-   candidate contains only the five managed integration files.
-4. Preserve repository-owned README, source, manifests, locks, Just/Mise files,
-   dependency automation, quality CI, release, and deployment behavior.
-5. Run the repository's own `just ci` once and structural conformance
-   separately before integrating the managed update.
-
-Do not add a target merely to satisfy bootstrap. Declare targets only when the
-repository has a real production or release representative. Adoption continues
-to require that evidence.
+No durable state or production runtime migration is required. Existing 1.4.0
+consumers may remain on their immutable release until their normal maintenance
+window; a central locator change does not mutate them.
 
 ## Rollback
 
-Restore the complete prior 1.3.0 managed control-plane baseline from repository
-history: request, metadata, generated asset inventory, bootstrap script, binary
-identity, and full-commit workflow pin. Repository-owned scaffold, product
-source, locks, quality commands, deployment behavior, runtime state, and durable
-data do not need rollback or migration.
+Restore the exact 1.4.0 managed Golden Path files and dependency policy/adapter
+changes from repository history. Keep native manifests, locks, release units,
+runtime state, durable data, security alerts, and independent security PRs
+untouched. Never move the `v1.4.0` or `v1.5.0` tag or replace published assets.
 
-Never combine the workflow or setup action from one release with generated
-inputs from another, move a tag, or replace published assets.
+## Evidence boundary
 
-## Limitations
-
-Generated quality CI proves only the repository's declared `just ci` contract
-on its configured hosted runner. Structural conformance still does not prove
-runtime behavior, hosting settings, merge protection, advisory state, release
-publication, deployment, production capacity, or a target that the repository
-does not actually declare. This release establishes no branch protection,
-ruleset, `policy-required`, or `platform-enforced` status.
+Local and synthetic tests prove deterministic compilation, schema validation,
+staging safety, and checker semantics. They do not prove GitHub settings,
+organization-wide queue state, live alerts, pilot repository CI, release
+publication, deployment, production capacity, or a weekly operating cycle.
+Those observations require separately source-bound live evidence.

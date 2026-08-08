@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    target-branch: dev
+    open-pull-requests-limit: 3
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directory: /
+    target-branch: dev
+    open-pull-requests-limit: 0
+    schedule: {interval: weekly}

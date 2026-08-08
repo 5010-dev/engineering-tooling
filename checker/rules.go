@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/5010-dev/engineering-tooling/dependency"
+
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	hcljson "github.com/hashicorp/hcl/v2/json"
@@ -46,6 +48,11 @@ var evaluators = map[string]ruleEvaluator{
 	"DT-GO-002":      evaluateGoDependencies,
 	"DT-RUST-001":    evaluateRustProfile,
 	"DT-RELEASE-001": evaluateReleaseVersion,
+	"DT-DEP-005":     evaluateDependencyPolicy,
+	"DT-DEP-006":     evaluateDependencyPolicy,
+	"DT-DEP-007":     evaluateDependencyPolicy,
+	"DT-DEP-010":     evaluateDependencyPolicy,
+	"DT-DEP-011":     evaluateDependencyPolicy,
 }
 
 var componentScopedRules = map[string]bool{
@@ -156,6 +163,33 @@ func evaluateAutomatedRule(
 		return baseFinding(rule, "error", ".", "The checker release has no evaluator for an applicable automated rule.")
 	}
 	return evaluator(root, metadata, rule, exceptionsPresent)
+}
+
+func evaluateDependencyPolicy(root string, _ Metadata, rule Rule, _ bool) Finding {
+	evaluation := dependency.Evaluate(root)
+	for _, candidate := range evaluation.Findings {
+		if candidate.RuleID != rule.ID {
+			continue
+		}
+		finding := baseFinding(rule, candidate.Status, candidate.Path, candidate.Message)
+		finding.Secondary = candidate.Secondary
+		finding.Remediation = candidate.Remediation
+		if candidate.Status == "error" {
+			finding.Extensions = map[string]any{}
+			if evaluation.ExitCode == 2 {
+				finding.Extensions["errorKind"] = "configuration"
+			}
+		}
+		return finding
+	}
+	if evaluation.ExitCode == 2 || evaluation.ExitCode == 3 {
+		finding := baseFinding(rule, "error", ".github/golden-path-dependency-policy.yaml", "Dependency policy evaluation did not complete.")
+		if evaluation.ExitCode == 2 {
+			finding.Extensions = map[string]any{"errorKind": "configuration"}
+		}
+		return finding
+	}
+	return baseFinding(rule, "pass", ".github/golden-path-dependency-policy.yaml", "Dependency policy satisfies this structural rule.")
 }
 
 func evaluateComponentRule(

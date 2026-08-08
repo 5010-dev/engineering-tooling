@@ -39,6 +39,11 @@ func loadCompatibility() (CompatibilityManifest, error) {
 	expectedSchemas := []string{
 		"golden-path-metadata/v1",
 		"golden-path-native-roots/v1",
+		"golden-path-dependency-policy/v1",
+		"golden-path-dependency-defers/v1",
+		"golden-path-dependency-observation/v1",
+		"golden-path-dependency-candidate/v1",
+		"golden-path-dependency-report/v1",
 		"golden-path-exceptions/v1",
 		"golden-path-checker-output/v1",
 		"golden-path-rule-catalog/v1",

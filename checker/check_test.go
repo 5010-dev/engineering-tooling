@@ -162,7 +162,7 @@ func TestCheckIsDeterministic(t *testing.T) {
 	}
 	first := Check(options)
 	second := Check(options)
-	if len(first.Findings) != 73 {
+	if len(first.Findings) != 80 {
 		t.Fatalf("finding count = %d, want one per catalog rule", len(first.Findings))
 	}
 	firstJSON, err := RenderJSON(first)
@@ -297,7 +297,7 @@ func TestUnsupportedStandardIsConfigurationError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = []byte(strings.Replace(string(data), `"2026.08.2"`, `"2026.07"`, 1))
+	data = []byte(strings.Replace(string(data), `"2026.08.4"`, `"2026.07"`, 1))
 	if err := rootFS.WriteFile(".github/golden-path.yaml", data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1175,10 +1175,10 @@ func TestSnapshotCatalogIdentity(t *testing.T) {
 	if catalog.StandardVersion != StandardVersion {
 		t.Fatalf("standard = %q, want %q", catalog.StandardVersion, StandardVersion)
 	}
-	if len(catalog.Rules) != 73 {
-		t.Fatalf("rule count = %d, want 73", len(catalog.Rules))
+	if len(catalog.Rules) != 80 {
+		t.Fatalf("rule count = %d, want 80", len(catalog.Rules))
 	}
-	const want = "sha256:5454ca9e8629bfa4c0da3b0577ef7604349296a7a37ecc4acabd7d84ca1d40b3"
+	const want = "sha256:ebe93eec9b095e8d6763207ffcac12b9836eb6bae366084a9f98d2cdbb4fddd9"
 	if digest != want {
 		t.Fatalf("catalog digest = %q, want %q", digest, want)
 	}
@@ -1202,8 +1202,8 @@ func TestEveryAutomatedRuleHasAnEvaluator(t *testing.T) {
 			t.Errorf("automated rule %s has no evaluator", rule.ID)
 		}
 	}
-	if automated != 19 {
-		t.Fatalf("automated rule count = %d, want 19", automated)
+	if automated != 23 {
+		t.Fatalf("automated rule count = %d, want 23", automated)
 	}
 }
 

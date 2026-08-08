@@ -1,115 +1,88 @@
 # Stable minor release readiness
 
-This document is release evidence, not normative policy. The organization
-Developer Tooling Standard remains the authority for rule meaning and
-applicability.
+This is release evidence, not normative policy. The organization Developer
+Tooling Standard remains authoritative for rule meaning and applicability.
 
 ## Release candidate identity
 
-- Standard: `2026.08.2`
+- Standard: `2026.08.4`
 - Contract: `golden-path/v1`
-- Tooling and asset bundle: `1.4.0`
-- Release lifecycle: `stable`
+- Tooling and asset bundle: `1.5.0`
+- Lifecycle: `stable`
 - Enforcement: `report-only`
-- Normative source commit: `58f48c7f29a567f201c4302c3b81d34051c2d1ff`
-- Normative source tree: `62e80b0920f75528f6b3d8d6c3bd82f27e928ecd`
+- Normative source commit: `416dec3053befbc5f54371bbb51950dd5cdee305`
+- Normative source tree: `61b248457e0f2210da3acc4dd8138350bcee270e`
+- Catalog digest: `sha256:ebe93eec9b095e8d6763207ffcac12b9836eb6bae366084a9f98d2cdbb4fddd9`
+- Snapshot digest: `sha256:55cc033ca9df35837c6b5f2b7424128d6899cab02978ae90db8595538ee0f881`
 - External-tool cutoff: `2026-08-04T12:54:32Z` (retained selections)
-- Candidate source integrity: `2026-08-07` (current release bytes)
+- Candidate source integrity: `2026-08-08T23:28:33Z`
 
-This compatible minor release completes repository bootstrap and establishes a
-bounded ownership handoff for previously generated scaffold. It keeps all v1
-serialized contracts and the checker-only conformance workflow. The immutable
-1.2.4
-[`tooling-cutoff-2026-08-04.json`](./tooling-cutoff-2026-08-04.json) retains
-the external-tool selections reused by this release. The separate
-[`source-integrity-2026-08-07.json`](./source-integrity-2026-08-07.json)
-binds the current locks and bundle identity without modifying historical
-evidence.
+[`source-integrity-2026-08-09.json`](./source-integrity-2026-08-09.json)
+binds the current source-controlled locks and template bundle. Historical
+cutoff and source-integrity records remain unchanged.
 
-Boundary classification: released — compatibility is required because 1.3.0
-published full-scaffold inventories must upgrade without overwriting
-repository-owned files.
+Boundary classification: unreleased — corrected in place.
+
+There was no released tooling consumer, stored observation, or distributed
+dependency v1 asset using the intermediate implementation. The first complete
+tooling contract is therefore v1, with no compatibility reader or migration.
+The public standard correction was published as `2026.08.4`; `2026.08.3` was
+not rewritten.
 
 ## Required evidence before tagging
 
-1. The accepted 2026.08.2 standard has an immutable organization-policy source
-   commit and subtree. The imported 12-file snapshot must be byte-identical,
-   complete, and bind source commit, subtree, catalog digest, and aggregate
-   digest together.
-2. `just ci` succeeds from a clean checkout of the exact candidate source.
-3. Bootstrap fixtures for every supported generated profile prove root
-   onboarding, pinned repository quality CI, Dependabot targeting `dev`,
-   staged and unstaged whitespace checks, and no staged plan file.
-4. Generator tests prove the managed inventory contains only the request,
-   metadata, inventory, conformance caller, and bootstrap script, with the
-   inventory tracked implicitly rather than self-hashed.
-5. Upgrade tests prove repository-owned scaffold changes are preserved,
-   managed-file byte and mode drift still conflicts, and a released 1.3.0
-   full-scaffold inventory hands off to the bounded managed set without source
-   mutation.
-6. Adoption fixtures retain their fixed control-plane output and target
-   requirement. Bootstrap may omit targets, while every declared target set
-   still contains a primary or secondary production or release representative.
-7. The attestation-verified migration and rollback matrix covers every released
-   boundary from 0.2.0 through 1.3.0, including `just init` and `just ci`
-   under the selected prior release after rollback.
-8. Every release archive is built and executed on its native platform. SBOMs
-   bind archive digests; attestations cover every published asset; the release
-   manifest binds source, standard snapshot, catalog, templates, automation,
-   compatibility, retained tool cutoff, schemas, and supported targets.
-   Release checksums and attestations bind the separate current
-   source-integrity record.
+1. The 2026.08.4 snapshot is byte-complete and binds the exact organization
+   commit, subtree, catalog digest, aggregate digest, and all five dependency
+   schemas.
+2. `just ci` succeeds from a clean checkout of the exact candidate commit.
+3. Synthetic fixtures prove deterministic compilation for the three declared
+   shapes, default and overridden bounded budgets, pending-classification,
+   secure router preservation/generation, duplicate-adapter rejection, staging
+   isolation, observation sealing, tamper rejection, and report generation.
+4. Checker and CLI tests prove semantic exit `0/1/2/3` behavior. Shared
+   conformance remains checker-only and never invokes repository `just ci`.
+5. Release assembly publishes all dependency schemas, compatibility identity,
+   source integrity, release notes, checksums, per-platform SBOMs, archive
+   executable digests, and provenance attestations.
+6. Existing 1.4.0 tags, release assets, standard snapshots, and public standard
+   documents remain immutable.
 
-The stable tag must not be created until these gates and an independent review
-are green against the exact source commit. Final asset digests, release URL,
-release-run identity, smoke runs, and organization locator pins are
+The tag must not be created until these gates are green against the exact
+source commit. Release URL, asset digests, release workflow identity, locator
+pins, live pilot results, queue remediation, and weekly-cycle observation are
 post-publication evidence and cannot be predeclared.
 
 ## Post-publication evidence
 
-Before advancing the organization locator:
+1. Verify all 1.5.0 assets and attestations against the exact released main
+   commit and tag.
+2. Advance the organization locator in a separate reviewed change that pins the
+   released source and asset digests. Do not point consumers at a branch or
+   sibling checkout.
+3. Only then generate and review Design System, Collector, and Quant adoption
+   candidates. Keep synthetic results separate from live pilot evidence.
+4. Preserve security PRs independently while remediating only the routine
+   queue supported by the fresh observation.
+5. Record unfreeze evidence and observe one complete scheduled weekly cycle.
 
-1. The push or dispatch run at the exact released `main` commit must exercise
-   the reusable conformance workflow through attestation-verified 1.4.0 release
-   acquisition.
-2. The organization locator pull request must pin the exact 1.4.0 source commit
-   and archive digests, then run the released bootstrap fixture end to end.
-3. The generated repository quality workflow and the structural conformance
-   caller must remain separate owners: the former runs `just ci` once; the
-   latter runs only the checker.
-4. If either smoke fails, leave the organization locator on 1.3.0 and publish a
-   corrective release. Never replace 1.4.0 assets or move its tag.
+## Ownership and safety boundaries
 
-## Compatibility and support boundary
+The compiler consumes repository-owned native roots and release units. It does
+not create a release-unit system, infer impact from component paths, replace
+native manifests/locks, manage two dependency bots, centralize CI commands, or
+execute repository quality gates. Preview output is external staging evidence;
+live organization reports are source-bound operational evidence owned and
+retained under the organization policy contract.
 
-1.3.0 remains an immutable supported release. Advancing the organization
-locator to 1.4.0 does not force immediate consumer pull requests. Exact source
-pins keep existing 1.x workflows and setup actions on their published bytes.
-
-The only released-state compatibility work in this candidate is the bounded
-1.3.0 inventory handoff and the existing migration/rollback matrix. No wire
-version, dual reader, dual workflow, deployment rollout, runtime-state
-migration, or open-ended compatibility framework is introduced.
-
-## Quality and conformance ownership
-
-A bootstrapped repository owns `.github/workflows/quality.yml`; it installs
-the pinned environment and runs `just init` followed by `just ci`. The
-generated `.github/workflows/developer-tooling.yml` remains a thin caller of
-the immutable checker-only reusable workflow. These are distinct signals and
-must not execute the same quality graph twice.
-
-The public tooling repository retains the broader native-platform, generated
-profile, migration, rollback, packaging, schema, and provenance matrix needed
-to publish the shared release. Consumer repositories do not inherit that
-release-owner evidence burden.
+Security visibility and routing are independent of routine queue budgets.
+Routine roots that cannot be classified remain stopped individually; their
+uncertainty does not block security remediation or justify a repository-wide
+approval queue.
 
 ## Rollback
 
-Restore the exact 1.3.0 managed control-plane baseline from repository history:
-request, metadata, generated asset inventory, bootstrap script, binary
-identity, and full-commit workflow pin. Repository-owned scaffold and runtime
-or durable state are outside this rollback.
-
-Never mix a 1.4.0 caller or setup action with 1.3.0 release inputs, move a
-published tag, or replace release assets.
+Restore the immutable 1.4.0 managed baseline and repository-owned dependency
+changes from Git history. Do not delete or rewrite runtime state, durable data,
+alerts, security PRs, native manifests, locks, or release-unit authorities.
+Never mix 1.4.0 callers with 1.5.0 release inputs, move a published tag, or
+replace release assets.

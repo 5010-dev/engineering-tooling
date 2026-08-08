@@ -1,0 +1,7 @@
+schemaVersion: golden-path-metadata/v1
+contractVersion: golden-path/v1
+standardVersion: "2026.08.4"
+assetBundleVersion: "1.5.0"
+profiles: [node-typescript]
+artifactTypes: [package]
+capabilities: [build, dependency-automation, package, publish, test]

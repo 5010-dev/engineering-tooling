@@ -221,6 +221,63 @@ func TestRunDoesNotWriteUpgradeCandidateWithConflicts(t *testing.T) {
 	}
 }
 
+func TestRunDependencyCheckPreviewAndCompile(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "dependency", "single-service-oci")
+	var checkOutput, stderr bytes.Buffer
+	code := run([]string{"dependency", "check", "--root", root}, &checkOutput, &stderr)
+	if code != 0 || !strings.Contains(checkOutput.String(), `"schemaVersion": "golden-path-dependency-evaluation/v1"`) {
+		t.Fatalf("dependency check exit=%d output=%s stderr=%s", code, checkOutput.String(), stderr.String())
+	}
+
+	var previewOutput bytes.Buffer
+	code = run([]string{"dependency", "preview", "--root", root}, &previewOutput, &stderr)
+	if code != 0 || !strings.Contains(previewOutput.String(), `"schemaVersion": "golden-path-dependency-candidate/v1"`) {
+		t.Fatalf("dependency preview exit=%d output=%s stderr=%s", code, previewOutput.String(), stderr.String())
+	}
+	var compileOutput bytes.Buffer
+	code = run([]string{"dependency", "compile", "--root", root}, &compileOutput, &stderr)
+	if code != 0 || compileOutput.String() != previewOutput.String() {
+		t.Fatalf("compile alias differs: exit=%d\npreview=%s\ncompile=%s\nstderr=%s", code, previewOutput.String(), compileOutput.String(), stderr.String())
+	}
+
+	output := filepath.Join(t.TempDir(), "candidate")
+	var writeOutput bytes.Buffer
+	code = run([]string{"dependency", "preview", "--root", root, "--write", "--output", output}, &writeOutput, &stderr)
+	if code != 0 {
+		t.Fatalf("dependency write exit=%d stderr=%s", code, stderr.String())
+	}
+	for _, name := range []string{"dependency-candidate.json", ".github/dependabot.yml", ".github/workflows/dependency-security-router.yml"} {
+		if _, err := os.Stat(filepath.Join(output, filepath.FromSlash(name))); err != nil {
+			t.Fatalf("missing dependency candidate %s: %v", name, err)
+		}
+	}
+}
+
+func TestRunDependencyPreservesSemanticExitCodes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(filepath.Join("..", "..", "testdata", "dependency", "single-service-oci"))); err != nil {
+		t.Fatal(err)
+	}
+	dependabotPath := filepath.Join(root, ".github", "dependabot.yml")
+	// #nosec G304 -- path is inside a test-owned temporary fixture.
+	data, err := os.ReadFile(dependabotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte("open-pull-requests-limit: 3"), []byte("open-pull-requests-limit: 8"), 1)
+	// #nosec G703 -- dependabotPath is inside a test-owned temporary fixture.
+	if err := os.WriteFile(dependabotPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"dependency", "check", "--root", root}, &stdout, &stderr); code != 1 {
+		t.Fatalf("policy drift exit=%d, want 1; stderr=%s", code, stderr.String())
+	}
+	if code := run([]string{"dependency", "check", "--root", t.TempDir()}, &stdout, &stderr); code != 2 {
+		t.Fatalf("configuration exit=%d, want 2; stderr=%s", code, stderr.String())
+	}
+}
+
 func TestRunRejectsRepositoryOutputPath(t *testing.T) {
 	root := filepath.Join("..", "..", "testdata", "positive-go")
 	var stdout, stderr bytes.Buffer
