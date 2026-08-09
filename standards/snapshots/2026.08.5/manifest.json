@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "golden-path-standard-snapshot/v1",
+  "standardVersion": "2026.08.5",
+  "contractVersion": "golden-path/v1",
+  "source": {
+    "repository": "https://github.com/5010-dev/.github",
+    "commit": "631b0adb4ef605ed973a65b58180daf31b47b718",
+    "path": "docs/standards/developer-tooling",
+    "gitTree": "fad6a8213ac8a8ba718a2ff70dfe0c04c289f8c6"
+  },
+  "aggregate": {
+    "algorithm": "sha256",
+    "definition": "SHA-256 of UTF-8 lines sorted by snapshot-relative path, each formatted as <file-sha256>  standards/snapshots/2026.08.5/<snapshot-relative-path>\\n, excluding manifest.json",
+    "digest": "1b96dc8239eaf5c22bc3f3006555a94a5c9a818b74b9658a87756c326a4ac1cd"
+  },
+  "files": {
+    "rules/catalog.v1.json": "9e37b6c777206dc8a021102b9ff461eca55763d1c9f9b829a60c11e10091f55e",
+    "rules/runtime-support.v1.json": "a5957b0d64309b75b37320b446652f67076247391beb408a77eb62139f31fcf8",
+    "schemas/examples/golden-path-checker-output-v1.valid.json": "539e56c14510fa8f17a786d798c75a9004139b89bc9e87a23a7a304ac67517ad",
+    "schemas/examples/golden-path-exceptions-v1.valid.json": "da603f7cbce6759e3a0f6859a8fe5070d9f72228e03f5f8a1333879e8034b662",
+    "schemas/examples/golden-path-metadata-v1.valid.json": "8c7be79fd2209c700dc6ab518241555c7cf673d443bb87d727ad05546dc92b79",
+    "schemas/examples/golden-path-native-roots-v1.valid.json": "61c2c6d457a828c5961fcb818c2008e4ac87f80f013812009437859fd59d4eb9",
+    "schemas/golden-path-checker-output-v1.schema.json": "e1c7e586f34e99824350aff8e5daf1eb538182c0533b9472d819d73573ab1c4b",
+    "schemas/golden-path-dependency-candidate-v1.schema.json": "1ae77894bd31ab449792189b9f163a7e93604f1e89f8ef9485fa6334f1ce11ea",
+    "schemas/golden-path-dependency-defers-v1.schema.json": "2ef85cad1f50a3b7d0c071e0a8fd67e9f9b221c8d2062680b089262b9f234499",
+    "schemas/golden-path-dependency-observation-v1.schema.json": "0e8e23b2ad25a0e4924ecf1260e46893c2d305024f38cd258a60c10a716d9d00",
+    "schemas/golden-path-dependency-policy-v1.schema.json": "900e3942e73ca5c0da8a3634ef0b43bf103c8dbe7180a923a77b87dcd1b0aa73",
+    "schemas/golden-path-dependency-report-v1.schema.json": "6f02b535acc1630af07ad73b36d7f019267c57a900eb469ed09deadf213e4e56",
+    "schemas/golden-path-exceptions-v1.schema.json": "724cf1d02a52d669ed94c36dcd9b88b4d54caa71943bcec6a60ebcfa22e2f436",
+    "schemas/golden-path-metadata-v1.schema.json": "d04625e83c02e77afa67fda94be556bb68b34ac62a1ff4535799b8cba5171050",
+    "schemas/golden-path-native-roots-v1.schema.json": "c7b719a9e2ec7132717cf4a2b1abcd006704067390891f4159b754e77d0113c9",
+    "schemas/golden-path-rule-catalog-v1.schema.json": "c4d38b3cbbd11ebd57dbc23176d4475dfac9d92ef5ec6f695913b304892e5ddf",
+    "schemas/runtime-support-v1.schema.json": "4b8f009b0670a806f438619b5f918b1ef51aa700da67136bcb0819c7bc5061e3"
+  }
+}

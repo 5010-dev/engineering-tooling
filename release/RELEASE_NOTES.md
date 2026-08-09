@@ -1,64 +1,42 @@
-# Golden Path tooling 1.5.0
+# Golden Path tooling 1.5.1
 
-Stable implementation release for the `2026.08.4` Developer Tooling Standard.
-It adds the repository-fact dependency operations contract without changing the
-`golden-path/v1` epoch, the report-only enforcement boundary, or repository
-ownership of native dependency graphs, release units, manifests, locks, and
-canonical quality CI.
+Stable patch implementation for the `2026.08.5` Developer Tooling Standard.
+It corrects adapter availability and root-total routine PR budget semantics
+without changing the `golden-path/v1` epoch, serialized dependency schemas,
+report-only enforcement, or repository ownership boundaries.
 
-Boundary classification: unreleased — corrected in place.
-
-The dependency implementation was completed as one v1 contract before its
-first tooling release. No intermediate dependency wire shape, migration,
-dual-reader, mixed-version rollout, or compatibility adapter is published.
-The organization standard's incomplete `2026.08.3` observation shape remains
-immutable; `2026.08.4` is the authoritative bounded correction imported here.
+Boundary classification: released — `1.5.0` remains an immutable distributed
+implementation of Standard `2026.08.4`; this correction is published as a new
+patch release and does not rewrite prior assets.
 
 ## Outcome
 
-- `golden-path dependency check` performs semantic, read-only validation with
-  stable exit meanings: `0` aligned, `1` reviewable policy drift, `2`
-  repository declaration/configuration error, and `3` tooling failure.
-- `dependency preview` and its `compile` alias produce a deterministic candidate
-  and may write only to an explicitly selected separate empty staging
-  directory. They never mutate the source repository.
-- Root bindings reference existing `.github/golden-path-native-roots.yaml` IDs
-  and repository-owned `.github/release-units.json` IDs. The compiler neither
-  creates release units nor infers impact from component paths.
-- Canonical gates are typed references to repository `just ci` and optional
-  GitHub Actions workflow/job evidence. Structural conformance verifies those
-  references and never re-executes repository `just ci`.
-- The default routine PR budget is three per classified root. A root override
-  requires a positive value plus a reason, owner, and review date. Unknown or
-  unmatched surfaces stay `pending-classification` with a compiled budget of
-  zero.
-- Existing secure Dependabot routers are preserved. Where a `main` release
-  branch and `dev` integration branch differ, the candidate conditionally emits
-  a guarded same-repository Dependabot security router independent of routine
-  budget findings.
-- Explicit Dependabot/Renovate manager overlap is rejected. No central approval
-  queue, CI command registry, hand-maintained package map, dummy manifest, or
-  second dependency manager is introduced.
-- The 1.5.0 compiler implements the organization-default Dependabot adapter.
-  A repository that explicitly selects Renovate receives configuration exit
-  `2`; it is never silently interpreted through Dependabot semantics.
-- Sealed observations bind observation time, query scope, repository/default
-  branch identity, PR refs and checks, alerts, native-manager evidence, source
-  identity, and SHA-256. Organization reports retain that identity and remain
-  distinct from synthetic compiler fixtures.
-- Three synthetic repository fixtures cover a polyglot multi-unit repository,
-  a package-workspace publisher, and a single OCI service. These fixtures prove
-  compiler behavior only; they are not live organization or pilot evidence.
-- New bootstrap repositories start routine Dependabot lanes at zero with an
-  empty root-binding policy. Repository owners must classify actual native
-  roots before enabling a routine budget. Security handling is not coupled to
-  that routine state.
+- A native root that resolves to more than one dependency-automation adapter
+  ecosystem is a configuration error with exit `2`. Disjoint ecosystems may
+  share a repository-relative path only as separate existing native roots.
+- The compiler therefore applies the default or overridden routine PR budget
+  once per native root instead of multiplying it across adapter blocks.
+- The deterministic synthetic test covers a root that combines Go and Rust and
+  proves the exact configuration-error boundary.
+- Dependabot remains the only implemented adapter. Explicit `adapter: renovate`
+  still exits `2` and is never interpreted as Dependabot; Standard `2026.08.5`
+  now states that implementation precondition explicitly.
+- Native roots, `.github/release-units.json`, native manifests and locks,
+  repository-owned `just ci`, and canonical caller workflows remain untouched.
+- No package-level map, dummy manifest, component-path impact inference,
+  central CI registry, duplicate dependency manager, or central approval queue
+  is introduced.
+- `pending-classification` continues to stop only the affected routine root.
+  Security visibility, fallback ownership, and conditional routing remain
+  independent from routine budget or grouping.
+- Central conformance remains checker-only and does not execute repository
+  `just ci`. Synthetic fixtures remain distinct from live pilot evidence.
 
 ## Compatibility
 
-- Standard: `2026.08.4` (`preferred`)
+- Standard: `2026.08.5` (`preferred`)
 - Contract: `golden-path/v1`
-- Tooling and asset bundle: `1.5.0`
+- Tooling and asset bundle: `1.5.1`
 - Dependency policy: `golden-path-dependency-policy/v1`
 - Dependency defers: `golden-path-dependency-defers/v1`
 - Dependency observation: `golden-path-dependency-observation/v1`
@@ -67,46 +45,45 @@ immutable; `2026.08.4` is the authoritative bounded correction imported here.
 - Release manifest: `golden-path-release-manifest/v2`
 - Enforcement: `report-only`
 
-The `2026.08.4` snapshot is bound to organization-policy source commit
-`416dec3053befbc5f54371bbb51950dd5cdee305`, source tree
-`61b248457e0f2210da3acc4dd8138350bcee270e`, catalog digest
-`sha256:ebe93eec9b095e8d6763207ffcac12b9836eb6bae366084a9f98d2cdbb4fddd9`,
+The `2026.08.5` snapshot is bound to organization-policy source commit
+`631b0adb4ef605ed973a65b58180daf31b47b718`, source tree
+`fad6a8213ac8a8ba718a2ff70dfe0c04c289f8c6`, catalog digest
+`sha256:9e37b6c777206dc8a021102b9ff461eca55763d1c9f9b829a60c11e10091f55e`,
 and aggregate digest
-`sha256:55cc033ca9df35837c6b5f2b7424128d6899cab02978ae90db8595538ee0f881`.
-The retained August 4 tooling cutoff is unchanged because external tool and
-runtime selections did not move. The August 9 source-integrity record binds the
-current 1.5.0 lock and template bytes without rewriting earlier evidence.
+`sha256:1b96dc8239eaf5c22bc3f3006555a94a5c9a818b74b9658a87756c326a4ac1cd`.
+The retained August 4 tooling cutoff is unchanged because external tools and
+runtime selections did not move. The new source-integrity record binds the
+`1.5.1` template bundle without altering historical records.
 
-## Upgrade from 1.4.0
+## Upgrade from 1.5.0
 
-1. Verify the exact 1.5.0 release manifest, checksums, archive, source commit,
+1. Verify the exact `1.5.1` release manifest, checksums, archive, source commit,
    tag, release workflow, and GitHub artifact attestations.
-2. Run the ordinary Golden Path adoption or upgrade preview into a separate
-   empty candidate directory. Preserve repository-owned manifests, locks,
-   native roots, release units, Dependabot configuration, and CI.
-3. Add a repository-owned dependency policy only from confirmed repository
-   facts. Leave an unclear routine root pending with budget zero; do not invent
-   release units or package mappings.
-4. Run `golden-path dependency preview` and review its separate staged output.
-   Apply only the approved repository-owned diff.
-5. Run the repository's `just ci` once in repository CI and run structural
-   conformance separately. The shared conformance workflow does not run it.
+2. Run the ordinary upgrade preview into a separate empty candidate directory.
+   Existing valid single-ecosystem roots require no repository-fact changes.
+3. If one native root contains profiles that resolve to multiple adapter
+   ecosystems, split them into separate existing native-root IDs. The roots may
+   retain the same path; do not create package mappings or release units.
+4. Preserve repository-owned manifests, locks, release units, dependency
+   configuration, canonical commands, caller workflows, and security PRs.
+5. Run repository `just ci` once through repository CI and structural
+   conformance separately.
 
-No durable state or production runtime migration is required. Existing 1.4.0
-consumers may remain on their immutable release until their normal maintenance
-window; a central locator change does not mutate them.
+No durable state, production runtime, wire contract, or stored observation
+migration is required. Consumers may remain on immutable `1.5.0` with Standard
+`2026.08.4` until their normal maintenance window.
 
 ## Rollback
 
-Restore the exact 1.4.0 managed Golden Path files and dependency policy/adapter
-changes from repository history. Keep native manifests, locks, release units,
+Restore the exact `1.5.0` managed Golden Path files only together with its
+`2026.08.4` standard identity. Keep native manifests, locks, release units,
 runtime state, durable data, security alerts, and independent security PRs
-untouched. Never move the `v1.4.0` or `v1.5.0` tag or replace published assets.
+untouched. Never move the `v1.5.0` or `v1.5.1` tag or replace published assets.
 
 ## Evidence boundary
 
-Local and synthetic tests prove deterministic compilation, schema validation,
-staging safety, and checker semantics. They do not prove GitHub settings,
-organization-wide queue state, live alerts, pilot repository CI, release
-publication, deployment, production capacity, or a weekly operating cycle.
+Local and synthetic tests prove deterministic compilation, configuration exit
+semantics, schema validation, staging safety, and checker behavior. They do not
+prove organization-wide queue state, live alerts, pilot repository CI, release
+publication, production promotion, freeze exit, or a complete weekly cycle.
 Those observations require separately source-bound live evidence.

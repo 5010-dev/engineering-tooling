@@ -60,7 +60,7 @@ func Evaluate(root string) Evaluation {
 		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", message)
 	}
 	if policy.Adapter != "dependabot" {
-		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", "The 1.5.0 compiler supports the default Dependabot adapter; a Renovate selection must not be interpreted as Dependabot configuration.")
+		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", "The 1.5.1 compiler supports the default Dependabot adapter; a Renovate selection must not be interpreted as Dependabot configuration.")
 	}
 	metadata, err := loadMetadataInput(root)
 	if err != nil {
@@ -108,12 +108,16 @@ func Evaluate(root string) Evaluation {
 		if !present {
 			binding = RootBinding{NativeRootRef: nativeRoot.ID, ClassificationState: "pending-classification", Reason: "root has no dependency policy binding"}
 		}
+		ecosystems := ecosystemsForProfiles(nativeRoot.Profiles)
+		if len(ecosystems) > 1 {
+			return configurationEvaluation(result, ".github/golden-path-native-roots.yaml", "Native root "+nativeRoot.ID+" resolves to multiple adapter ecosystems ("+strings.Join(ecosystems, ", ")+"); declare separate existing native roots, which may share the same path.")
+		}
 		effective, finding := compileRoot(root, nativeRoot, binding, policy.Defaults, units)
 		if finding != nil {
 			return configurationEvaluation(result, finding.Path, finding.Message)
 		}
 		result.Roots = append(result.Roots, effective)
-		for _, ecosystem := range ecosystemsForProfiles(nativeRoot.Profiles) {
+		for _, ecosystem := range ecosystems {
 			surfaces = append(surfaces, rootSurface{
 				RootID: nativeRoot.ID, Ecosystem: ecosystem, Directory: dependabotDirectory(nativeRoot.Path),
 				TargetBranch: effective.ReleaseFlow.IntegrationBranch, Budget: effective.RoutinePRBudget,

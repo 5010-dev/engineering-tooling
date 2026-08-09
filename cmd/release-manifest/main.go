@@ -256,7 +256,7 @@ func run(arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("read tooling cutoff: %w", err)
 	}
-	_, sourceIntegrityData, err := matchingEvidence(root, distRoot, "release/source-integrity-2026-08-09.json", "source-integrity.json")
+	_, sourceIntegrityData, err := matchingEvidence(root, distRoot, "release/source-integrity-2026-08-09-1.5.1.json", "source-integrity.json")
 	if err != nil {
 		return fmt.Errorf("read source integrity: %w", err)
 	}
@@ -264,7 +264,7 @@ func run(arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("bind compatibility manifest: %w", err)
 	}
-	snapshotFile, snapshotData, err := matchingEvidence(root, distRoot, "standards/snapshots/2026.08.4/manifest.json", "standard-snapshot-manifest.json")
+	snapshotFile, snapshotData, err := matchingEvidence(root, distRoot, "standards/snapshots/2026.08.5/manifest.json", "standard-snapshot-manifest.json")
 	if err != nil {
 		return fmt.Errorf("bind standard snapshot manifest: %w", err)
 	}
@@ -429,11 +429,11 @@ func matchingEvidence(sourceRoot, distRoot *os.Root, sourceName, distName string
 func collectSchemaEvidence(sourceRoot, distRoot *os.Root) ([]schemaEvidence, error) {
 	assets := []schemaAsset{
 		{ID: "golden-path-checker-compatibility/v1", SourceName: "compatibility/golden-path-checker-compatibility-v1.schema.json", DistName: "golden-path-checker-compatibility-v1.schema.json"},
-		{ID: "golden-path-dependency-candidate/v1", SourceName: "standards/snapshots/2026.08.4/schemas/golden-path-dependency-candidate-v1.schema.json", DistName: "golden-path-dependency-candidate-v1.schema.json"},
-		{ID: "golden-path-dependency-defers/v1", SourceName: "standards/snapshots/2026.08.4/schemas/golden-path-dependency-defers-v1.schema.json", DistName: "golden-path-dependency-defers-v1.schema.json"},
-		{ID: "golden-path-dependency-observation/v1", SourceName: "standards/snapshots/2026.08.4/schemas/golden-path-dependency-observation-v1.schema.json", DistName: "golden-path-dependency-observation-v1.schema.json"},
-		{ID: "golden-path-dependency-policy/v1", SourceName: "standards/snapshots/2026.08.4/schemas/golden-path-dependency-policy-v1.schema.json", DistName: "golden-path-dependency-policy-v1.schema.json"},
-		{ID: "golden-path-dependency-report/v1", SourceName: "standards/snapshots/2026.08.4/schemas/golden-path-dependency-report-v1.schema.json", DistName: "golden-path-dependency-report-v1.schema.json"},
+		{ID: "golden-path-dependency-candidate/v1", SourceName: "standards/snapshots/2026.08.5/schemas/golden-path-dependency-candidate-v1.schema.json", DistName: "golden-path-dependency-candidate-v1.schema.json"},
+		{ID: "golden-path-dependency-defers/v1", SourceName: "standards/snapshots/2026.08.5/schemas/golden-path-dependency-defers-v1.schema.json", DistName: "golden-path-dependency-defers-v1.schema.json"},
+		{ID: "golden-path-dependency-observation/v1", SourceName: "standards/snapshots/2026.08.5/schemas/golden-path-dependency-observation-v1.schema.json", DistName: "golden-path-dependency-observation-v1.schema.json"},
+		{ID: "golden-path-dependency-policy/v1", SourceName: "standards/snapshots/2026.08.5/schemas/golden-path-dependency-policy-v1.schema.json", DistName: "golden-path-dependency-policy-v1.schema.json"},
+		{ID: "golden-path-dependency-report/v1", SourceName: "standards/snapshots/2026.08.5/schemas/golden-path-dependency-report-v1.schema.json", DistName: "golden-path-dependency-report-v1.schema.json"},
 		{ID: "golden-path-generated-assets/v1", SourceName: "generator/schemas/golden-path-generated-assets-v1.schema.json", DistName: "golden-path-generated-assets-v1.schema.json"},
 		{ID: "golden-path-generator-request/v1", SourceName: "generator/schemas/golden-path-generator-request-v1.schema.json", DistName: "golden-path-generator-request-v1.schema.json"},
 		{ID: "golden-path-materialization-plan/v1", SourceName: "generator/schemas/golden-path-materialization-plan-v1.schema.json", DistName: "golden-path-materialization-plan-v1.schema.json"},
