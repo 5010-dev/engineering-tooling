@@ -148,6 +148,29 @@ func TestRenovateSelectionIsNotInterpretedAsDependabot(t *testing.T) {
 	}
 }
 
+func TestOneNativeRootCannotMultiplyBudgetAcrossAdapterEcosystems(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	path := filepath.Join(root, ".github", "golden-path-native-roots.yaml")
+	// #nosec G304 -- path is inside a test-owned temporary fixture.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte("profiles: [go]"), []byte("profiles: [go, rust]"), 1)
+	// #nosec G703 -- path is inside a test-owned temporary fixture.
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 2 || evaluation.Complete || len(evaluation.Findings) != 1 {
+		t.Fatalf("multi-ecosystem root = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+	finding := evaluation.Findings[0]
+	if finding.Path != ".github/golden-path-native-roots.yaml" || !strings.Contains(finding.Message, "multiple adapter ecosystems (cargo, gomod)") || !strings.Contains(finding.Message, "separate existing native roots") {
+		t.Fatalf("multi-ecosystem root finding = %+v", finding)
+	}
+}
+
 func TestDuplicateRenovateManagerFailsConformance(t *testing.T) {
 	root := copyFixture(t, "single-service-oci")
 	// #nosec G703 -- path is inside a test-owned temporary fixture.

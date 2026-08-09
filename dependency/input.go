@@ -103,7 +103,7 @@ func decodeYAML(data []byte, destination any) ([]byte, error) {
 }
 
 func validateSchema(name string, data []byte) error {
-	schemaBytes, err := standards.Snapshots.ReadFile("snapshots/2026.08.4/schemas/" + name)
+	schemaBytes, err := standards.Snapshots.ReadFile("snapshots/2026.08.5/schemas/" + name)
 	if err != nil {
 		return fmt.Errorf("read bundled schema: %w", err)
 	}

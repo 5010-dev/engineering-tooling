@@ -1,6 +1,6 @@
 {
   "schemaVersion": "golden-path-checker-compatibility/v1",
-  "checkerVersion": "1.5.0",
+  "checkerVersion": "1.5.1",
   "lifecycle": "stable",
   "enforcement": [
     "report-only"
@@ -8,7 +8,7 @@
   "exceptionExpiryWarningDays": 30,
   "standards": [
     {
-      "standardVersion": "2026.08.4",
+      "standardVersion": "2026.08.5",
       "contractVersion": "golden-path/v1",
       "schemaVersions": [
         "golden-path-metadata/v1",
@@ -23,10 +23,10 @@
         "golden-path-rule-catalog/v1",
         "runtime-support/v1"
       ],
-      "snapshot": "standards/snapshots/2026.08.4/manifest.json",
-      "sourceCommit": "416dec3053befbc5f54371bbb51950dd5cdee305",
-      "catalogDigest": "sha256:ebe93eec9b095e8d6763207ffcac12b9836eb6bae366084a9f98d2cdbb4fddd9",
-      "snapshotAggregateDigest": "sha256:55cc033ca9df35837c6b5f2b7424128d6899cab02978ae90db8595538ee0f881"
+      "snapshot": "standards/snapshots/2026.08.5/manifest.json",
+      "sourceCommit": "631b0adb4ef605ed973a65b58180daf31b47b718",
+      "catalogDigest": "sha256:9e37b6c777206dc8a021102b9ff461eca55763d1c9f9b829a60c11e10091f55e",
+      "snapshotAggregateDigest": "sha256:1b96dc8239eaf5c22bc3f3006555a94a5c9a818b74b9658a87756c326a4ac1cd"
     }
   ],
   "runtimeSelections": [
