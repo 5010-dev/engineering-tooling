@@ -374,6 +374,7 @@ func validateGate(root string, gate GateReference) error {
 
 func justRecipeDefined(root, entrypoint, recipe string) (bool, error) {
 	visited := map[string]bool{}
+	recipeFound := false
 	entrypoint = filepath.ToSlash(filepath.Clean(entrypoint))
 	scheduled := map[string]bool{entrypoint: true}
 	queue := []string{entrypoint}
@@ -402,7 +403,8 @@ func justRecipeDefined(root, entrypoint, recipe string) (bool, error) {
 
 		for _, match := range justRecipePattern.FindAllSubmatch(data, -1) {
 			if string(match[1]) == recipe {
-				return true, nil
+				recipeFound = true
+				break
 			}
 		}
 		for _, match := range justImportPattern.FindAllSubmatch(data, -1) {
@@ -423,7 +425,7 @@ func justRecipeDefined(root, entrypoint, recipe string) (bool, error) {
 			}
 		}
 	}
-	return false, nil
+	return recipeFound, nil
 }
 
 func securityClosureReferenceFinding(root string, route SecurityRoute, secondary string) (*Finding, error) {
