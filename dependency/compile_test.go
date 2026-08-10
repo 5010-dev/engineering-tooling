@@ -185,6 +185,25 @@ func TestSecurityClosureReferenceResolvesImportedCanonicalCI(t *testing.T) {
 	}
 }
 
+func TestSecurityClosureReferenceAcceptsSharedJustSyntax(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	justDirectory := filepath.Join(root, "just")
+	if err := os.MkdirAll(justDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("import 'just/quality.just'\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(justDirectory, "quality.just"), []byte("@ci:\r\n    @echo synthetic-service\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 0 || !evaluation.Complete {
+		t.Fatalf("shared Just syntax = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
 func TestSecurityClosureReferenceRejectsMissingRequiredJustImport(t *testing.T) {
 	root := copyFixture(t, "single-service-oci")
 	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("import \"just/missing.just\"\n"), 0o600); err != nil {
@@ -206,6 +225,49 @@ func TestSecurityClosureReferenceValidatesRequiredImportsAfterFindingCI(t *testi
 	evaluation := Evaluate(root)
 	if evaluation.ExitCode != 2 || evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-012", "error") {
 		t.Fatalf("local gate with missing required import = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
+func TestSecurityClosureReferenceValidatesCRLFImportsAfterFindingCI(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("import \"just/missing.just\"\r\n\r\nci:\r\n    @echo synthetic-service\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 2 || evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-012", "error") {
+		t.Fatalf("CRLF local gate with missing required import = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
+func TestSecurityClosureReferenceRejectsAbsoluteJustImport(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	justDirectory := filepath.Join(root, "just")
+	if err := os.MkdirAll(justDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("import \"/just/quality.just\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(justDirectory, "quality.just"), []byte("ci:\n    @echo synthetic-service\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 2 || evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-012", "error") {
+		t.Fatalf("absolute imported gate = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
+func TestSecurityClosureReferenceIgnoresRecipeBodyImportCommand(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("ci:\n    import \"just/missing.just\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 0 || !evaluation.Complete {
+		t.Fatalf("recipe-body import command = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
 	}
 }
 

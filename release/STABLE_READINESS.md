@@ -30,10 +30,13 @@ The import-resolution correction must be published only as a new immutable
 
 1. Regression tests prove that a root justfile can expose canonical `ci`
    through bounded repository-relative imports and that a missing required
-   import fails as configuration error.
-2. The modified checker evaluates the real Design System pilot policy as
-   complete while retaining its two routine surfaces as
-   `pending-classification`.
+   import fails as configuration error for LF and CRLF input. The resolver
+   shares the command checker's handling of legal quoted imports and quiet
+   recipes, rejects absolute imports, and ignores recipe-body commands.
+2. The modified checker reproduces the real Design System `dev` policy's
+   pre-candidate closure-reference finding; a disposable closure-declaring
+   candidate shape evaluates complete while retaining its two routine surfaces
+   as `pending-classification`.
 3. `just ci` succeeds from a clean checkout of the exact candidate commit.
 4. Existing compiler, observation, report, generator, checker, and release
    tests remain green.
