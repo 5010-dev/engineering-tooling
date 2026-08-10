@@ -165,7 +165,7 @@ jobs:
             dist/golden-path-source-integrity-v1.schema.json
           cp release/golden-path-tooling-cutoff-v1.schema.json \
             dist/golden-path-tooling-cutoff-v1.schema.json
-          cp release/source-integrity-2026-08-10-1.6.0.json dist/source-integrity.json
+          cp release/source-integrity-2026-08-10-1.6.1.json dist/source-integrity.json
           cp release/tooling-cutoff-2026-08-04.json dist/tooling-cutoff.json
           cp generator/schemas/*.json dist/
           cp standards/snapshots/2026.08.6/schemas/golden-path-dependency-*.schema.json dist/

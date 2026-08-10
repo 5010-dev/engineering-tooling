@@ -166,6 +166,49 @@ func TestInvalidSecurityClosureReferenceIsConfigurationError(t *testing.T) {
 	}
 }
 
+func TestSecurityClosureReferenceResolvesImportedCanonicalCI(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	justDirectory := filepath.Join(root, "just")
+	if err := os.MkdirAll(justDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("import \"just/quality.just\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(justDirectory, "quality.just"), []byte("ci:\n    @echo synthetic-service\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 0 || !evaluation.Complete {
+		t.Fatalf("imported canonical gate = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
+func TestSecurityClosureReferenceRejectsMissingRequiredJustImport(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("import \"just/missing.just\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 2 || evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-012", "error") {
+		t.Fatalf("missing imported gate = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
+func TestSecurityClosureReferenceRejectsJustVariableNamedCI(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte("ci := \"not-a-recipe\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 2 || evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-012", "error") {
+		t.Fatalf("variable-only gate = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
 func TestOmittedDependabotLimitUsesNativeDefaultInsteadOfFreeze(t *testing.T) {
 	root := copyFixture(t, "single-service-oci")
 	path := filepath.Join(root, ".github", "dependabot.yml")

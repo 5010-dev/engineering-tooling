@@ -164,7 +164,7 @@ jobs:
         id: golden-path-release
         shell: bash
         env:
-          CHECKER_VERSION: 1.6.0
+          CHECKER_VERSION: 1.6.1
           GH_TOKEN: ${{ github.token }}
           MISE_CACHE_DIR: ${{ runner.temp }}/golden-path-verifier/cache
           MISE_CEILING_PATHS: ${{ runner.temp }}/golden-path-verifier
@@ -246,7 +246,7 @@ jobs:
         id: golden-path-candidate
         shell: bash
         env:
-          CHECKER_VERSION: 1.6.0
+          CHECKER_VERSION: 1.6.1
         run: |
           set -euo pipefail
           test "$(go env GOVERSION)" = 'go1.26.5'

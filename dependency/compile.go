@@ -37,8 +37,11 @@ type rootSurface struct {
 }
 
 var nonIdentifier = regexp.MustCompile(`[^a-z0-9]+`)
+var justRecipePattern = regexp.MustCompile(`(?m)^([a-zA-Z_][a-zA-Z0-9_-]*)(?:[\t ]+[^:\r\n]*)?:($|[^=])`)
+var justImportPattern = regexp.MustCompile(`(?m)^[\t ]*import(\?)?[\t ]+"([^"\r\n]+)"[\t ]*(?:#.*)?$`)
 
 const dependabotNativeDefaultPRBudget = 5
+const maxJustImportFiles = 128
 
 // Evaluate validates repository facts and compiles bounded adapter output. It
 // never executes the referenced canonical gate or mutates the repository.
@@ -60,7 +63,7 @@ func Evaluate(root string) Evaluation {
 		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", message)
 	}
 	if policy.Adapter != "dependabot" {
-		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", "The 1.6.0 compiler supports the default Dependabot adapter; a Renovate selection must not be interpreted as Dependabot configuration.")
+		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", "This compiler release supports the default Dependabot adapter; a Renovate selection must not be interpreted as Dependabot configuration.")
 	}
 	metadata, err := loadMetadataInput(root)
 	if err != nil {
@@ -347,16 +350,12 @@ func validateGate(root string, gate GateReference) error {
 	if workingDirectory != "." {
 		justPath = workingDirectory + "/justfile"
 	}
-	data, err := readRegular(root, justPath)
+	defined, err := justRecipeDefined(root, justPath, "ci")
 	if err != nil {
-		alternate := strings.TrimSuffix(justPath, "justfile") + "Justfile"
-		data, err = readRegular(root, alternate)
-		if err != nil {
-			return fmt.Errorf("referenced justfile is unavailable")
-		}
+		return err
 	}
-	if !regexp.MustCompile(`(?m)^ci(?:\s+[^:]*)?:`).Match(data) {
-		return fmt.Errorf("referenced justfile does not define recipe ci")
+	if !defined {
+		return fmt.Errorf("referenced justfile import graph does not define recipe ci")
 	}
 	for _, evidence := range gate.CIEvidence {
 		workflow, err := readRegular(root, evidence.Workflow)
@@ -371,6 +370,60 @@ func validateGate(root string, gate GateReference) error {
 		}
 	}
 	return nil
+}
+
+func justRecipeDefined(root, entrypoint, recipe string) (bool, error) {
+	visited := map[string]bool{}
+	entrypoint = filepath.ToSlash(filepath.Clean(entrypoint))
+	scheduled := map[string]bool{entrypoint: true}
+	queue := []string{entrypoint}
+	for len(queue) > 0 {
+		path := queue[0]
+		queue = queue[1:]
+		if visited[path] {
+			continue
+		}
+		if len(visited) >= maxJustImportFiles {
+			return false, fmt.Errorf("referenced justfile import graph exceeds %d files", maxJustImportFiles)
+		}
+		visited[path] = true
+
+		data, err := readRegular(root, path)
+		if err != nil && path == entrypoint {
+			alternate := strings.TrimSuffix(path, "justfile") + "Justfile"
+			data, err = readRegular(root, alternate)
+			if err == nil {
+				path = alternate
+			}
+		}
+		if err != nil {
+			return false, fmt.Errorf("referenced justfile %s is unavailable", path)
+		}
+
+		for _, match := range justRecipePattern.FindAllSubmatch(data, -1) {
+			if string(match[1]) == recipe {
+				return true, nil
+			}
+		}
+		for _, match := range justImportPattern.FindAllSubmatch(data, -1) {
+			optional := len(match[1]) > 0
+			importPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(path), string(match[2]))))
+			if _, importErr := readRegular(root, importPath); importErr != nil {
+				if optional && errors.Is(importErr, errInputNotFound) {
+					continue
+				}
+				return false, fmt.Errorf("referenced justfile import %s is unavailable", importPath)
+			}
+			if !scheduled[importPath] {
+				if len(scheduled) >= maxJustImportFiles {
+					return false, fmt.Errorf("referenced justfile import graph exceeds %d files", maxJustImportFiles)
+				}
+				scheduled[importPath] = true
+				queue = append(queue, importPath)
+			}
+		}
+	}
+	return false, nil
 }
 
 func securityClosureReferenceFinding(root string, route SecurityRoute, secondary string) (*Finding, error) {

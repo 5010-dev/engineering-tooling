@@ -43,7 +43,7 @@ package-check source_commit:
     cp release/golden-path-release-manifest-v2.schema.json dist/; \
     cp release/golden-path-source-integrity-v1.schema.json dist/; \
     cp release/golden-path-tooling-cutoff-v1.schema.json dist/; \
-    cp release/source-integrity-2026-08-10-1.6.0.json dist/source-integrity.json; \
+    cp release/source-integrity-2026-08-10-1.6.1.json dist/source-integrity.json; \
     cp release/tooling-cutoff-2026-08-04.json dist/tooling-cutoff.json; \
     cp generator/schemas/*.json dist/; \
     cp standards/snapshots/2026.08.6/schemas/golden-path-dependency-*.schema.json dist/; \
