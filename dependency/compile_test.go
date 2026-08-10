@@ -110,6 +110,43 @@ func TestMissingSecurityClosureReferenceFailsWithoutRemovingSecurityRouter(t *te
 	}
 }
 
+func TestSecurityClosureReferenceIsNotEvaluatedWithoutDependencyAutomationCapability(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	metadataPath := filepath.Join(root, ".github", "golden-path.yaml")
+	// #nosec G304 -- path is inside a test-owned temporary fixture.
+	metadata, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata = bytes.Replace(metadata, []byte(", dependency-automation"), nil, 1)
+	// #nosec G703 -- path is inside the test-owned temporary fixture.
+	if err := os.WriteFile(metadataPath, metadata, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	policyPath := filepath.Join(root, ".github", "golden-path-dependency-policy.yaml")
+	// #nosec G304 -- path is inside a test-owned temporary fixture.
+	policy, err := os.ReadFile(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy = bytes.Replace(policy, []byte("      ciEvidence:\n        - {kind: github-actions-job, workflow: .github/workflows/security-remediation.yml, job: closure}\n"), nil, 1)
+	// #nosec G703 -- path is inside the test-owned temporary fixture.
+	if err := os.WriteFile(policyPath, policy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 0 || !evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-005", "skip") {
+		t.Fatalf("capability-less evaluation = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+	for _, finding := range evaluation.Findings {
+		if finding.RuleID == "DT-DEP-012" {
+			t.Fatalf("inapplicable security closure finding = %+v", evaluation.Findings)
+		}
+	}
+}
+
 func TestInvalidSecurityClosureReferenceIsConfigurationError(t *testing.T) {
 	root := copyFixture(t, "single-service-oci")
 	path := filepath.Join(root, ".github", "golden-path-dependency-policy.yaml")

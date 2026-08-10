@@ -62,11 +62,6 @@ func Evaluate(root string) Evaluation {
 	if policy.Adapter != "dependabot" {
 		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", "The 1.6.0 compiler supports the default Dependabot adapter; a Renovate selection must not be interpreted as Dependabot configuration.")
 	}
-	if finding, err := securityClosureReferenceFinding(root, policy.Defaults.SecurityFallback, "defaults"); err != nil {
-		return configurationEvaluationForRule(result, "DT-DEP-012", ".github/golden-path-dependency-policy.yaml", "Default security closure reference is invalid: "+err.Error())
-	} else if finding != nil {
-		result.Findings = append(result.Findings, *finding)
-	}
 	metadata, err := loadMetadataInput(root)
 	if err != nil {
 		return configurationEvaluation(result, ".github/golden-path.yaml", "Golden Path metadata is unavailable: "+err.Error())
@@ -78,6 +73,11 @@ func Evaluate(root string) Evaluation {
 			Message: "Dependency automation capability is not declared.", Remediation: "No dependency policy is required for this repository.",
 		})
 		return result
+	}
+	if finding, err := securityClosureReferenceFinding(root, policy.Defaults.SecurityFallback, "defaults"); err != nil {
+		return configurationEvaluationForRule(result, "DT-DEP-012", ".github/golden-path-dependency-policy.yaml", "Default security closure reference is invalid: "+err.Error())
+	} else if finding != nil {
+		result.Findings = append(result.Findings, *finding)
 	}
 	nativeRoots, explicitRoots, err := loadNativeRootsInput(root)
 	if err != nil {
