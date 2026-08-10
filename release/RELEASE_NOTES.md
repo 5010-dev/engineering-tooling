@@ -13,15 +13,17 @@ remain unchanged.
 
 - Canonical `just ci` validation follows bounded, repository-relative Just
   imports instead of requiring the recipe to be declared directly in the root
-  justfile.
+  justfile. The resolver and command checker share the same lexical handling
+  for LF/CRLF input, single- or double-quoted imports, escaped double-quoted
+  paths, optional imports, and quiet recipe headers.
 - Required imports that are missing, escape the repository, or exceed the
   bounded import graph remain configuration errors. Optional missing imports
   remain optional.
 - The resolver parses references only. It does not execute Just, repository CI,
   or the security closure job.
-- A regression fixture covers the imported canonical gate used by the Design
-  System pilot, and another fixture proves that a missing required import fails
-  closed.
+- Regression fixtures cover the imported canonical gate used by the Design
+  System candidate shape, CRLF missing-import failure, legal quoted imports,
+  quiet recipes, absolute-path rejection, and recipe-body command isolation.
 - Existing native roots, release units, native manifests and locks, routine
   budgets, security routing, conditional closure evidence, and
   `pending-classification` behavior remain unchanged.

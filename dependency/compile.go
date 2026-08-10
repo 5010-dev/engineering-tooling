@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/5010-dev/engineering-tooling/internal/justsyntax"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,8 +39,6 @@ type rootSurface struct {
 }
 
 var nonIdentifier = regexp.MustCompile(`[^a-z0-9]+`)
-var justRecipePattern = regexp.MustCompile(`(?m)^([a-zA-Z_][a-zA-Z0-9_-]*)(?:[\t ]+[^:\r\n]*)?:($|[^=])`)
-var justImportPattern = regexp.MustCompile(`(?m)^[\t ]*import(\?)?[\t ]+"([^"\r\n]+)"[\t ]*(?:#.*)?$`)
 
 const dependabotNativeDefaultPRBudget = 5
 const maxJustImportFiles = 128
@@ -401,17 +401,17 @@ func justRecipeDefined(root, entrypoint, recipe string) (bool, error) {
 			return false, fmt.Errorf("referenced justfile %s is unavailable", path)
 		}
 
-		for _, match := range justRecipePattern.FindAllSubmatch(data, -1) {
-			if string(match[1]) == recipe {
-				recipeFound = true
-				break
-			}
+		if justsyntax.Recipes(string(data))[recipe] {
+			recipeFound = true
 		}
-		for _, match := range justImportPattern.FindAllSubmatch(data, -1) {
-			optional := len(match[1]) > 0
-			importPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(path), string(match[2]))))
+		for _, imported := range justsyntax.Imports(string(data)) {
+			importInput := filepath.FromSlash(imported.Path)
+			if filepath.IsAbs(importInput) {
+				return false, fmt.Errorf("referenced justfile import %s escapes the repository", imported.Path)
+			}
+			importPath := filepath.ToSlash(filepath.Clean(filepath.Join(filepath.Dir(path), importInput)))
 			if _, importErr := readRegular(root, importPath); importErr != nil {
-				if optional && errors.Is(importErr, errInputNotFound) {
+				if imported.Optional && errors.Is(importErr, errInputNotFound) {
 					continue
 				}
 				return false, fmt.Errorf("referenced justfile import %s is unavailable", importPath)
