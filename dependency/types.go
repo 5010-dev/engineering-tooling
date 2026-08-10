@@ -7,9 +7,9 @@ import "time"
 const (
 	PolicySchema      = "golden-path-dependency-policy/v1"
 	DefersSchema      = "golden-path-dependency-defers/v1"
-	ObservationSchema = "golden-path-dependency-observation/v1"
+	ObservationSchema = "golden-path-dependency-observation/v2"
 	CandidateSchema   = "golden-path-dependency-candidate/v1"
-	ReportSchema      = "golden-path-dependency-report/v1"
+	ReportSchema      = "golden-path-dependency-report/v2"
 	DefaultPRBudget   = 3
 )
 
@@ -233,6 +233,7 @@ type ObservedAlert struct {
 	State                     string `json:"state"`
 	Severity                  string `json:"severity"`
 	Dependency                string `json:"dependency"`
+	Relationship              string `json:"relationship"`
 	ManifestPath              string `json:"manifestPath,omitempty"`
 	FixedIn                   string `json:"fixedIn,omitempty"`
 	SecurityUpdatePullRequest string `json:"securityUpdatePullRequest,omitempty"`
@@ -271,18 +272,37 @@ type DeferRecord struct {
 }
 
 type RepositoryReport struct {
-	Repository              string  `json:"repository"`
-	DefaultBranchSHA        string  `json:"defaultBranchSHA"`
-	Applicability           string  `json:"applicability"`
-	ClassifiedRoots         int     `json:"classifiedRoots"`
-	PendingRoots            int     `json:"pendingRoots"`
-	RoutineOpen             int     `json:"routineOpen"`
-	SecurityOpen            int     `json:"securityOpen"`
-	OpenAlerts              int     `json:"openAlerts"`
-	OwnerRoutingCoverage    float64 `json:"ownerRoutingCoverage"`
-	OldestRoutineObservedAt string  `json:"oldestRoutineObservedAt,omitempty"`
-	Deferred                int     `json:"deferred,omitempty"`
-	Stale                   bool    `json:"stale,omitempty"`
+	Repository                string  `json:"repository"`
+	DefaultBranchSHA          string  `json:"defaultBranchSHA"`
+	Applicability             string  `json:"applicability"`
+	ClassifiedRoots           int     `json:"classifiedRoots"`
+	PendingRoots              int     `json:"pendingRoots"`
+	RoutineOpen               int     `json:"routineOpen"`
+	SecurityOpen              int     `json:"securityOpen"`
+	OpenAlerts                int     `json:"openAlerts"`
+	OpenAdvisoryGroups        int     `json:"openAdvisoryGroups"`
+	PartialSecurityAdvisories int     `json:"partialSecurityAdvisories"`
+	OwnerRoutingCoverage      float64 `json:"ownerRoutingCoverage"`
+	OldestRoutineObservedAt   string  `json:"oldestRoutineObservedAt,omitempty"`
+	Deferred                  int     `json:"deferred,omitempty"`
+	Stale                     bool    `json:"stale,omitempty"`
+}
+
+type SecurityAlertInstanceReport struct {
+	Number                    int    `json:"number"`
+	Severity                  string `json:"severity"`
+	Relationship              string `json:"relationship"`
+	ManifestPath              string `json:"manifestPath,omitempty"`
+	FixedIn                   string `json:"fixedIn,omitempty"`
+	SecurityUpdatePullRequest string `json:"securityUpdatePullRequest,omitempty"`
+}
+
+type SecurityAdvisoryReport struct {
+	Repository          string                        `json:"repository"`
+	AdvisoryIdentity    string                        `json:"advisoryIdentity"`
+	Dependency          string                        `json:"dependency"`
+	RemediationCoverage string                        `json:"remediationCoverage"`
+	OpenAlertInstances  []SecurityAlertInstanceReport `json:"openAlertInstances"`
 }
 
 type Report struct {
@@ -294,5 +314,6 @@ type Report struct {
 		Organization string `json:"organization"`
 		Query        string `json:"query"`
 	} `json:"scope"`
-	Repositories []RepositoryReport `json:"repositories"`
+	Repositories       []RepositoryReport       `json:"repositories"`
+	SecurityAdvisories []SecurityAdvisoryReport `json:"securityAdvisories"`
 }

@@ -162,7 +162,7 @@ func TestCheckIsDeterministic(t *testing.T) {
 	}
 	first := Check(options)
 	second := Check(options)
-	if len(first.Findings) != 80 {
+	if len(first.Findings) != 81 {
 		t.Fatalf("finding count = %d, want one per catalog rule", len(first.Findings))
 	}
 	firstJSON, err := RenderJSON(first)
@@ -297,7 +297,7 @@ func TestUnsupportedStandardIsConfigurationError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data = []byte(strings.Replace(string(data), `"2026.08.5"`, `"2026.07"`, 1))
+	data = []byte(strings.Replace(string(data), `"2026.08.6"`, `"2026.07"`, 1))
 	if err := rootFS.WriteFile(".github/golden-path.yaml", data, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1175,10 +1175,10 @@ func TestSnapshotCatalogIdentity(t *testing.T) {
 	if catalog.StandardVersion != StandardVersion {
 		t.Fatalf("standard = %q, want %q", catalog.StandardVersion, StandardVersion)
 	}
-	if len(catalog.Rules) != 80 {
-		t.Fatalf("rule count = %d, want 80", len(catalog.Rules))
+	if len(catalog.Rules) != 81 {
+		t.Fatalf("rule count = %d, want 81", len(catalog.Rules))
 	}
-	const want = "sha256:9e37b6c777206dc8a021102b9ff461eca55763d1c9f9b829a60c11e10091f55e"
+	const want = "sha256:e1dadf8ecb1367bf0b1e85c12600dd4c9dc702c651286ea0d0a678cb5dd802f1"
 	if digest != want {
 		t.Fatalf("catalog digest = %q, want %q", digest, want)
 	}

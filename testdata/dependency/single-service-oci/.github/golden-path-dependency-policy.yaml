@@ -13,6 +13,8 @@ defaults:
     owner: {kind: operational-queue, reference: security-remediation}
     canonicalGate:
       command: {kind: just-recipe, workingDirectory: ., recipe: ci}
+      ciEvidence:
+        - {kind: github-actions-job, workflow: .github/workflows/security-remediation.yml, job: closure}
 rootBindings:
   - nativeRootRef: go-service
     classificationState: classified

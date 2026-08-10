@@ -1,0 +1,271 @@
+{
+  "schemaVersion": "runtime-support/v1",
+  "standardVersion": "2026.08.6",
+  "asOf": "2026-07-30",
+  "profiles": {
+    "node": {
+      "sourceIds": [
+        "node-releases"
+      ],
+      "versions": [
+        {
+          "selector": {
+            "kind": "major",
+            "value": "24"
+          },
+          "label": "Node.js 24 LTS",
+          "upstreamLifecycle": "active",
+          "organizationDisposition": "preferred"
+        },
+        {
+          "selector": {
+            "kind": "major",
+            "value": "22"
+          },
+          "label": "Node.js 22 LTS",
+          "upstreamLifecycle": "maintenance",
+          "organizationDisposition": "supported"
+        },
+        {
+          "selector": {
+            "kind": "major",
+            "value": "26"
+          },
+          "label": "Node.js 26 Current",
+          "upstreamLifecycle": "current",
+          "organizationDisposition": "blocked",
+          "notes": "Evaluation contexts only."
+        },
+        {
+          "selector": {
+            "kind": "range",
+            "value": "<=20"
+          },
+          "label": "Node.js 20 and older",
+          "upstreamLifecycle": "eol",
+          "organizationDisposition": "blocked"
+        }
+      ]
+    },
+    "python": {
+      "sourceIds": [
+        "python-versions",
+        "uv-python-policy"
+      ],
+      "versions": [
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "3.14"
+          },
+          "upstreamLifecycle": "active",
+          "organizationDisposition": "preferred"
+        },
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "3.13"
+          },
+          "upstreamLifecycle": "active",
+          "organizationDisposition": "supported"
+        },
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "3.12"
+          },
+          "upstreamLifecycle": "security",
+          "organizationDisposition": "supported"
+        },
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "3.11"
+          },
+          "upstreamLifecycle": "security",
+          "organizationDisposition": "supported",
+          "supportEndsAt": "2027-10-31"
+        },
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "3.10"
+          },
+          "upstreamLifecycle": "security",
+          "organizationDisposition": "compatibility-only",
+          "supportEndsAt": "2026-10-31"
+        },
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "3.15"
+          },
+          "upstreamLifecycle": "prerelease",
+          "organizationDisposition": "blocked",
+          "notes": "Evaluation contexts only."
+        }
+      ]
+    },
+    "go": {
+      "sourceIds": [
+        "go-releases"
+      ],
+      "versions": [
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "1.26"
+          },
+          "upstreamLifecycle": "active",
+          "organizationDisposition": "preferred"
+        },
+        {
+          "selector": {
+            "kind": "minor",
+            "value": "1.25"
+          },
+          "upstreamLifecycle": "active",
+          "organizationDisposition": "supported"
+        },
+        {
+          "selector": {
+            "kind": "range",
+            "value": "<=1.24"
+          },
+          "upstreamLifecycle": "eol",
+          "organizationDisposition": "blocked"
+        }
+      ],
+      "policy": {
+        "supportedReleaseCount": 2
+      }
+    },
+    "rust": {
+      "sourceIds": [
+        "rust-releases",
+        "rust-toolchains",
+        "cargo-rust-version"
+      ],
+      "versions": [
+        {
+          "selector": {
+            "kind": "channel",
+            "value": "preferred-stable"
+          },
+          "label": "Latest stable selected by the coordinated release manifest",
+          "upstreamLifecycle": "active",
+          "organizationDisposition": "preferred"
+        },
+        {
+          "selector": {
+            "kind": "relative",
+            "value": "n-1-n-2"
+          },
+          "label": "Bounded organization grace after a new stable",
+          "upstreamLifecycle": "eol",
+          "organizationDisposition": "supported",
+          "graceStartedAt": "2026-07-09",
+          "graceEndsAt": "2026-10-07",
+          "notes": "Supported for at most 90 days; this is not an upstream LTS claim."
+        },
+        {
+          "selector": {
+            "kind": "relative",
+            "value": "older-than-n-2"
+          },
+          "upstreamLifecycle": "eol",
+          "organizationDisposition": "blocked"
+        },
+        {
+          "selector": {
+            "kind": "channel",
+            "value": "dated-nightly"
+          },
+          "upstreamLifecycle": "prerelease",
+          "organizationDisposition": "blocked",
+          "notes": "Exact dated nightly is allowed only for an approved conditional lane."
+        }
+      ],
+      "policy": {
+        "graceStableCount": 2,
+        "graceDays": 90
+      }
+    },
+    "zig": {
+      "sourceIds": [
+        "zig-downloads"
+      ],
+      "versions": [
+        {
+          "selector": {
+            "kind": "channel",
+            "value": "latest-tagged-stable"
+          },
+          "label": "Latest tagged stable selected by the coordinated release manifest",
+          "upstreamLifecycle": "active",
+          "organizationDisposition": "preferred"
+        },
+        {
+          "selector": {
+            "kind": "relative",
+            "value": "previous-tagged-stable"
+          },
+          "upstreamLifecycle": "unknown",
+          "organizationDisposition": "compatibility-only",
+          "notes": "Compatibility validation only with an owner and review date."
+        },
+        {
+          "selector": {
+            "kind": "channel",
+            "value": "master-or-nightly"
+          },
+          "upstreamLifecycle": "prerelease",
+          "organizationDisposition": "blocked",
+          "notes": "Evaluation contexts only."
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "node-releases",
+      "url": "https://nodejs.org/en/about/previous-releases",
+      "checkedAt": "2026-07-30"
+    },
+    {
+      "id": "python-versions",
+      "url": "https://devguide.python.org/versions/",
+      "checkedAt": "2026-07-30"
+    },
+    {
+      "id": "uv-python-policy",
+      "url": "https://docs.astral.sh/uv/reference/policies/python/",
+      "checkedAt": "2026-07-30"
+    },
+    {
+      "id": "go-releases",
+      "url": "https://go.dev/doc/devel/release",
+      "checkedAt": "2026-07-30"
+    },
+    {
+      "id": "rust-releases",
+      "url": "https://blog.rust-lang.org/releases/",
+      "checkedAt": "2026-07-30"
+    },
+    {
+      "id": "rust-toolchains",
+      "url": "https://rust-lang.github.io/rustup/overrides.html",
+      "checkedAt": "2026-07-30"
+    },
+    {
+      "id": "cargo-rust-version",
+      "url": "https://doc.rust-lang.org/stable/cargo/reference/rust-version.html",
+      "checkedAt": "2026-07-30"
+    },
+    {
+      "id": "zig-downloads",
+      "url": "https://ziglang.org/download/",
+      "checkedAt": "2026-07-30"
+    }
+  ]
+}

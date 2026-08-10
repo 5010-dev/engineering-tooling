@@ -1,89 +1,94 @@
-# Golden Path tooling 1.5.1
+# Golden Path tooling 1.6.0
 
-Stable patch implementation for the `2026.08.5` Developer Tooling Standard.
-It corrects adapter availability and root-total routine PR budget semantics
-without changing the `golden-path/v1` epoch, serialized dependency schemas,
-report-only enforcement, or repository ownership boundaries.
+Minor release candidate for the `2026.08.6` Developer Tooling Standard.
+It closes the security-remediation scope gap without changing the
+`golden-path/v1` epoch, repository ownership boundaries, or report-only central
+enforcement.
 
-Boundary classification: released — `1.5.0` remains an immutable distributed
-implementation of Standard `2026.08.4`; this correction is published as a new
-patch release and does not rewrite prior assets.
+Boundary classification: released — dependency observation/report v1 and
+tooling `1.5.1` remain immutable distributed contracts. This correction uses
+bounded observation/report v2 successors and a new tooling release rather than
+rewriting prior artifacts.
 
 ## Outcome
 
-- A native root that resolves to more than one dependency-automation adapter
-  ecosystem is a configuration error with exit `2`. Disjoint ecosystems may
-  share a repository-relative path only as separate existing native roots.
-- The compiler therefore applies the default or overridden routine PR budget
-  once per native root instead of multiplying it across adapter blocks.
-- The deterministic synthetic test covers a root that combines Go and Rust and
-  proves the exact configuration-error boundary.
-- Dependabot remains the only implemented adapter. Explicit `adapter: renovate`
-  still exits `2` and is never interpreted as Dependabot; Standard `2026.08.5`
-  now states that implementation precondition explicitly.
-- Native roots, `.github/release-units.json`, native manifests and locks,
-  repository-owned `just ci`, and canonical caller workflows remain untouched.
+- Observation v2 preserves GitHub alert relationship as `direct` or
+  `transitive`; central tooling does not infer it from component paths or locks.
+- Report v2 groups every open alert by repository, advisory identity, and
+  dependency, retains each alert number and path, and reports pull-request
+  association as `none`, `partial`, or `all-linked`.
+- `all-linked` does not claim closure. Repository-owned native dependency graph
+  proof remains authoritative for the exact integration head.
+- `DT-DEP-012` fails when a security canonical gate omits a typed workflow/job
+  reference and treats a broken declared reference as configuration error exit
+  `2`. The compiler validates linkage but never runs the job or `just ci`.
+- A synthetic fixture proves that linking only the direct alert while the same
+  advisory remains transitive is `partial`. An unrelated advisory remains a
+  separate group and is not a blocker for that remediation.
+- Existing native roots, `.github/release-units.json`, native manifests and
+  locks, repository-owned CI, routine budget, security routing, and
+  `pending-classification` behavior remain unchanged.
 - No package-level map, dummy manifest, component-path impact inference,
-  central CI registry, duplicate dependency manager, or central approval queue
-  is introduced.
-- `pending-classification` continues to stop only the affected routine root.
-  Security visibility, fallback ownership, and conditional routing remain
-  independent from routine budget or grouping.
-- Central conformance remains checker-only and does not execute repository
-  `just ci`. Synthetic fixtures remain distinct from live pilot evidence.
+  cross-ecosystem lock resolver, central CI registry, duplicate dependency
+  manager, global zero-alert gate, or central approval queue is introduced.
 
 ## Compatibility
 
-- Standard: `2026.08.5` (`preferred`)
+- Standard: `2026.08.6` (`preferred`)
 - Contract: `golden-path/v1`
-- Tooling and asset bundle: `1.5.1`
+- Tooling and asset bundle: `1.6.0`
 - Dependency policy: `golden-path-dependency-policy/v1`
 - Dependency defers: `golden-path-dependency-defers/v1`
-- Dependency observation: `golden-path-dependency-observation/v1`
+- Dependency observation: `golden-path-dependency-observation/v2`
 - Dependency candidate: `golden-path-dependency-candidate/v1`
-- Dependency report: `golden-path-dependency-report/v1`
+- Dependency report: `golden-path-dependency-report/v2`
 - Release manifest: `golden-path-release-manifest/v2`
 - Enforcement: `report-only`
 
-The `2026.08.5` snapshot is bound to organization-policy source commit
-`631b0adb4ef605ed973a65b58180daf31b47b718`, source tree
-`fad6a8213ac8a8ba718a2ff70dfe0c04c289f8c6`, catalog digest
-`sha256:9e37b6c777206dc8a021102b9ff461eca55763d1c9f9b829a60c11e10091f55e`,
+The `2026.08.6` snapshot is bound to organization-policy source commit
+`37babbe962fa516b850d6740d8bf2cd9512d7a70`, source tree
+`08ae4fc8107e4a1794cee228d4d1e2ee09e2a2fa`, catalog digest
+`sha256:e1dadf8ecb1367bf0b1e85c12600dd4c9dc702c651286ea0d0a678cb5dd802f1`,
 and aggregate digest
-`sha256:1b96dc8239eaf5c22bc3f3006555a94a5c9a818b74b9658a87756c326a4ac1cd`.
+`sha256:f0a31981819b8de04b1dbaefcf9cf77cc4a0ab9f07a3356f7359ec6024bd1c3a`.
 The retained August 4 tooling cutoff is unchanged because external tools and
 runtime selections did not move. The new source-integrity record binds the
-`1.5.1` template bundle without altering historical records.
+`1.6.0` template bundle without altering historical records.
 
-## Upgrade from 1.5.0
+## Upgrade from 1.5.1
 
-1. Verify the exact `1.5.1` release manifest, checksums, archive, source commit,
+1. Verify the exact `1.6.0` release manifest, checksums, archive, source commit,
    tag, release workflow, and GitHub artifact attestations.
-2. Run the ordinary upgrade preview into a separate empty candidate directory.
-   Existing valid single-ecosystem roots require no repository-fact changes.
-3. If one native root contains profiles that resolve to multiple adapter
-   ecosystems, split them into separate existing native-root IDs. The roots may
-   retain the same path; do not create package mappings or release units.
-4. Preserve repository-owned manifests, locks, release units, dependency
-   configuration, canonical commands, caller workflows, and security PRs.
-5. Run repository `just ci` once through repository CI and structural
-   conformance separately.
+2. Collect new live observations as v2, preserving the source-provided
+   direct/transitive relationship and the full same-advisory alert set.
+3. Reference the repository-owned conditional security closure workflow/job in
+   the existing security `canonicalGate.ciEvidence`. Do not create a central
+   command or package registry.
+4. Run adoption preview into a separate empty candidate directory, then run
+   repository `just ci` once through repository CI and structural conformance
+   separately.
+5. Treat a residual same-advisory graph path as partial, while allowing
+   unrelated advisories to proceed independently. Verify expected alert numbers
+   as fixed only after `main` promotion.
 
-No durable state, production runtime, wire contract, or stored observation
-migration is required. Consumers may remain on immutable `1.5.0` with Standard
-`2026.08.4` until their normal maintenance window.
+Historical sealed v1 observations and v1 reports remain immutable evidence with
+their original tooling release. They do not require rewriting or a general
+compatibility reader; recollect current live state as v2 when a new remediation
+decision is made.
 
 ## Rollback
 
-Restore the exact `1.5.0` managed Golden Path files only together with its
-`2026.08.4` standard identity. Keep native manifests, locks, release units,
-runtime state, durable data, security alerts, and independent security PRs
-untouched. Never move the `v1.5.0` or `v1.5.1` tag or replace published assets.
+Restore the exact `1.5.1` managed Golden Path files only together with its
+`2026.08.5` standard identity. Keep native manifests, locks, release units,
+runtime state, durable data, security alerts, independent security PRs, and
+historical observations untouched. Never move the `v1.5.1` or `v1.6.0` tag or
+replace published assets.
 
 ## Evidence boundary
 
-Local and synthetic tests prove deterministic compilation, configuration exit
-semantics, schema validation, staging safety, and checker behavior. They do not
-prove organization-wide queue state, live alerts, pilot repository CI, release
-publication, production promotion, freeze exit, or a complete weekly cycle.
-Those observations require separately source-bound live evidence.
+Local and synthetic tests prove deterministic grouping, alert-instance
+coverage, typed workflow linkage, schema validation, configuration exit
+semantics, staging safety, and checker behavior. They do not prove live pilot
+dependency graphs, default-branch alert closure, release publication,
+production promotion, freeze exit, or a complete weekly cycle. Those outcomes
+require separately source-bound live evidence.

@@ -88,6 +88,47 @@ func TestRoutineBudgetBypassFailsWithoutBlockingSecurityRouter(t *testing.T) {
 	}
 }
 
+func TestMissingSecurityClosureReferenceFailsWithoutRemovingSecurityRouter(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	path := filepath.Join(root, ".github", "golden-path-dependency-policy.yaml")
+	// #nosec G304 -- path is inside a test-owned temporary fixture.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte("      ciEvidence:\n        - {kind: github-actions-job, workflow: .github/workflows/security-remediation.yml, job: closure}\n"), nil, 1)
+	// #nosec G703 -- path is inside the test-owned temporary fixture.
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 1 || !evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-012", "fail") {
+		t.Fatalf("missing security closure reference = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+	if _, exists := evaluation.RenderedFiles[".github/workflows/dependency-security-router.yml"]; !exists {
+		t.Fatal("security router disappeared behind a security closure finding")
+	}
+}
+
+func TestInvalidSecurityClosureReferenceIsConfigurationError(t *testing.T) {
+	root := copyFixture(t, "single-service-oci")
+	path := filepath.Join(root, ".github", "golden-path-dependency-policy.yaml")
+	// #nosec G304 -- path is inside a test-owned temporary fixture.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = bytes.Replace(data, []byte(".github/workflows/security-remediation.yml"), []byte(".github/workflows/missing-security-remediation.yml"), 1)
+	// #nosec G703 -- path is inside the test-owned temporary fixture.
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	evaluation := Evaluate(root)
+	if evaluation.ExitCode != 2 || evaluation.Complete || !hasRuleStatus(evaluation.Findings, "DT-DEP-012", "error") {
+		t.Fatalf("invalid security closure reference = exit %d complete=%v findings=%+v", evaluation.ExitCode, evaluation.Complete, evaluation.Findings)
+	}
+}
+
 func TestOmittedDependabotLimitUsesNativeDefaultInsteadOfFreeze(t *testing.T) {
 	root := copyFixture(t, "single-service-oci")
 	path := filepath.Join(root, ".github", "dependabot.yml")
@@ -246,7 +287,7 @@ func TestObservationIdentityAndReportAreSourceBound(t *testing.T) {
 		Classification: "routine", State: "open", CreatedAt: "2026-08-08T00:00:00Z", UpdatedAt: "2026-08-09T00:00:00Z",
 		CheckRollup: CheckRollup{Status: "completed", Conclusion: "success"}, NativeRootRef: "go-service", OwnerRoute: "collector-operations",
 	}}
-	observation.Alerts = []ObservedAlert{{Repository: "5010-dev/single-service-oci", Number: 3, AdvisoryIdentity: "GHSA-test", State: "open", Severity: "high", Dependency: "example"}}
+	observation.Alerts = []ObservedAlert{{Repository: "5010-dev/single-service-oci", Number: 3, AdvisoryIdentity: "GHSA-test", State: "open", Severity: "high", Dependency: "example", Relationship: "direct"}}
 	sealed, err := SealObservation(observation)
 	if err != nil {
 		t.Fatal(err)
@@ -269,6 +310,47 @@ func TestObservationIdentityAndReportAreSourceBound(t *testing.T) {
 	tampered := bytes.Replace(sealed, []byte("PR_7"), []byte("PR_8"), 1)
 	if _, err := DecodeObservation(bytes.NewReader(tampered)); err == nil {
 		t.Fatal("tampered observation retained a valid identity")
+	}
+}
+
+func TestSyntheticPartialSecurityRemediationReport(t *testing.T) {
+	data, err := os.ReadFile(fixture("security-remediation-partial/observation.unsealed.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	observation, err := DecodeUnsealedObservation(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := SealObservation(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeObservation(bytes.NewReader(sealed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := GenerateReport(decoded, nil, nil, nil, decoded.ObservedAt.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SchemaVersion != ReportSchema || len(report.Repositories) != 1 || len(report.SecurityAdvisories) != 2 {
+		t.Fatalf("partial remediation report shape = %+v", report)
+	}
+	row := report.Repositories[0]
+	if row.OpenAlerts != 3 || row.OpenAdvisoryGroups != 2 || row.PartialSecurityAdvisories != 1 {
+		t.Fatalf("partial remediation counts = %+v", row)
+	}
+	partial := report.SecurityAdvisories[0]
+	if partial.AdvisoryIdentity != "GHSA-synthetic-same-advisory" || partial.RemediationCoverage != "partial" || len(partial.OpenAlertInstances) != 2 {
+		t.Fatalf("same-advisory coverage = %+v", partial)
+	}
+	if partial.OpenAlertInstances[0].Number != 6 || partial.OpenAlertInstances[0].Relationship != "direct" || partial.OpenAlertInstances[1].Number != 10 || partial.OpenAlertInstances[1].Relationship != "transitive" {
+		t.Fatalf("same-advisory instances = %+v", partial.OpenAlertInstances)
+	}
+	unrelated := report.SecurityAdvisories[1]
+	if unrelated.AdvisoryIdentity != "GHSA-synthetic-unrelated" || unrelated.RemediationCoverage != "none" {
+		t.Fatalf("unrelated advisory was coupled to the remediation: %+v", unrelated)
 	}
 }
 

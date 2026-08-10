@@ -60,7 +60,12 @@ func Evaluate(root string) Evaluation {
 		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", message)
 	}
 	if policy.Adapter != "dependabot" {
-		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", "The 1.5.1 compiler supports the default Dependabot adapter; a Renovate selection must not be interpreted as Dependabot configuration.")
+		return configurationEvaluation(result, ".github/golden-path-dependency-policy.yaml", "The 1.6.0 compiler supports the default Dependabot adapter; a Renovate selection must not be interpreted as Dependabot configuration.")
+	}
+	if finding, err := securityClosureReferenceFinding(root, policy.Defaults.SecurityFallback, "defaults"); err != nil {
+		return configurationEvaluationForRule(result, "DT-DEP-012", ".github/golden-path-dependency-policy.yaml", "Default security closure reference is invalid: "+err.Error())
+	} else if finding != nil {
+		result.Findings = append(result.Findings, *finding)
 	}
 	metadata, err := loadMetadataInput(root)
 	if err != nil {
@@ -115,6 +120,15 @@ func Evaluate(root string) Evaluation {
 		effective, finding := compileRoot(root, nativeRoot, binding, policy.Defaults, units)
 		if finding != nil {
 			return configurationEvaluation(result, finding.Path, finding.Message)
+		}
+		if binding.Security != nil {
+			closureFinding, closureErr := securityClosureReferenceFinding(root, effective.Security, nativeRoot.ID)
+			if closureErr != nil {
+				return configurationEvaluationForRule(result, "DT-DEP-012", ".github/golden-path-dependency-policy.yaml", "Security closure reference for root "+nativeRoot.ID+" is invalid: "+closureErr.Error())
+			}
+			if closureFinding != nil {
+				result.Findings = append(result.Findings, *closureFinding)
+			}
 		}
 		result.Roots = append(result.Roots, effective)
 		for _, ecosystem := range ecosystems {
@@ -357,6 +371,24 @@ func validateGate(root string, gate GateReference) error {
 		}
 	}
 	return nil
+}
+
+func securityClosureReferenceFinding(root string, route SecurityRoute, secondary string) (*Finding, error) {
+	if route.CanonicalGate == nil {
+		return nil, nil
+	}
+	if len(route.CanonicalGate.CIEvidence) == 0 {
+		return &Finding{
+			RuleID: "DT-DEP-012", Status: "fail", Severity: "error",
+			Path: ".github/golden-path-dependency-policy.yaml", Secondary: secondary,
+			Message:     "The security canonical gate does not reference a repository-owned conditional closure job.",
+			Remediation: "Add the existing security closure workflow/job to canonicalGate.ciEvidence; central conformance validates only the reference and does not execute repository CI.",
+		}, nil
+	}
+	if err := validateGate(root, *route.CanonicalGate); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 func groupingKey(root EffectiveRoot) string {
@@ -604,8 +636,12 @@ jobs:
 }
 
 func configurationEvaluation(result Evaluation, path, message string) Evaluation {
+	return configurationEvaluationForRule(result, "DT-DEP-005", path, message)
+}
+
+func configurationEvaluationForRule(result Evaluation, ruleID, path, message string) Evaluation {
 	result.ExitCode = 2
-	result.Findings = append(result.Findings, Finding{RuleID: "DT-DEP-005", Status: "error", Severity: "error", Path: path, Message: message, Remediation: "Correct the repository declaration or reference before compiling dependency automation."})
+	result.Findings = append(result.Findings, Finding{RuleID: ruleID, Status: "error", Severity: "error", Path: path, Message: message, Remediation: "Correct the repository declaration or reference before compiling dependency automation."})
 	return result
 }
 
