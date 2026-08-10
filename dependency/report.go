@@ -17,6 +17,7 @@ const maxObservationBytes = 16 << 20
 type securityAdvisoryKey struct {
 	repository       string
 	advisoryIdentity string
+	ecosystem        string
 	dependency       string
 }
 
@@ -205,6 +206,7 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 	}
 	totalPRs := map[string]int{}
 	routedPRs := map[string]int{}
+	closureEvidenceByPullRequest := map[string][]SecurityClosureEvidence{}
 	for _, pullRequest := range observation.PullRequests {
 		row := rows[pullRequest.Repository]
 		if row == nil {
@@ -214,6 +216,10 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 		if pullRequest.OwnerRoute != "" {
 			routedPRs[pullRequest.Repository]++
 		}
+		closureEvidenceByPullRequest[pullRequest.URL] = append(
+			closureEvidenceByPullRequest[pullRequest.URL],
+			pullRequest.SecurityClosureEvidence...,
+		)
 		switch pullRequest.Classification {
 		case "security-update", "security-remediation":
 			row.SecurityOpen++
@@ -243,6 +249,7 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 		key := securityAdvisoryKey{
 			repository:       alert.Repository,
 			advisoryIdentity: alert.AdvisoryIdentity,
+			ecosystem:        alert.Ecosystem,
 			dependency:       alert.Dependency,
 		}
 		advisoryGroups[key] = append(advisoryGroups[key], SecurityAlertInstanceReport{
@@ -272,11 +279,21 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 		row := rows[key.repository]
 		row.OpenAdvisoryGroups++
 		if coverage == "partial" {
-			row.PartialSecurityAdvisories++
+			row.PartiallyLinkedAdvisoryGroups++
 		}
+		closureEvidence := make([]SecurityClosureEvidence, 0)
+		for _, instance := range instances {
+			closureEvidence = append(
+				closureEvidence,
+				closureEvidenceByPullRequest[instance.SecurityUpdatePullRequest]...,
+			)
+		}
+		closureEvidence = sortedUniqueClosureEvidence(closureEvidence)
 		report.SecurityAdvisories = append(report.SecurityAdvisories, SecurityAdvisoryReport{
 			Repository: key.repository, AdvisoryIdentity: key.advisoryIdentity,
-			Dependency: key.dependency, RemediationCoverage: coverage, OpenAlertInstances: instances,
+			Ecosystem: key.ecosystem, Dependency: key.dependency,
+			RemediationCoverage: coverage, OpenAlertInstances: instances,
+			SecurityClosureEvidence: closureEvidence,
 		})
 	}
 	for repository, records := range defers {
@@ -309,6 +326,9 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 		if a.AdvisoryIdentity != b.AdvisoryIdentity {
 			return a.AdvisoryIdentity < b.AdvisoryIdentity
 		}
+		if a.Ecosystem != b.Ecosystem {
+			return a.Ecosystem < b.Ecosystem
+		}
 		return a.Dependency < b.Dependency
 	})
 	data, err := json.Marshal(report)
@@ -319,6 +339,47 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 		return Report{}, err
 	}
 	return report, nil
+}
+
+func sortedUniqueClosureEvidence(evidence []SecurityClosureEvidence) []SecurityClosureEvidence {
+	sort.Slice(evidence, func(left, right int) bool {
+		a, b := evidence[left], evidence[right]
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.Workflow != b.Workflow {
+			return a.Workflow < b.Workflow
+		}
+		if a.Job != b.Job {
+			return a.Job < b.Job
+		}
+		if a.RunID != b.RunID {
+			return a.RunID < b.RunID
+		}
+		if a.RunAttempt != b.RunAttempt {
+			return a.RunAttempt < b.RunAttempt
+		}
+		if a.HeadSHA != b.HeadSHA {
+			return a.HeadSHA < b.HeadSHA
+		}
+		if a.RunURL != b.RunURL {
+			return a.RunURL < b.RunURL
+		}
+		if a.Status != b.Status {
+			return a.Status < b.Status
+		}
+		if a.Conclusion != b.Conclusion {
+			return a.Conclusion < b.Conclusion
+		}
+		return a.ObservedAt < b.ObservedAt
+	})
+	unique := make([]SecurityClosureEvidence, 0, len(evidence))
+	for _, item := range evidence {
+		if len(unique) == 0 || unique[len(unique)-1] != item {
+			unique = append(unique, item)
+		}
+	}
+	return unique
 }
 
 func candidateForRepository(candidates map[string]Candidate, repository string) (Candidate, bool, error) {

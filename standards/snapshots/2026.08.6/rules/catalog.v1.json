@@ -197,8 +197,8 @@
       "severity": "error",
       "waivable": true,
       "highRisk": true,
-      "assertion": "A fresh observation enumerates every same-repository, same-advisory, same-dependency alert instance; the repository-owned conditional gate proves the exact candidate head has no vulnerable native graph path; and the expected alerts are fixed after main promotion.",
-      "remediation": "Keep the remediation partial, cover the residual same-scope instances before promotion, or record a scoped expiring high-risk exception without blocking unrelated advisories or security visibility.",
+      "assertion": "A fresh observation preserves every same-repository, same-advisory, same-ecosystem-and-package alert instance and its source relationship; source-bound evidence proves the declared repository-owned conditional job succeeded on the exact candidate head with no vulnerable native graph path; and the expected alerts are fixed after main promotion.",
+      "remediation": "Keep the remediation partial, preserve unknown relationships without guessing, cover the candidate-head residual before promotion, or record a scoped expiring high-risk exception without blocking unrelated advisories or security visibility.",
       "introducedIn": "2026.08.6",
       "retiredIn": null,
       "replacement": null

@@ -212,13 +212,16 @@ routine regrouping is pending.
 
 Live reports require a sealed observation v2 whose identity covers observation
 time, collection query and scope, repository/default-branch identities, PR
-refs/checks, alert relationship and advisory identity, native-manager sources,
-and SHA-256. Report v2 groups open alert instances by repository, advisory, and
-dependency. Its `none`, `partial`, and `all-linked` values describe PR
-association only; repository-owned native graph proof controls closure, and an
-unrelated advisory is never coupled to that decision. Synthetic fixtures
-exercise compiler behavior only and are never represented as live organization
-evidence.
+refs/checks, source-bound security closure runs, alert relationship and advisory
+identity, native-manager sources, and SHA-256. Relationship remains
+`direct`, `transitive`, or `unknown`; tooling never guesses an unknown source
+value. Report v2 groups open alert instances by repository, advisory,
+ecosystem, and dependency, carries exact-head closure evidence from linked
+security pull requests, and names partial-link counters by that association-only
+meaning. Its `none`, `partial`, and `all-linked` values describe PR association
+only; repository-owned native graph proof controls closure, and an unrelated
+advisory is never coupled to that decision. Synthetic fixtures exercise compiler
+behavior only and are never represented as live organization evidence.
 
 ## Repository layout
 

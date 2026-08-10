@@ -209,21 +209,35 @@ type CheckRollup struct {
 	Conclusion string `json:"conclusion"`
 }
 
+type SecurityClosureEvidence struct {
+	Kind       string `json:"kind"`
+	Workflow   string `json:"workflow"`
+	Job        string `json:"job"`
+	RunID      int64  `json:"runId"`
+	RunAttempt int    `json:"runAttempt,omitempty"`
+	RunURL     string `json:"runUrl"`
+	HeadSHA    string `json:"headSHA"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	ObservedAt string `json:"observedAt"`
+}
+
 type ObservedPullRequest struct {
-	Repository       string      `json:"repository"`
-	RepositoryNodeID string      `json:"repositoryNodeId"`
-	Number           int         `json:"number"`
-	NodeID           string      `json:"nodeId"`
-	URL              string      `json:"url"`
-	Base             RefIdentity `json:"base"`
-	Head             RefIdentity `json:"head"`
-	Classification   string      `json:"classification"`
-	State            string      `json:"state"`
-	CreatedAt        string      `json:"createdAt"`
-	UpdatedAt        string      `json:"updatedAt"`
-	CheckRollup      CheckRollup `json:"checkRollup"`
-	NativeRootRef    string      `json:"nativeRootRef,omitempty"`
-	OwnerRoute       string      `json:"ownerRoute,omitempty"`
+	Repository              string                    `json:"repository"`
+	RepositoryNodeID        string                    `json:"repositoryNodeId"`
+	Number                  int                       `json:"number"`
+	NodeID                  string                    `json:"nodeId"`
+	URL                     string                    `json:"url"`
+	Base                    RefIdentity               `json:"base"`
+	Head                    RefIdentity               `json:"head"`
+	Classification          string                    `json:"classification"`
+	State                   string                    `json:"state"`
+	CreatedAt               string                    `json:"createdAt"`
+	UpdatedAt               string                    `json:"updatedAt"`
+	CheckRollup             CheckRollup               `json:"checkRollup"`
+	SecurityClosureEvidence []SecurityClosureEvidence `json:"securityClosureEvidence,omitempty"`
+	NativeRootRef           string                    `json:"nativeRootRef,omitempty"`
+	OwnerRoute              string                    `json:"ownerRoute,omitempty"`
 }
 
 type ObservedAlert struct {
@@ -232,6 +246,7 @@ type ObservedAlert struct {
 	AdvisoryIdentity          string `json:"advisoryIdentity"`
 	State                     string `json:"state"`
 	Severity                  string `json:"severity"`
+	Ecosystem                 string `json:"ecosystem"`
 	Dependency                string `json:"dependency"`
 	Relationship              string `json:"relationship"`
 	ManifestPath              string `json:"manifestPath,omitempty"`
@@ -272,20 +287,20 @@ type DeferRecord struct {
 }
 
 type RepositoryReport struct {
-	Repository                string  `json:"repository"`
-	DefaultBranchSHA          string  `json:"defaultBranchSHA"`
-	Applicability             string  `json:"applicability"`
-	ClassifiedRoots           int     `json:"classifiedRoots"`
-	PendingRoots              int     `json:"pendingRoots"`
-	RoutineOpen               int     `json:"routineOpen"`
-	SecurityOpen              int     `json:"securityOpen"`
-	OpenAlerts                int     `json:"openAlerts"`
-	OpenAdvisoryGroups        int     `json:"openAdvisoryGroups"`
-	PartialSecurityAdvisories int     `json:"partialSecurityAdvisories"`
-	OwnerRoutingCoverage      float64 `json:"ownerRoutingCoverage"`
-	OldestRoutineObservedAt   string  `json:"oldestRoutineObservedAt,omitempty"`
-	Deferred                  int     `json:"deferred,omitempty"`
-	Stale                     bool    `json:"stale,omitempty"`
+	Repository                    string  `json:"repository"`
+	DefaultBranchSHA              string  `json:"defaultBranchSHA"`
+	Applicability                 string  `json:"applicability"`
+	ClassifiedRoots               int     `json:"classifiedRoots"`
+	PendingRoots                  int     `json:"pendingRoots"`
+	RoutineOpen                   int     `json:"routineOpen"`
+	SecurityOpen                  int     `json:"securityOpen"`
+	OpenAlerts                    int     `json:"openAlerts"`
+	OpenAdvisoryGroups            int     `json:"openAdvisoryGroups"`
+	PartiallyLinkedAdvisoryGroups int     `json:"partiallyLinkedAdvisoryGroups"`
+	OwnerRoutingCoverage          float64 `json:"ownerRoutingCoverage"`
+	OldestRoutineObservedAt       string  `json:"oldestRoutineObservedAt,omitempty"`
+	Deferred                      int     `json:"deferred,omitempty"`
+	Stale                         bool    `json:"stale,omitempty"`
 }
 
 type SecurityAlertInstanceReport struct {
@@ -298,11 +313,13 @@ type SecurityAlertInstanceReport struct {
 }
 
 type SecurityAdvisoryReport struct {
-	Repository          string                        `json:"repository"`
-	AdvisoryIdentity    string                        `json:"advisoryIdentity"`
-	Dependency          string                        `json:"dependency"`
-	RemediationCoverage string                        `json:"remediationCoverage"`
-	OpenAlertInstances  []SecurityAlertInstanceReport `json:"openAlertInstances"`
+	Repository              string                        `json:"repository"`
+	AdvisoryIdentity        string                        `json:"advisoryIdentity"`
+	Ecosystem               string                        `json:"ecosystem"`
+	Dependency              string                        `json:"dependency"`
+	RemediationCoverage     string                        `json:"remediationCoverage"`
+	OpenAlertInstances      []SecurityAlertInstanceReport `json:"openAlertInstances"`
+	SecurityClosureEvidence []SecurityClosureEvidence     `json:"securityClosureEvidence"`
 }
 
 type Report struct {
