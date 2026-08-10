@@ -118,7 +118,7 @@ func TestRunBuildsDeterministicReleaseManifest(t *testing.T) {
 	if result.ReleaseVersion != "1.6.0" || result.Lifecycle != "stable" || len(result.Enforcement) != 1 || result.Enforcement[0] != "report-only" || len(result.Assets) != 4 || len(result.RuntimeSelections) == 0 || result.Components.AssetBundle.Version != "1.6.0" || result.Components.AssetBundle.Digest == "" || result.Components.Checker.Digest == "" || result.Components.Generator.Digest == "" || result.Components.Automation.Version != "1.6.0" || result.Components.Automation.Digest == "" {
 		t.Fatalf("unexpected manifest: %+v", result)
 	}
-	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree != "08ae4fc8107e4a1794cee228d4d1e2ee09e2a2fa" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 15 {
+	if result.Snapshot.Source.Repository != "https://github.com/5010-dev/.github" || result.Snapshot.Source.Commit == "" || result.Snapshot.Source.GitTree != "5e9d3bc62ffd3850069d6bfaf9ad902b4553b5ae" || result.Compatibility.File.SHA256 == "" || result.Snapshot.File.SHA256 == "" || result.ReleaseNotes.File.SHA256 == "" || len(result.Schemas) != 15 {
 		t.Fatalf("release evidence is incomplete: %+v", result)
 	}
 	if !slices.Contains(result.SchemaVersions, "golden-path-native-roots/v1") {

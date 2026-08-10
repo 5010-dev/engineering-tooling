@@ -66,6 +66,11 @@
           "createdAt": {"type": "string", "format": "date-time"},
           "updatedAt": {"type": "string", "format": "date-time"},
           "checkRollup": {"$ref": "#/$defs/checkRollup"},
+          "securityClosureEvidence": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/securityClosureEvidence"}
+          },
           "nativeRootRef": {"type": "string", "minLength": 1},
           "ownerRoute": {"type": "string", "minLength": 1}
         }
@@ -76,15 +81,16 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["repository", "number", "advisoryIdentity", "state", "severity", "dependency", "relationship"],
+        "required": ["repository", "number", "advisoryIdentity", "state", "severity", "ecosystem", "dependency", "relationship"],
         "properties": {
           "repository": {"type": "string", "minLength": 1},
           "number": {"type": "integer", "minimum": 1},
           "advisoryIdentity": {"type": "string", "minLength": 1},
-          "state": {"type": "string", "enum": ["open", "dismissed", "fixed"]},
+          "state": {"type": "string", "enum": ["open", "dismissed", "auto-dismissed", "fixed"]},
           "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+          "ecosystem": {"type": "string", "minLength": 1},
           "dependency": {"type": "string", "minLength": 1},
-          "relationship": {"type": "string", "enum": ["direct", "transitive"]},
+          "relationship": {"type": "string", "enum": ["direct", "transitive", "unknown"]},
           "manifestPath": {"type": "string", "minLength": 1},
           "fixedIn": {"type": "string", "minLength": 1},
           "securityUpdatePullRequest": {"type": "string", "format": "uri"}
@@ -118,13 +124,30 @@
         "sha": {"type": "string", "pattern": "^[a-f0-9]{40}$"}
       }
     },
+    "securityClosureEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "workflow", "job", "runId", "runUrl", "headSHA", "status", "conclusion", "observedAt"],
+      "properties": {
+        "kind": {"const": "github-actions-job-run"},
+        "workflow": {"type": "string", "pattern": "^\\.github/workflows/[^/]+\\.ya?ml$"},
+        "job": {"type": "string", "minLength": 1},
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"type": "integer", "minimum": 1},
+        "runUrl": {"type": "string", "format": "uri"},
+        "headSHA": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "status": {"type": "string", "enum": ["queued", "in-progress", "completed"]},
+        "conclusion": {"type": "string", "enum": ["success", "failure", "cancelled", "skipped", "neutral", "timed-out", "action-required", "stale", "none"]},
+        "observedAt": {"type": "string", "format": "date-time"}
+      }
+    },
     "checkRollup": {
       "type": "object",
       "additionalProperties": false,
       "required": ["status", "conclusion"],
       "properties": {
         "status": {"type": "string", "enum": ["queued", "in-progress", "completed", "none"]},
-        "conclusion": {"type": "string", "enum": ["success", "failure", "cancelled", "skipped", "neutral", "timed-out", "action-required", "none"]}
+        "conclusion": {"type": "string", "enum": ["success", "failure", "cancelled", "skipped", "neutral", "timed-out", "action-required", "stale", "none"]}
       }
     }
   }

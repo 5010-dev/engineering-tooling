@@ -24,7 +24,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["repository", "defaultBranchSHA", "applicability", "classifiedRoots", "pendingRoots", "routineOpen", "securityOpen", "openAlerts", "openAdvisoryGroups", "partialSecurityAdvisories", "ownerRoutingCoverage"],
+        "required": ["repository", "defaultBranchSHA", "applicability", "classifiedRoots", "pendingRoots", "routineOpen", "securityOpen", "openAlerts", "openAdvisoryGroups", "partiallyLinkedAdvisoryGroups", "ownerRoutingCoverage"],
         "properties": {
           "repository": {"type": "string", "minLength": 1},
           "defaultBranchSHA": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
@@ -35,7 +35,7 @@
           "securityOpen": {"type": "integer", "minimum": 0},
           "openAlerts": {"type": "integer", "minimum": 0},
           "openAdvisoryGroups": {"type": "integer", "minimum": 0},
-          "partialSecurityAdvisories": {"type": "integer", "minimum": 0},
+          "partiallyLinkedAdvisoryGroups": {"type": "integer", "minimum": 0},
           "ownerRoutingCoverage": {"type": "number", "minimum": 0},
           "oldestRoutineObservedAt": {"type": "string", "format": "date-time"},
           "deferred": {"type": "integer", "minimum": 0},
@@ -48,10 +48,11 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["repository", "advisoryIdentity", "dependency", "remediationCoverage", "openAlertInstances"],
+        "required": ["repository", "advisoryIdentity", "ecosystem", "dependency", "remediationCoverage", "openAlertInstances", "securityClosureEvidence"],
         "properties": {
           "repository": {"type": "string", "minLength": 1},
           "advisoryIdentity": {"type": "string", "minLength": 1},
+          "ecosystem": {"type": "string", "minLength": 1},
           "dependency": {"type": "string", "minLength": 1},
           "remediationCoverage": {"type": "string", "enum": ["none", "partial", "all-linked"]},
           "openAlertInstances": {
@@ -64,14 +65,38 @@
               "properties": {
                 "number": {"type": "integer", "minimum": 1},
                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
-                "relationship": {"type": "string", "enum": ["direct", "transitive"]},
+                "relationship": {"type": "string", "enum": ["direct", "transitive", "unknown"]},
                 "manifestPath": {"type": "string", "minLength": 1},
                 "fixedIn": {"type": "string", "minLength": 1},
                 "securityUpdatePullRequest": {"type": "string", "format": "uri"}
               }
             }
+          },
+          "securityClosureEvidence": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/securityClosureEvidence"}
           }
         }
+      }
+    }
+  },
+  "$defs": {
+    "securityClosureEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "workflow", "job", "runId", "runUrl", "headSHA", "status", "conclusion", "observedAt"],
+      "properties": {
+        "kind": {"const": "github-actions-job-run"},
+        "workflow": {"type": "string", "pattern": "^\\.github/workflows/[^/]+\\.ya?ml$"},
+        "job": {"type": "string", "minLength": 1},
+        "runId": {"type": "integer", "minimum": 1},
+        "runAttempt": {"type": "integer", "minimum": 1},
+        "runUrl": {"type": "string", "format": "uri"},
+        "headSHA": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
+        "status": {"type": "string", "enum": ["queued", "in-progress", "completed"]},
+        "conclusion": {"type": "string", "enum": ["success", "failure", "cancelled", "skipped", "neutral", "timed-out", "action-required", "stale", "none"]},
+        "observedAt": {"type": "string", "format": "date-time"}
       }
     }
   }

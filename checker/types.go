@@ -7,10 +7,10 @@ const (
 	Version                 = "1.6.0"
 	StandardVersion         = "2026.08.6"
 	ContractVersion         = "golden-path/v1"
-	CatalogDigest           = "sha256:e1dadf8ecb1367bf0b1e85c12600dd4c9dc702c651286ea0d0a678cb5dd802f1"
-	SnapshotAggregateDigest = "sha256:f0a31981819b8de04b1dbaefcf9cf77cc4a0ab9f07a3356f7359ec6024bd1c3a"
-	SnapshotSourceCommit    = "37babbe962fa516b850d6740d8bf2cd9512d7a70"
-	SnapshotSourceTree      = "08ae4fc8107e4a1794cee228d4d1e2ee09e2a2fa"
+	CatalogDigest           = "sha256:8e9910e19b2582f884af6170d70759dc23ac98d9c2d1bb3e2759d29495291355"
+	SnapshotAggregateDigest = "sha256:2eba72e63c71b0e236d85b29f98a4d4405b110a6acb2be5956f21b76363d2061"
+	SnapshotSourceCommit    = "e782f90c2ca296db18c1896c0dc012e6cefea935"
+	SnapshotSourceTree      = "5e9d3bc62ffd3850069d6bfaf9ad902b4553b5ae"
 )
 
 type Options struct {

@@ -12,11 +12,12 @@ rewriting prior artifacts.
 
 ## Outcome
 
-- Observation v2 preserves GitHub alert relationship as `direct` or
-  `transitive`; central tooling does not infer it from component paths or locks.
-- Report v2 groups every open alert by repository, advisory identity, and
-  dependency, retains each alert number and path, and reports pull-request
-  association as `none`, `partial`, or `all-linked`.
+- Observation v2 preserves GitHub alert relationship as `direct`, `transitive`,
+  or `unknown`; central tooling does not infer it from component paths or locks.
+- Report v2 groups every open alert by repository, advisory identity,
+  ecosystem, and dependency, retains each alert number and path, carries
+  source-bound closure runs from linked security pull requests, and reports
+  pull-request association as `none`, `partial`, or `all-linked`.
 - `all-linked` does not claim closure. Repository-owned native dependency graph
   proof remains authoritative for the exact integration head.
 - `DT-DEP-012` fails when a security canonical gate omits a typed workflow/job
@@ -45,12 +46,12 @@ rewriting prior artifacts.
 - Release manifest: `golden-path-release-manifest/v2`
 - Enforcement: `report-only`
 
-The `2026.08.6` snapshot is bound to organization-policy source commit
-`37babbe962fa516b850d6740d8bf2cd9512d7a70`, source tree
-`08ae4fc8107e4a1794cee228d4d1e2ee09e2a2fa`, catalog digest
-`sha256:e1dadf8ecb1367bf0b1e85c12600dd4c9dc702c651286ea0d0a678cb5dd802f1`,
+The `2026.08.6` snapshot is bound to the merged organization-policy source
+commit `e782f90c2ca296db18c1896c0dc012e6cefea935`, source tree
+`5e9d3bc62ffd3850069d6bfaf9ad902b4553b5ae`, catalog digest
+`sha256:8e9910e19b2582f884af6170d70759dc23ac98d9c2d1bb3e2759d29495291355`,
 and aggregate digest
-`sha256:f0a31981819b8de04b1dbaefcf9cf77cc4a0ab9f07a3356f7359ec6024bd1c3a`.
+`sha256:2eba72e63c71b0e236d85b29f98a4d4405b110a6acb2be5956f21b76363d2061`.
 The retained August 4 tooling cutoff is unchanged because external tools and
 runtime selections did not move. The new source-integrity record binds the
 `1.6.0` template bundle without altering historical records.

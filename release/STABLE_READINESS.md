@@ -10,10 +10,10 @@ Tooling Standard remains authoritative for rule meaning and applicability.
 - Tooling and asset bundle: `1.6.0`
 - Lifecycle: `stable`
 - Enforcement: `report-only`
-- Normative source commit: `37babbe962fa516b850d6740d8bf2cd9512d7a70`
-- Normative source tree: `08ae4fc8107e4a1794cee228d4d1e2ee09e2a2fa`
-- Catalog digest: `sha256:e1dadf8ecb1367bf0b1e85c12600dd4c9dc702c651286ea0d0a678cb5dd802f1`
-- Snapshot digest: `sha256:f0a31981819b8de04b1dbaefcf9cf77cc4a0ab9f07a3356f7359ec6024bd1c3a`
+- Normative source commit: `e782f90c2ca296db18c1896c0dc012e6cefea935`
+- Normative source tree: `5e9d3bc62ffd3850069d6bfaf9ad902b4553b5ae`
+- Catalog digest: `sha256:8e9910e19b2582f884af6170d70759dc23ac98d9c2d1bb3e2759d29495291355`
+- Snapshot digest: `sha256:2eba72e63c71b0e236d85b29f98a4d4405b110a6acb2be5956f21b76363d2061`
 - External-tool cutoff: `2026-08-04T12:54:32Z` (retained selections)
 - Candidate source integrity: `2026-08-10T15:02:07Z`
 
@@ -26,10 +26,11 @@ and Standard `2026.08.5` remain immutable. The correction will be published
 through Standard `2026.08.6`, observation/report v2, and tooling `1.6.0` only
 after the required evidence below is complete.
 
-The normative source identity above is provisional while organization PR #30
-is open. Before this candidate can be committed as release-ready or tagged, the
-snapshot and all release evidence must be rebound to the exact merged `main`
-commit and revalidated.
+The normative source identity above is final for organization PR #30, which was
+rebase-merged as `e782f90c2ca296db18c1896c0dc012e6cefea935`. The bundled
+machine-readable snapshot is byte-bound to that merged source. This binding does
+not authorize a tag: all remaining evidence below must still be green against
+the exact engineering-tooling candidate commit.
 
 ## Required evidence before tagging
 

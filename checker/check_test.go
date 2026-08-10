@@ -1178,7 +1178,7 @@ func TestSnapshotCatalogIdentity(t *testing.T) {
 	if len(catalog.Rules) != 81 {
 		t.Fatalf("rule count = %d, want 81", len(catalog.Rules))
 	}
-	const want = "sha256:e1dadf8ecb1367bf0b1e85c12600dd4c9dc702c651286ea0d0a678cb5dd802f1"
+	const want = "sha256:8e9910e19b2582f884af6170d70759dc23ac98d9c2d1bb3e2759d29495291355"
 	if digest != want {
 		t.Fatalf("catalog digest = %q, want %q", digest, want)
 	}

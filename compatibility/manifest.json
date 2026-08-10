@@ -26,9 +26,9 @@
         "runtime-support/v1"
       ],
       "snapshot": "standards/snapshots/2026.08.6/manifest.json",
-      "sourceCommit": "37babbe962fa516b850d6740d8bf2cd9512d7a70",
-      "catalogDigest": "sha256:e1dadf8ecb1367bf0b1e85c12600dd4c9dc702c651286ea0d0a678cb5dd802f1",
-      "snapshotAggregateDigest": "sha256:f0a31981819b8de04b1dbaefcf9cf77cc4a0ab9f07a3356f7359ec6024bd1c3a"
+      "sourceCommit": "e782f90c2ca296db18c1896c0dc012e6cefea935",
+      "catalogDigest": "sha256:8e9910e19b2582f884af6170d70759dc23ac98d9c2d1bb3e2759d29495291355",
+      "snapshotAggregateDigest": "sha256:2eba72e63c71b0e236d85b29f98a4d4405b110a6acb2be5956f21b76363d2061"
     }
   ],
   "runtimeSelections": [

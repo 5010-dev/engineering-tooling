@@ -284,10 +284,18 @@ func TestObservationIdentityAndReportAreSourceBound(t *testing.T) {
 	observation.PullRequests = []ObservedPullRequest{{
 		Repository: "5010-dev/single-service-oci", RepositoryNodeID: "R_1", Number: 7, NodeID: "PR_7", URL: "https://github.com/5010-dev/single-service-oci/pull/7",
 		Base: RefIdentity{Ref: "dev", SHA: strings.Repeat("b", 40)}, Head: RefIdentity{Ref: "dependabot/go/example", SHA: strings.Repeat("c", 40)},
-		Classification: "routine", State: "open", CreatedAt: "2026-08-08T00:00:00Z", UpdatedAt: "2026-08-09T00:00:00Z",
+		Classification: "security-remediation", State: "open", CreatedAt: "2026-08-08T00:00:00Z", UpdatedAt: "2026-08-09T00:00:00Z",
 		CheckRollup: CheckRollup{Status: "completed", Conclusion: "success"}, NativeRootRef: "go-service", OwnerRoute: "collector-operations",
+		SecurityClosureEvidence: []SecurityClosureEvidence{{
+			Kind: "github-actions-job-run", Workflow: ".github/workflows/security-remediation.yml", Job: "closure",
+			RunID: 1234567890, RunAttempt: 1, RunURL: "https://github.com/5010-dev/single-service-oci/actions/runs/1234567890",
+			HeadSHA: strings.Repeat("c", 40), Status: "completed", Conclusion: "success", ObservedAt: "2026-08-09T00:00:00Z",
+		}},
 	}}
-	observation.Alerts = []ObservedAlert{{Repository: "5010-dev/single-service-oci", Number: 3, AdvisoryIdentity: "GHSA-test", State: "open", Severity: "high", Dependency: "example", Relationship: "direct"}}
+	observation.Alerts = []ObservedAlert{{
+		Repository: "5010-dev/single-service-oci", Number: 3, AdvisoryIdentity: "GHSA-test", State: "open", Severity: "high",
+		Ecosystem: "gomod", Dependency: "example", Relationship: "unknown", SecurityUpdatePullRequest: "https://github.com/5010-dev/single-service-oci/pull/7",
+	}}
 	sealed, err := SealObservation(observation)
 	if err != nil {
 		t.Fatal(err)
@@ -306,6 +314,9 @@ func TestObservationIdentityAndReportAreSourceBound(t *testing.T) {
 	}
 	if report.ObservationIdentity != decoded.Source.Identity || len(report.Repositories) != 1 || report.Repositories[0].OpenAlerts != 1 || report.Repositories[0].OwnerRoutingCoverage != 1 {
 		t.Fatalf("report lost source evidence: %+v", report)
+	}
+	if len(report.SecurityAdvisories) != 1 || report.SecurityAdvisories[0].Ecosystem != "gomod" || len(report.SecurityAdvisories[0].SecurityClosureEvidence) != 1 || report.SecurityAdvisories[0].SecurityClosureEvidence[0].HeadSHA != strings.Repeat("c", 40) {
+		t.Fatalf("report lost exact-head security closure evidence: %+v", report.SecurityAdvisories)
 	}
 	tampered := bytes.Replace(sealed, []byte("PR_7"), []byte("PR_8"), 1)
 	if _, err := DecodeObservation(bytes.NewReader(tampered)); err == nil {
@@ -338,18 +349,18 @@ func TestSyntheticPartialSecurityRemediationReport(t *testing.T) {
 		t.Fatalf("partial remediation report shape = %+v", report)
 	}
 	row := report.Repositories[0]
-	if row.OpenAlerts != 3 || row.OpenAdvisoryGroups != 2 || row.PartialSecurityAdvisories != 1 {
+	if row.OpenAlerts != 3 || row.OpenAdvisoryGroups != 2 || row.PartiallyLinkedAdvisoryGroups != 1 {
 		t.Fatalf("partial remediation counts = %+v", row)
 	}
 	partial := report.SecurityAdvisories[0]
-	if partial.AdvisoryIdentity != "GHSA-synthetic-same-advisory" || partial.RemediationCoverage != "partial" || len(partial.OpenAlertInstances) != 2 {
+	if partial.AdvisoryIdentity != "GHSA-synthetic-same-advisory" || partial.Ecosystem != "npm" || partial.RemediationCoverage != "partial" || len(partial.OpenAlertInstances) != 2 {
 		t.Fatalf("same-advisory coverage = %+v", partial)
 	}
 	if partial.OpenAlertInstances[0].Number != 6 || partial.OpenAlertInstances[0].Relationship != "direct" || partial.OpenAlertInstances[1].Number != 10 || partial.OpenAlertInstances[1].Relationship != "transitive" {
 		t.Fatalf("same-advisory instances = %+v", partial.OpenAlertInstances)
 	}
 	unrelated := report.SecurityAdvisories[1]
-	if unrelated.AdvisoryIdentity != "GHSA-synthetic-unrelated" || unrelated.RemediationCoverage != "none" {
+	if unrelated.AdvisoryIdentity != "GHSA-synthetic-unrelated" || unrelated.Ecosystem != "npm" || unrelated.RemediationCoverage != "none" || unrelated.OpenAlertInstances[0].Relationship != "unknown" {
 		t.Fatalf("unrelated advisory was coupled to the remediation: %+v", unrelated)
 	}
 }
