@@ -256,7 +256,7 @@ func run(arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("read tooling cutoff: %w", err)
 	}
-	_, sourceIntegrityData, err := matchingEvidence(root, distRoot, "release/source-integrity-2026-08-10-1.6.0.json", "source-integrity.json")
+	_, sourceIntegrityData, err := matchingEvidence(root, distRoot, "release/source-integrity-2026-08-10-1.6.1.json", "source-integrity.json")
 	if err != nil {
 		return fmt.Errorf("read source integrity: %w", err)
 	}

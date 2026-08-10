@@ -4,7 +4,7 @@ package checker
 import "time"
 
 const (
-	Version                 = "1.6.0"
+	Version                 = "1.6.1"
 	StandardVersion         = "2026.08.6"
 	ContractVersion         = "golden-path/v1"
 	CatalogDigest           = "sha256:8e9910e19b2582f884af6170d70759dc23ac98d9c2d1bb3e2759d29495291355"
