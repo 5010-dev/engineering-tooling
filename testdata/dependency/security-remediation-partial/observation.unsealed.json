@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "golden-path-dependency-observation/v2",
+  "observedAt": "2026-08-10T00:00:00Z",
+  "scope": {
+    "organization": "5010-dev",
+    "query": "synthetic same-advisory security remediation coverage",
+    "repositories": [
+      "5010-dev/synthetic-security-remediation"
+    ]
+  },
+  "source": {
+    "kind": "github-dependabot-api",
+    "apiVersion": "2022-11-28",
+    "identity": "",
+    "sha256": ""
+  },
+  "repositories": [
+    {
+      "repository": "5010-dev/synthetic-security-remediation",
+      "repositoryNodeId": "R_SYNTHETIC",
+      "defaultBranch": "main",
+      "defaultBranchSHA": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "pullRequests": [],
+  "alerts": [
+    {
+      "repository": "5010-dev/synthetic-security-remediation",
+      "number": 6,
+      "advisoryIdentity": "GHSA-synthetic-same-advisory",
+      "state": "open",
+      "severity": "high",
+      "dependency": "esbuild",
+      "relationship": "direct",
+      "manifestPath": "package.json",
+      "fixedIn": "0.25.0",
+      "securityUpdatePullRequest": "https://github.com/5010-dev/synthetic-security-remediation/pull/84"
+    },
+    {
+      "repository": "5010-dev/synthetic-security-remediation",
+      "number": 10,
+      "advisoryIdentity": "GHSA-synthetic-same-advisory",
+      "state": "open",
+      "severity": "high",
+      "dependency": "esbuild",
+      "relationship": "transitive",
+      "manifestPath": "pnpm-lock.yaml",
+      "fixedIn": "0.25.0"
+    },
+    {
+      "repository": "5010-dev/synthetic-security-remediation",
+      "number": 11,
+      "advisoryIdentity": "GHSA-synthetic-unrelated",
+      "state": "open",
+      "severity": "medium",
+      "dependency": "unrelated-package",
+      "relationship": "transitive",
+      "manifestPath": "pnpm-lock.yaml"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+name: Security remediation closure
+on: [pull_request]
+jobs:
+  closure:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "synthetic repository-owned native graph proof"

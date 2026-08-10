@@ -1,6 +1,6 @@
 schemaVersion: golden-path-metadata/v1
 contractVersion: golden-path/v1
-standardVersion: "2026.08.5"
+standardVersion: "2026.08.6"
 assetBundleVersion: 0.1.0
 profiles:
   - python

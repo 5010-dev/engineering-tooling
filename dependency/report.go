@@ -14,6 +14,12 @@ import (
 
 const maxObservationBytes = 16 << 20
 
+type securityAdvisoryKey struct {
+	repository       string
+	advisoryIdentity string
+	dependency       string
+}
+
 func DecodeUnsealedObservation(reader io.Reader) (Observation, error) {
 	data, err := io.ReadAll(io.LimitReader(reader, maxObservationBytes+1))
 	if err != nil {
@@ -43,7 +49,7 @@ func DecodeObservation(reader io.Reader) (Observation, error) {
 	if len(data) > maxObservationBytes {
 		return Observation{}, fmt.Errorf("observation exceeds the input limit")
 	}
-	if err := validateSchema("golden-path-dependency-observation-v1.schema.json", data); err != nil {
+	if err := validateSchema("golden-path-dependency-observation-v2.schema.json", data); err != nil {
 		return Observation{}, err
 	}
 	var observation Observation
@@ -113,7 +119,7 @@ func SealObservation(observation Observation) ([]byte, error) {
 		return nil, err
 	}
 	data = append(data, '\n')
-	if err := validateSchema("golden-path-dependency-observation-v1.schema.json", data); err != nil {
+	if err := validateSchema("golden-path-dependency-observation-v2.schema.json", data); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -145,7 +151,7 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 	if err != nil {
 		return Report{}, err
 	}
-	if err := validateSchema("golden-path-dependency-observation-v1.schema.json", observationData); err != nil {
+	if err := validateSchema("golden-path-dependency-observation-v2.schema.json", observationData); err != nil {
 		return Report{}, fmt.Errorf("observation violates bundled schema: %w", err)
 	}
 	digest, err := observationDigest(observationData)
@@ -164,6 +170,7 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 		ObservedAt:          observation.ObservedAt.UTC().Format(time.RFC3339),
 		ObservationIdentity: observation.Source.Identity,
 		Repositories:        []RepositoryReport{},
+		SecurityAdvisories:  []SecurityAdvisoryReport{},
 	}
 	report.Scope.Organization = observation.Scope.Organization
 	report.Scope.Query = observation.Scope.Query
@@ -217,10 +224,60 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 			}
 		}
 	}
+	advisoryGroups := make(map[securityAdvisoryKey][]SecurityAlertInstanceReport)
+	seenAlerts := make(map[string]bool, len(observation.Alerts))
 	for _, alert := range observation.Alerts {
-		if row := rows[alert.Repository]; row != nil && alert.State == "open" {
-			row.OpenAlerts++
+		alertKey := fmt.Sprintf("%s#%d", alert.Repository, alert.Number)
+		if seenAlerts[alertKey] {
+			return Report{}, fmt.Errorf("observation contains duplicate alert %s", alertKey)
 		}
+		seenAlerts[alertKey] = true
+		if alert.State != "open" {
+			continue
+		}
+		row := rows[alert.Repository]
+		if row == nil {
+			return Report{}, fmt.Errorf("open alert %s is outside the observed repository scope", alertKey)
+		}
+		row.OpenAlerts++
+		key := securityAdvisoryKey{
+			repository:       alert.Repository,
+			advisoryIdentity: alert.AdvisoryIdentity,
+			dependency:       alert.Dependency,
+		}
+		advisoryGroups[key] = append(advisoryGroups[key], SecurityAlertInstanceReport{
+			Number: alert.Number, Severity: alert.Severity, Relationship: alert.Relationship, ManifestPath: alert.ManifestPath,
+			FixedIn: alert.FixedIn, SecurityUpdatePullRequest: alert.SecurityUpdatePullRequest,
+		})
+	}
+	for key, instances := range advisoryGroups {
+		sort.Slice(instances, func(left, right int) bool {
+			if instances[left].Number != instances[right].Number {
+				return instances[left].Number < instances[right].Number
+			}
+			return instances[left].ManifestPath < instances[right].ManifestPath
+		})
+		linked := 0
+		for _, instance := range instances {
+			if instance.SecurityUpdatePullRequest != "" {
+				linked++
+			}
+		}
+		coverage := "none"
+		if linked == len(instances) {
+			coverage = "all-linked"
+		} else if linked > 0 {
+			coverage = "partial"
+		}
+		row := rows[key.repository]
+		row.OpenAdvisoryGroups++
+		if coverage == "partial" {
+			row.PartialSecurityAdvisories++
+		}
+		report.SecurityAdvisories = append(report.SecurityAdvisories, SecurityAdvisoryReport{
+			Repository: key.repository, AdvisoryIdentity: key.advisoryIdentity,
+			Dependency: key.dependency, RemediationCoverage: coverage, OpenAlertInstances: instances,
+		})
 	}
 	for repository, records := range defers {
 		observedRepository, found := observedRepositoryForName(observation.Repositories, repository)
@@ -244,11 +301,21 @@ func GenerateReport(observation Observation, candidates map[string]Candidate, de
 	sort.Slice(report.Repositories, func(left, right int) bool {
 		return report.Repositories[left].Repository < report.Repositories[right].Repository
 	})
+	sort.Slice(report.SecurityAdvisories, func(left, right int) bool {
+		a, b := report.SecurityAdvisories[left], report.SecurityAdvisories[right]
+		if a.Repository != b.Repository {
+			return a.Repository < b.Repository
+		}
+		if a.AdvisoryIdentity != b.AdvisoryIdentity {
+			return a.AdvisoryIdentity < b.AdvisoryIdentity
+		}
+		return a.Dependency < b.Dependency
+	})
 	data, err := json.Marshal(report)
 	if err != nil {
 		return Report{}, err
 	}
-	if err := validateSchema("golden-path-dependency-report-v1.schema.json", data); err != nil {
+	if err := validateSchema("golden-path-dependency-report-v2.schema.json", data); err != nil {
 		return Report{}, err
 	}
 	return report, nil

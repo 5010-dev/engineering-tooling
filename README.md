@@ -202,15 +202,21 @@ and `3` is a tooling failure. An unknown routine surface remains
 `pending-classification` at budget zero; classified roots default to three
 open routine PRs unless a dated, owned override says otherwise.
 
-Typed gate references bind repository `just ci` and optional workflow/job
-evidence without executing the gate. Dependabot security routing is conditional
-and independent from routine budgets. Existing guarded routers are preserved,
-and no candidate removes or delays a security PR because routine regrouping is
-pending.
+Typed gate references bind repository `just ci` and workflow/job evidence
+without executing the gate. A security canonical gate must reference the
+repository-owned conditional closure job; the compiler validates that linkage
+but does not interpret native locks or run the job. Dependabot security routing
+remains conditional and independent from routine budgets. Existing guarded
+routers are preserved, and no candidate removes or delays a security PR because
+routine regrouping is pending.
 
-Live reports require a sealed observation whose identity covers observation
+Live reports require a sealed observation v2 whose identity covers observation
 time, collection query and scope, repository/default-branch identities, PR
-refs/checks, alerts, native-manager sources, and SHA-256. Synthetic fixtures
+refs/checks, alert relationship and advisory identity, native-manager sources,
+and SHA-256. Report v2 groups open alert instances by repository, advisory, and
+dependency. Its `none`, `partial`, and `all-linked` values describe PR
+association only; repository-owned native graph proof controls closure, and an
+unrelated advisory is never coupled to that decision. Synthetic fixtures
 exercise compiler behavior only and are never represented as live organization
 evidence.
 

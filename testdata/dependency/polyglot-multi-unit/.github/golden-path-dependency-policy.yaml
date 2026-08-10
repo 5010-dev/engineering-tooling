@@ -28,6 +28,10 @@ defaults:
         kind: just-recipe
         workingDirectory: .
         recipe: ci
+      ciEvidence:
+        - kind: github-actions-job
+          workflow: .github/workflows/security-remediation.yml
+          job: closure
 rootBindings:
   - nativeRootRef: python-workspace
     classificationState: classified
