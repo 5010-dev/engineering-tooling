@@ -1,1 +1,0 @@
-{"schemaVersion":"repository-release-units/v1","releaseUnits":[{"id":"collector-oci","profiles":["service-application","oci-image"]}]}

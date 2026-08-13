@@ -1,0 +1,6 @@
+interface:
+  display_name: "FiftyTen Golden Path"
+  short_description: "Guide repository-owned developer tooling changes safely"
+  default_prompt: "Use $golden-path to inspect this repository and plan a repository-owned Developer Tooling Golden Path change."
+policy:
+  allow_implicit_invocation: false

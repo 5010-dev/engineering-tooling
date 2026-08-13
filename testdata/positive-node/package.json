@@ -1,6 +1,0 @@
-{
-  "name": "positive-node-fixture",
-  "private": true,
-  "type": "module",
-  "packageManager": "pnpm@11.5.0"
-}

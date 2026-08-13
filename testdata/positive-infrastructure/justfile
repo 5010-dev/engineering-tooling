@@ -1,7 +1,0 @@
-init:
-    terraform init
-
-check:
-    terraform validate
-
-ci: check

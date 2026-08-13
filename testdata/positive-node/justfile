@@ -1,7 +1,0 @@
-init:
-    pnpm install --frozen-lockfile
-
-check:
-    pnpm test
-
-ci: check

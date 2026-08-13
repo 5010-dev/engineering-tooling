@@ -1,0 +1,67 @@
+#!/usr/bin/env sh
+set -eu
+
+version='11.18.0'
+archive_sha256='29c35ca8d2a287988fdee3e0f36e07d9b93783f567b579b7fd5b798a4563dd81'
+executable_sha256='d34a7b439643e7b8680a817387ec3692c7097ae7a85865c2c15ad6211143d506'
+script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PATH="$script_directory:$PATH"
+export PATH
+component_root=$(CDPATH= cd -- "$script_directory/.." && pwd)
+if [ -n "${PNPM_CACHE_DIR:-}" ]; then
+  cache_parent=$PNPM_CACHE_DIR
+elif [ -n "${XDG_CACHE_HOME:-${HOME:-}}" ]; then
+  cache_parent="${XDG_CACHE_HOME:-$HOME/.cache}"
+else
+  cache_parent="$component_root/.cache"
+fi
+cache_directory="$cache_parent/golden-path-agent/pnpm/$version"
+binary="$cache_directory/package/dist/pnpm.mjs"
+
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    printf '%s\n' 'A SHA-256 verification command is required.' >&2
+    exit 2
+  fi
+}
+
+if [ -e "$cache_directory" ] && { [ ! -f "$binary" ] || [ "$(sha256 "$binary")" != "$executable_sha256" ]; }; then
+  printf '%s\n' "pnpm cache entry is incomplete or modified; choose a fresh PNPM_CACHE_DIR or remove this exact package-owned entry: $cache_directory" >&2
+  exit 2
+fi
+
+if [ ! -f "$binary" ]; then
+  staging=$(mktemp -d "${TMPDIR:-/tmp}/pnpm.XXXXXX")
+  trap 'rm -rf "$staging"' EXIT HUP INT TERM
+  archive="$staging/pnpm.tgz"
+  curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --max-time 120 \
+    --output "$archive" "https://registry.npmjs.org/pnpm/-/pnpm-$version.tgz"
+  if [ "$(sha256 "$archive")" != "$archive_sha256" ]; then
+    printf '%s\n' 'pnpm archive checksum mismatch.' >&2
+    exit 2
+  fi
+  mkdir -p "$staging/unpacked"
+  tar -xzf "$archive" -C "$staging/unpacked"
+  candidate="$staging/unpacked/package/dist/pnpm.mjs"
+  if [ ! -f "$candidate" ] || [ "$(sha256 "$candidate")" != "$executable_sha256" ] || [ "$(node "$candidate" --version)" != "$version" ]; then
+    printf '%s\n' 'pnpm archive contains an unexpected executable.' >&2
+    exit 2
+  fi
+  mkdir -p "$(dirname "$cache_directory")"
+  if ! mkdir "$cache_directory"; then
+    if [ -f "$binary" ] && [ "$(sha256 "$binary")" = "$executable_sha256" ]; then
+      exec node "$binary" "$@"
+    fi
+    printf '%s\n' "pnpm cache entry was created concurrently but is not ready: $cache_directory" >&2
+    exit 2
+  fi
+  mv "$staging/unpacked/package" "$cache_directory/package"
+  trap - EXIT HUP INT TERM
+  rm -rf "$staging"
+fi
+
+exec node "$binary" "$@"

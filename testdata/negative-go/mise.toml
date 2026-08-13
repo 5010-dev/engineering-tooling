@@ -1,4 +1,0 @@
-min_version = "latest"
-
-[tools]
-go = "latest"

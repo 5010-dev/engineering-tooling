@@ -1,0 +1,110 @@
+{
+  "name": "@5010-dev/golden-path-agent",
+  "version": "1.0.0",
+  "description": "Developer-installed Skill and bounded local support for the repository-owned FiftyTen Developer Tooling Golden Path.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/5010-dev/engineering-tooling.git"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
+  },
+  "type": "module",
+  "types": "./lib/index.d.ts",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.23.2 <25",
+    "pnpm": ">=11.18.0 <12"
+  },
+  "packageManager": "pnpm@11.18.0",
+  "bin": {
+    "golden-path-agent": "./lib/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    }
+  },
+  "files": [
+    "lib/authority.d.ts",
+    "lib/authority.d.ts.map",
+    "lib/authority.js",
+    "lib/authority.js.map",
+    "lib/cli.d.ts",
+    "lib/cli.d.ts.map",
+    "lib/cli.js",
+    "lib/cli.js.map",
+    "lib/constants.d.ts",
+    "lib/constants.d.ts.map",
+    "lib/constants.js",
+    "lib/constants.js.map",
+    "lib/hashing.d.ts",
+    "lib/hashing.d.ts.map",
+    "lib/hashing.js",
+    "lib/hashing.js.map",
+    "lib/index.d.ts",
+    "lib/index.d.ts.map",
+    "lib/index.js",
+    "lib/index.js.map",
+    "lib/metadata.d.ts",
+    "lib/metadata.d.ts.map",
+    "lib/metadata.js",
+    "lib/metadata.js.map",
+    "lib/plan.d.ts",
+    "lib/plan.d.ts.map",
+    "lib/plan.js",
+    "lib/plan.js.map",
+    "lib/process.d.ts",
+    "lib/process.d.ts.map",
+    "lib/process.js",
+    "lib/process.js.map",
+    "lib/report.d.ts",
+    "lib/report.d.ts.map",
+    "lib/report.js",
+    "lib/report.js.map",
+    "lib/repository.d.ts",
+    "lib/repository.d.ts.map",
+    "lib/repository.js",
+    "lib/repository.js.map",
+    "lib/skill.d.ts",
+    "lib/skill.d.ts.map",
+    "lib/skill.js",
+    "lib/skill.js.map",
+    "lib/skills/golden-path/SKILL.md",
+    "lib/skills/golden-path/agents/openai.yaml",
+    "lib/skills/golden-path/references/authority-boundaries.md",
+    "lib/skills/golden-path/references/copy-once-workflow.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/clean.mjs && tsc -p tsconfig.build.json && node scripts/finalize.mjs",
+    "clean": "node scripts/clean.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "package:check": "node scripts/package-check.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit --pretty false -p tsconfig.json"
+  },
+  "dependencies": {
+    "commander": "15.0.0",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.2.0",
+    "eslint": "10.8.0",
+    "globals": "17.7.0",
+    "prettier": "3.9.6",
+    "publint": "0.3.23",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  }
+}
