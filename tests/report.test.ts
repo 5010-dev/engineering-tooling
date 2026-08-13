@@ -184,21 +184,64 @@ describe("report-only inventory", () => {
     ]);
   });
 
-  it("keeps an excluded independent Node root outside pnpm workspace members", async () => {
+  it("keeps pnpm exclusions effective regardless of pattern order", async () => {
+    for (const patterns of [
+      ["packages/*", "!packages/excluded"],
+      ["!packages/excluded", "packages/*"],
+    ]) {
+      const root = await createGitRepository();
+      temporaryDirectories.push(root);
+      await writeFile(join(root, "package.json"), "{}\n");
+      await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+      await writeFile(
+        join(root, "pnpm-workspace.yaml"),
+        `packages:\n${patterns.map((pattern) => `  - '${pattern}'`).join("\n")}\n`,
+      );
+      await mkdir(join(root, "packages", "member"), { recursive: true });
+      await writeFile(join(root, "packages", "member", "package.json"), "{}\n");
+      await mkdir(join(root, "packages", "excluded"), { recursive: true });
+      await writeFile(
+        join(root, "packages", "excluded", "package.json"),
+        "{}\n",
+      );
+      await writeFile(
+        join(root, "packages", "excluded", "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\n",
+      );
+
+      const inventory = await inspectRepository(
+        new ExecFileProcessRunner(),
+        root,
+      );
+      expect(inventory.applicability.classification).toBe(
+        "pending-classification",
+      );
+      expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+        ".",
+        "packages/excluded",
+      ]);
+    }
+  });
+
+  it("does not absorb an explicitly excluded descendant package", async () => {
     const root = await createGitRepository();
     temporaryDirectories.push(root);
     await writeFile(join(root, "package.json"), "{}\n");
     await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
     await writeFile(
       join(root, "pnpm-workspace.yaml"),
-      "packages:\n  - 'packages/*'\n  - '!packages/excluded'\n",
+      "packages:\n  - '!**/fixtures/**'\n  - 'packages/**'\n",
     );
-    await mkdir(join(root, "packages", "member"), { recursive: true });
+    await mkdir(join(root, "packages", "member", "fixtures", "app"), {
+      recursive: true,
+    });
     await writeFile(join(root, "packages", "member", "package.json"), "{}\n");
-    await mkdir(join(root, "packages", "excluded"), { recursive: true });
-    await writeFile(join(root, "packages", "excluded", "package.json"), "{}\n");
     await writeFile(
-      join(root, "packages", "excluded", "pnpm-lock.yaml"),
+      join(root, "packages", "member", "fixtures", "app", "package.json"),
+      "{}\n",
+    );
+    await writeFile(
+      join(root, "packages", "member", "fixtures", "app", "pnpm-lock.yaml"),
       "lockfileVersion: '9.0'\n",
     );
 
@@ -211,8 +254,140 @@ describe("report-only inventory", () => {
     );
     expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
       ".",
-      "packages/excluded",
+      "packages/member/fixtures/app",
     ]);
+  });
+
+  it("surfaces a workspace member with a competing lock as another dependency root", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "package.json"), "{}\n");
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    await mkdir(join(root, "packages", "member"), { recursive: true });
+    await writeFile(join(root, "packages", "member", "package.json"), "{}\n");
+    await writeFile(
+      join(root, "packages", "member", "pnpm-lock.yaml"),
+      "lockfileVersion: '9.0'\n",
+    );
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe(
+      "pending-classification",
+    );
+    expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+      ".",
+      "packages/member",
+    ]);
+  });
+
+  it("preserves per-project roots when pnpm disables the shared workspace lockfile", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "package.json"), "{}\n");
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\nsharedWorkspaceLockfile: false\n",
+    );
+    for (const member of ["one", "two"]) {
+      await mkdir(join(root, "packages", member), { recursive: true });
+      await writeFile(join(root, "packages", member, "package.json"), "{}\n");
+      await writeFile(
+        join(root, "packages", member, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\n",
+      );
+    }
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe(
+      "pending-classification",
+    );
+    expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+      ".",
+      "packages/one",
+      "packages/two",
+    ]);
+  });
+
+  it("preserves a manifestless workspace root lock beside a competing member lock", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    await mkdir(join(root, "packages", "member"), { recursive: true });
+    await writeFile(join(root, "packages", "member", "package.json"), "{}\n");
+    await writeFile(
+      join(root, "packages", "member", "pnpm-lock.yaml"),
+      "lockfileVersion: '9.0'\n",
+    );
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe(
+      "pending-classification",
+    );
+    expect(
+      new Set(inventory.nativeSurfaces.map((surface) => surface.root)),
+    ).toEqual(new Set([".", "packages/member"]));
+    expect(
+      inventory.nativeSurfaces.find((surface) => surface.root === ".")
+        ?.manifest,
+    ).toBe("packages/member/package.json");
+  });
+
+  it("preserves a complete nested pnpm workspace boundary", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "package.json"), "{}\n");
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    await mkdir(join(root, "packages", "member", "nested", "apps", "web"), {
+      recursive: true,
+    });
+    await writeFile(join(root, "packages", "member", "package.json"), "{}\n");
+    const nestedRoot = join(root, "packages", "member", "nested");
+    await writeFile(
+      join(nestedRoot, "pnpm-lock.yaml"),
+      "lockfileVersion: '9.0'\n",
+    );
+    await writeFile(
+      join(nestedRoot, "pnpm-workspace.yaml"),
+      "packages:\n  - 'apps/*'\n",
+    );
+    await writeFile(join(nestedRoot, "apps", "web", "package.json"), "{}\n");
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe(
+      "pending-classification",
+    );
+    expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+      ".",
+      "packages/member/nested",
+    ]);
+    expect(inventory.nativeSurfaces[1]?.manifest).toBe(
+      "packages/member/nested/apps/web/package.json",
+    );
   });
 
   it("discovers unambiguous nested Node, Go, and Python native roots", async () => {
