@@ -1,5 +1,0 @@
-schemaVersion: golden-path-native-roots/v1
-roots:
-  - id: go-service
-    path: .
-    profiles: [go]

@@ -1,7 +1,0 @@
-init:
-    cargo fetch --locked
-
-check:
-    cargo test --locked
-
-ci: check

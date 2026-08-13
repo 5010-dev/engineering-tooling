@@ -1,4 +1,4 @@
-name: Developer Tooling / Conformance
+name: CI
 
 on:
   pull_request:
@@ -14,17 +14,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: developer-tooling-conformance-${{ github.workflow }}-${{ github.ref }}
+  group: golden-path-agent-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  conformance:
-    name: Developer Tooling / Quality
+  check:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out source
+      - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install pinned toolchain
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
@@ -32,51 +33,20 @@ jobs:
           install: true
           cache: true
 
-      - name: Select explicit evaluation time
-        run: echo "GOLDEN_PATH_EVALUATED_AT=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
+      - name: Install locked dependencies
+        run: just init
 
-      - name: Run repository gate
-        id: gate
-        continue-on-error: true
+      - name: Run canonical CI
         run: just ci
 
-      - name: Publish bounded conformance evidence
-        if: always()
-        run: |
-          set +e
-          go run -mod=readonly ./cmd/golden-path check \
-            --root . \
-            --evaluated-at "$GOLDEN_PATH_EVALUATED_AT" \
-            --json-output "$RUNNER_TEMP/golden-path-result.json" \
-            --github-summary-output "$GITHUB_STEP_SUMMARY" \
-            --github-annotations
-          exit 0
-
-      - name: Enforce repository gate result
-        if: always()
-        env:
-          GATE_OUTCOME: ${{ steps.gate.outcome }}
-        run: test "$GATE_OUTCOME" = "success"
-
-  native-target:
-    name: Native / ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: linux/amd64
-          - runner: ubuntu-24.04-arm
-            target: linux/arm64
-          - runner: macos-26-intel
-            target: darwin/amd64
-          - runner: macos-26
-            target: darwin/arm64
+  minimum-node:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - name: Check out source
+      - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install pinned toolchain
         uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
@@ -84,333 +54,19 @@ jobs:
           install: true
           cache: true
 
-      - name: Build and execute native release target
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          version="$(go run -mod=readonly ./cmd/golden-path --version)"
-          version="${version#golden-path }"
-          archive="golden-path_${version}_${TARGET/\//_}.tar.gz"
-          go run -mod=readonly ./cmd/release-package \
-            --source . \
-            --dist "$RUNNER_TEMP/dist" \
-            --target "$TARGET"
-          mkdir "$RUNNER_TEMP/unpacked"
-          tar -xzf "$RUNNER_TEMP/dist/$archive" -C "$RUNNER_TEMP/unpacked"
-          "$RUNNER_TEMP/unpacked/golden-path/golden-path" --version
-          "$RUNNER_TEMP/unpacked/golden-path/golden-path" check \
-            --root testdata/positive-go \
-            --evaluated-at 2026-07-31T00:00:00Z \
-            --json-output "$RUNNER_TEMP/native-result.json"
+      - name: Install locked dependencies
+        run: just init
 
-  generated-profile:
-    name: Generated profile / ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: documentation/linux/amd64
-            request: documentation.yaml
-          - runner: ubuntu-24.04
-            target: single-go/linux/amd64
-            request: single-go.yaml
-          - runner: ubuntu-24.04
-            target: monorepo/linux/amd64
-            request: monorepo.yaml
-          - runner: ubuntu-24.04
-            target: node-publisher/linux/amd64
-            request: node-publisher.yaml
-          - runner: ubuntu-24.04
-            target: full/linux/amd64
-            request: all-profiles.yaml
-          - runner: ubuntu-24.04-arm
-            target: zig/linux/arm64
-            request: zig-profiles.yaml
-          - runner: macos-26-intel
-            target: zig/darwin/amd64
-            request: zig-profiles.yaml
-          - runner: macos-26
-            target: zig/darwin/arm64
-            request: zig-profiles.yaml
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build package with the preferred toolchain
+        run: just build
 
-      - name: Install generator toolchain
-        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+      - name: Install minimum supported Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          install: true
-          cache: true
+          node-version: 22.23.2
 
-      - name: Materialize generated repository
-        env:
-          REQUEST: ${{ matrix.request }}
+      - name: Smoke the public entry point on minimum Node
         run: |
-          set -euo pipefail
-          go build -mod=readonly -trimpath -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
-          "$RUNNER_TEMP/golden-path-under-test" generate \
-            --request "testdata/generator/requests/$REQUEST" \
-            --release-manifest testdata/generator/release-manifest.json \
-            --write \
-            --output "$RUNNER_TEMP/generated"
-          git -C "$RUNNER_TEMP/generated" init -b main
-          git -C "$RUNNER_TEMP/generated" config user.name golden-path-ci
-          git -C "$RUNNER_TEMP/generated" config user.email golden-path-ci@users.noreply.github.com
-          git -C "$RUNNER_TEMP/generated" add .
-          git -C "$RUNNER_TEMP/generated" commit -m "test: materialize fixture"
-
-      - name: Verify repository-owned edits do not block upgrade
-        env:
-          REQUEST: ${{ matrix.request }}
-        run: |
-          set -euo pipefail
-          printf '\nRepository-owned onboarding extension.\n' >> "$RUNNER_TEMP/generated/README.md"
-          printf '\n# Repository-owned workflow extension.\n' >> "$RUNNER_TEMP/generated/.github/workflows/quality.yml"
-          "$RUNNER_TEMP/golden-path-under-test" upgrade \
-            --root "$RUNNER_TEMP/generated" \
-            --request "testdata/generator/requests/$REQUEST" \
-            --release-manifest testdata/generator/release-manifest.json \
-            --write \
-            --output "$RUNNER_TEMP/upgrade-candidate" \
-            > "$RUNNER_TEMP/upgrade-plan.json"
-          jq -e '
-            .operation == "upgrade" and
-            .conflictCount == 0 and
-            all(.changes[]; .path == ".github/golden-path-assets.json" or
-              .path == ".github/golden-path-request.json" or
-              .path == ".github/golden-path.yaml" or
-              .path == ".github/workflows/developer-tooling.yml" or
-              .path == "scripts/golden-path")
-          ' "$RUNNER_TEMP/upgrade-plan.json" >/dev/null
-          test ! -e "$RUNNER_TEMP/upgrade-candidate/README.md"
-          test ! -e "$RUNNER_TEMP/upgrade-candidate/.github/workflows/quality.yml"
-          test ! -e "$RUNNER_TEMP/upgrade-candidate/golden-path-plan.json"
-          git -C "$RUNNER_TEMP/generated" add README.md .github/workflows/quality.yml
-          git -C "$RUNNER_TEMP/generated" commit -m "test: model repository-owned edits"
-
-      - name: Execute generated project contract
-        run: |
-          set -euo pipefail
-          cd "$RUNNER_TEMP/generated"
-          mise trust
-          mise install --locked
-          mkdir -p "$RUNNER_TEMP/hostile-xdg/mise"
-          printf '%s\n' '[tools]' 'node = "999.0.0"' > "$RUNNER_TEMP/hostile-xdg/mise/config.toml"
-          printf '%s\n' '[tools]' 'node = "999.0.0"' > "$RUNNER_TEMP/hostile-global-mise.toml"
-          XDG_CONFIG_HOME="$RUNNER_TEMP/hostile-xdg" \
-            MISE_GLOBAL_CONFIG_FILE="$RUNNER_TEMP/hostile-global-mise.toml" \
-            GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" \
-            just init
-          GOLDEN_PATH_BIN="$RUNNER_TEMP/golden-path-under-test" mise exec -- just ci
-          test -z "$(git status --short)"
-
-  setup-action:
-    name: Setup action / migration and rollback / ${{ matrix.prior_version }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - prior_version: 0.2.0
-            prior_commit: 1c590b377dfc38047a1c9766ab0ea3ac9b954d3b
-            darwin_amd64_sha256: a0fc3b227c9bc492f72f04dd2b5f13368708f9a40abf79740bf8e42e1ff83c69
-            darwin_arm64_sha256: 381272c9e817fb1619316e52360911f4f4a5fd441982517476bff3fe994adcd8
-            linux_amd64_sha256: 780ae580fe76011e8d8933efa3a34aee26931158c4f298eee0ea16306e73b9cf
-            linux_arm64_sha256: 320a19bbb8a3b77df04aeb5cc0103f839e34b1705cffa7c2824138aec23e69ca
-          - prior_version: 1.1.0
-            prior_commit: cebac127c71406e7818237fcd83ad39fe7a472bc
-            darwin_amd64_sha256: 6974d3f344b210c592ead03cd444771b9e7bc33369df5c9622028b990286e4b9
-            darwin_arm64_sha256: ecf34a6896e5eaa41815fda018c8bd6920a8fd8d28bd9cd41a8bae3f0e44cbf6
-            linux_amd64_sha256: f5020724c216ec467501e5a44b2803897c7cfb010ed4f1299304524344545a2c
-            linux_arm64_sha256: 6d80a2310a58c3b5b5146943b22e72c1bdb425e2801bba0a205b6a50e2e26805
-          - prior_version: 1.2.0
-            prior_commit: e5820e01e31c8395c33e4a6087db87600369943f
-            darwin_amd64_sha256: 38780123fe8647043a1ca13bad2a474eac37b0829ee3505e7b7548f4befe94d3
-            darwin_arm64_sha256: df219c0d9cb5e5df90d940bafbda20639a3b4e857b34d28d04fde22debdc09cd
-            linux_amd64_sha256: 61b1de815aafcff6f99c9e0d60c14446d0c6e3865ac09942165dacbba2b2b133
-            linux_arm64_sha256: e0b16544985495cbcfa297c3762f6e19f973ff9c3acb54ce17dbe6cba445f4bb
-          - prior_version: 1.2.1
-            prior_commit: b0ec12860a673d95b02391c19b545653938ac059
-            darwin_amd64_sha256: e231a5aa16148d46ee6187214918bcaae5e89c17719af48b185f4015e1efade8
-            darwin_arm64_sha256: b363fc4522282c525dc56834aa5963384a3fe190a66936ad6b3b5e4a920c5cfa
-            linux_amd64_sha256: 29bac9344f52d8d6c6fba8b81290cdc5ab255bc476237191003820a312698df0
-            linux_arm64_sha256: 47c14927e63fa9cc45fe88a59e24655127ed6cbcffa48d79cf2a730aa91de5a9
-          - prior_version: 1.2.2
-            prior_commit: 3aab60d0770853d45b6da179cbc45f6f6639d40f
-            darwin_amd64_sha256: 5eac78733a7f3448b560d9994dac3e25affef060a23a8cfcb7ff2283865df651
-            darwin_arm64_sha256: e6bd8402f6653945f6a39b575eb3c22e684480f4295a7b4ab89a0d52004ac388
-            linux_amd64_sha256: 7f2dc5fe4665ed014829dffdee5c83ba926ca5014f98d9d69cc592605eb6f20e
-            linux_arm64_sha256: 020f8c5b315f265260dfb0d61a953a3043c90071ca23c3f7ea83666f58062854
-          - prior_version: 1.2.3
-            prior_commit: 36767ad2b289b46e2af1257484c8db27ea45062e
-            darwin_amd64_sha256: f5441ddaebc9cb58d4ff39a0d9d51315a92892a958b7bd08284ff197fe7a65db
-            darwin_arm64_sha256: 32ac3478f5e29d740e82614376b2ce21307e8cd6b95eaede0acceac5b5a374e8
-            linux_amd64_sha256: 1fc67c2f75727c47156dc4db199868659cc86f0b2540279f6698f2e8a1fff1c2
-            linux_arm64_sha256: 4e247b827e71016e88cd4541f2a192663b69a36a88cf1808ea21502d092c23e7
-          - prior_version: 1.2.4
-            prior_commit: 4c078bf7401b10fce9691c521d2887370963e74b
-            darwin_amd64_sha256: faa79fa548d56fd542768c74ac38ace904bf3e1541e8d3de09ae8278a47c8181
-            darwin_arm64_sha256: 2e20064590c31fdf39d94483ee691da3f9076f34becebef11fb74c446db2c2d1
-            linux_amd64_sha256: 43e780a52219d3917086cde358959ae53ce1dc6420c00770dec46d4f08c94628
-            linux_arm64_sha256: 8abeb2021d3af995563e1f5f4746c1456c73695fa320cd2c2e3119cfbcb37245
-          - prior_version: 1.3.0
-            prior_commit: 58b9cee44a7442899ab399ef1d04b0b2ba45052d
-            darwin_amd64_sha256: aa7a3f74663db5a61671f6a4a1c54f1ac9bf78b97dd512ee00b77bebd47fb111
-            darwin_arm64_sha256: 5394df0241333bcf40dba3cd755d6930367fc0815b2c47728b449aa6319a894f
-            linux_amd64_sha256: 55b01b9c4d210fec22a9e5056efc440b12b237e0fda45c7c141be925e747b6de
-            linux_arm64_sha256: 5d5ba18a6bf3c766ce5527632611e4b173b02258c95180392cc9c56988c502ee
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install pinned verifier
-        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
-        with:
-          install: true
-          cache: true
-
-      - name: Set up verified release
-        id: golden-path
-        uses: ./actions/setup-golden-path
-        with:
-          checker-version: ${{ matrix.prior_version }}
-          source-commit: ${{ matrix.prior_commit }}
-          github-cli-version: 2.97.0
-          darwin-amd64-sha256: ${{ matrix.darwin_amd64_sha256 }}
-          darwin-arm64-sha256: ${{ matrix.darwin_arm64_sha256 }}
-          linux-amd64-sha256: ${{ matrix.linux_amd64_sha256 }}
-          linux-arm64-sha256: ${{ matrix.linux_arm64_sha256 }}
-
-      - name: Execute verified release
-        env:
-          GOLDEN_PATH_BIN: ${{ steps.golden-path.outputs.binary-path }}
-          PRIOR_VERSION: ${{ matrix.prior_version }}
-        run: test "$("$GOLDEN_PATH_BIN" --version)" = "golden-path $PRIOR_VERSION"
-
-      - name: Verify prior release manifest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ROLLBACK_COMMIT: ${{ matrix.prior_commit }}
-          ROLLBACK_VERSION: ${{ matrix.prior_version }}
-        run: |
-          set -euo pipefail
-          mkdir "$RUNNER_TEMP/rollback-release"
-          gh release download "v$ROLLBACK_VERSION" \
-            --repo 5010-dev/engineering-tooling \
-            --pattern release-manifest.json \
-            --dir "$RUNNER_TEMP/rollback-release"
-          gh attestation verify "$RUNNER_TEMP/rollback-release/release-manifest.json" \
-            --repo 5010-dev/engineering-tooling \
-            --signer-workflow 5010-dev/engineering-tooling/.github/workflows/release.yml \
-            --source-digest "$ROLLBACK_COMMIT" \
-            --signer-digest "$ROLLBACK_COMMIT" \
-            --source-ref "refs/tags/v$ROLLBACK_VERSION" \
-            --deny-self-hosted-runners >/dev/null
-
-      - name: Exercise stable migration and rollback without source mutation
-        env:
-          ROLLBACK_BIN: ${{ steps.golden-path.outputs.binary-path }}
-          PRIOR_VERSION: ${{ matrix.prior_version }}
-        run: |
-          set -euo pipefail
-          go build -mod=readonly -trimpath \
-            -o "$RUNNER_TEMP/golden-path-under-test" ./cmd/golden-path
-          candidate_version="$("$RUNNER_TEMP/golden-path-under-test" --version)"
-          candidate_version="${candidate_version#golden-path }"
-          manifest_version="$(jq -er '.releaseVersion' testdata/generator/release-manifest.json)"
-          test "$candidate_version" = "$manifest_version"
-          sed '/^materializationMode:/d' \
-            testdata/generator/requests/single-go.yaml \
-            > "$RUNNER_TEMP/legacy-single-go.yaml"
-          "$ROLLBACK_BIN" generate \
-            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
-            --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
-            --write \
-            --output "$RUNNER_TEMP/rollback-repository"
-          git -C "$RUNNER_TEMP/rollback-repository" init -b main
-          git -C "$RUNNER_TEMP/rollback-repository" config user.name golden-path-ci
-          git -C "$RUNNER_TEMP/rollback-repository" config user.email golden-path-ci@users.noreply.github.com
-          git -C "$RUNNER_TEMP/rollback-repository" add .
-          git -C "$RUNNER_TEMP/rollback-repository" commit -m "test: materialize rollback fixture"
-          source_tree="$(git -C "$RUNNER_TEMP/rollback-repository" write-tree)"
-          "$RUNNER_TEMP/golden-path-under-test" upgrade \
-            --root "$RUNNER_TEMP/rollback-repository" \
-            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
-            --release-manifest testdata/generator/release-manifest.json \
-            > "$RUNNER_TEMP/stable-migration-preview.json"
-          "$RUNNER_TEMP/golden-path-under-test" upgrade \
-            --root "$RUNNER_TEMP/rollback-repository" \
-            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
-            --release-manifest testdata/generator/release-manifest.json \
-            --write \
-            --output "$RUNNER_TEMP/stable-migration-candidate" \
-            > "$RUNNER_TEMP/stable-migration-write.json"
-          cmp "$RUNNER_TEMP/stable-migration-preview.json" \
-            "$RUNNER_TEMP/stable-migration-write.json"
-          jq -e --arg candidate "$candidate_version" '
-            .operation == "upgrade" and
-            .releaseVersion == $candidate and
-            .conflictCount == 0 and
-            any(.changes[]; .status == "update")
-          ' "$RUNNER_TEMP/stable-migration-preview.json" >/dev/null
-          test "$(git -C "$RUNNER_TEMP/rollback-repository" write-tree)" = "$source_tree"
-          test -z "$(git -C "$RUNNER_TEMP/rollback-repository" status --short)"
-          git -C "$RUNNER_TEMP/stable-migration-candidate" init -b main
-          git -C "$RUNNER_TEMP/stable-migration-candidate" config user.name golden-path-ci
-          git -C "$RUNNER_TEMP/stable-migration-candidate" config user.email golden-path-ci@users.noreply.github.com
-          git -C "$RUNNER_TEMP/stable-migration-candidate" add .
-          git -C "$RUNNER_TEMP/stable-migration-candidate" commit -m "test: materialize stable migration candidate"
-          rollback_source_tree="$(git -C "$RUNNER_TEMP/stable-migration-candidate" write-tree)"
-          "$ROLLBACK_BIN" upgrade \
-            --root "$RUNNER_TEMP/stable-migration-candidate" \
-            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
-            --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
-            > "$RUNNER_TEMP/rollback-preview.json"
-          "$ROLLBACK_BIN" upgrade \
-            --root "$RUNNER_TEMP/stable-migration-candidate" \
-            --request "$RUNNER_TEMP/legacy-single-go.yaml" \
-            --release-manifest "$RUNNER_TEMP/rollback-release/release-manifest.json" \
-            --write \
-            --output "$RUNNER_TEMP/rollback-candidate" \
-            > "$RUNNER_TEMP/rollback-write.json"
-          cmp "$RUNNER_TEMP/rollback-preview.json" \
-            "$RUNNER_TEMP/rollback-write.json"
-          jq -e --arg prior "$PRIOR_VERSION" '
-            .operation == "upgrade" and
-            .releaseVersion == $prior and
-            .conflictCount == 0 and
-            any(.changes[]; .status == "update")
-          ' "$RUNNER_TEMP/rollback-preview.json" >/dev/null
-          test "$("$ROLLBACK_BIN" --version)" = "golden-path $PRIOR_VERSION"
-          test "$(git -C "$RUNNER_TEMP/stable-migration-candidate" write-tree)" = "$rollback_source_tree"
-          test -z "$(git -C "$RUNNER_TEMP/stable-migration-candidate" status --short)"
-          git -C "$RUNNER_TEMP/rollback-candidate" init -b main
-          git -C "$RUNNER_TEMP/rollback-candidate" config user.name golden-path-ci
-          git -C "$RUNNER_TEMP/rollback-candidate" config user.email golden-path-ci@users.noreply.github.com
-          git -C "$RUNNER_TEMP/rollback-candidate" add .
-          git -C "$RUNNER_TEMP/rollback-candidate" commit -m "test: materialize rollback candidate"
-          rollback_candidate_tree="$(git -C "$RUNNER_TEMP/rollback-candidate" write-tree)"
-          (
-            cd "$RUNNER_TEMP/rollback-candidate"
-            mise trust
-            mise install --locked
-            GOLDEN_PATH_BIN="$ROLLBACK_BIN" just init
-            GOLDEN_PATH_BIN="$ROLLBACK_BIN" just ci
-          )
-          test "$(git -C "$RUNNER_TEMP/rollback-candidate" write-tree)" = "$rollback_candidate_tree"
-          test -z "$(git -C "$RUNNER_TEMP/rollback-candidate" status --short)"
-
-  reusable-conformance:
-    name: Reusable conformance / source candidate
-    permissions:
-      contents: read
-    uses: ./.github/workflows/golden-path-quality.yml
-    with:
-      profiles: '["go"]'
+          node lib/cli.js --version
+          node --input-type=module -e \
+            "import('./lib/index.js').then((module) => { if (typeof module.createReport !== 'function') process.exit(1); })"

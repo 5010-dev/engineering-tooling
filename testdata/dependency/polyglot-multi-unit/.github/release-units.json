@@ -1,9 +1,0 @@
-{
-  "schemaVersion": "repository-release-units/v1",
-  "releaseUnits": [
-    {"id": "api-oci", "profiles": ["service-application", "oci-image"]},
-    {"id": "worker-oci", "profiles": ["service-application", "oci-image"]},
-    {"id": "event-envelope", "profiles": ["event-schema"]},
-    {"id": "database-migrations", "profiles": ["database-migration"]}
-  ]
-}

@@ -1,6 +1,6 @@
-paths:
-  .github/workflows/golden-path-quality.yml:
-    ignore:
-      # GitHub.com exposes these called-workflow identity fields, but
-      # actionlint 1.7.12 has not added them to its job-context model yet.
-      - 'property "workflow_(ref|repository|sha)" is not defined in object type'
+self-hosted-runner:
+  labels:
+    - macos-26
+    - macos-26-intel
+    - ubuntu-24.04
+    - ubuntu-24.04-arm

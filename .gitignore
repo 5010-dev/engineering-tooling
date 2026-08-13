@@ -1,4 +1,8 @@
-/bin/
+/node_modules/
 /dist/
-/coverage.out
+/lib/
+/bin/
+/coverage/
+/.package-check/
+/.pnpm-store/
 *.tmp

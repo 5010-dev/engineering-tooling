@@ -1,252 +1,120 @@
-# FiftyTen engineering tooling
+# Golden Path Agent
 
-Shared, versioned implementations of the FiftyTen Golden Path developer-tooling
-standard.
+`@5010-dev/golden-path-agent` is a private, developer-installed package that
+helps a developer or coding agent inspect and apply the FiftyTen Developer
+Tooling Golden Path without becoming a repository or organization control
+plane.
 
-This repository is the implementation plane. Normative policy remains in the
-organization `.github` repository; released binaries embed an immutable,
-digest-bound snapshot of that policy.
+The active policy and guidance remain reviewed source in
+[`5010-dev/.github`](https://github.com/5010-dev/.github). Consumer repositories
+continue to own their manifests, locks, toolchain selectors, Just graph,
+canonical CI, security routing, and release or deployment workflows.
 
-## Golden Path checker
+## Install the package
 
-The `golden-path` CLI performs bounded, read-only structural conformance checks
-without network access, credentials, a GitHub API, or user-global
-configuration.
+Authenticate npm for the `5010-dev` GitHub Packages scope, then install the
+exact package version:
+
+```sh
+pnpm add --global @5010-dev/golden-path-agent@1.0.0
+```
+
+Package updates and rollback are exact reinstalls of a reviewed version. There
+is no locator, update channel, or compatibility bridge to the retired
+`golden-path` executable line.
+
+Runtime authority reads require GitHub CLI `gh` authenticated to `github.com`
+with read access to `5010-dev/.github`. The package does not capture, persist,
+or print the authentication token:
+
+```sh
+gh auth status --hostname github.com
+```
+
+## Install the explicit-invocation Skill
+
+```sh
+golden-path-agent skill install --host codex
+golden-path-agent skill install --host claude-code
+golden-path-agent skill check --host all
+```
+
+The installer writes only the official user-level Skill directories:
+
+- Codex: `$HOME/.agents/skills/golden-path`
+- Claude Code: `$HOME/.claude/skills/golden-path`
+
+It refuses to replace an unmanaged directory and refuses to overwrite locally
+modified managed content unless `--force` is supplied explicitly. It also
+fails closed when the home or host Skill parent is a symbolic link.
+
+## Repository support commands
+
+All commands are local developer support. They are not organization approval,
+merge enforcement, or repository CI.
+
+```sh
+golden-path-agent info --root . --json
+golden-path-agent doctor --root .
+golden-path-agent check --root . --json
+golden-path-agent plan --root . --request /tmp/request.json --output /tmp/plan.json
+golden-path-agent apply --root . --plan /tmp/plan.json \
+  --approved-plan-sha256 sha256:<exact-plan-digest>
+```
+
+`info`, `doctor`, `check`, and `plan` are read-only. JSON inventory records the
+observation interval, package content identity, both installed Skill states,
+the exact bounded Git file query, repository applicability, native roots, and
+authority file digests. Repeated same-profile roots remain
+`pending-classification` unless the repository owns an explicit
+`.github/golden-path-native-roots.yaml` declaration.
+
+`plan` binds its observation interval and exact package content digest and
+prints the digest of the exact external plan bytes for review. `apply` is the
+only repository-writing command. It accepts only the current Golden Path's
+named copy-once examples, resolves current `.github/main` again, requires it to
+remain the exact planned commit, and verifies the explicitly approved plan
+digest plus package, source, repository, and destination hashes before writing.
+Use `apply --json` to retain the apply interval, approved digest, source file
+digests, and written destinations as evidence.
+
+Example request:
+
+```json
+{
+  "schemaVersion": 1,
+  "copies": [
+    {
+      "source": "canonical-ci",
+      "destination": ".github/workflows/ci.yml",
+      "overwrite": false,
+      "replacements": []
+    }
+  ]
+}
+```
+
+The plan file must be outside the target repository. A copied example becomes
+repository-owned immediately; this package does not record managed ownership,
+upgrade it, or open consumer pull requests.
+
+## Development
 
 ```sh
 just init
+just check
 just ci
-
-go run ./cmd/golden-path check \
-  --root /path/to/repository \
-  --evaluated-at 2026-07-31T00:00:00Z \
-  --json-output /tmp/golden-path-result.json
 ```
 
-`just check` and `just ci` are stable zero-argument commands. They select the
-current UTC evaluation time lazily; deterministic replays can set
-`GOLDEN_PATH_EVALUATED_AT` or pass the timestamp as the recipe argument.
+Publication is separate from quality validation. Only an immutable
+`golden-path-agent-vX.Y.Z` tag pointing at the validated `main` commit may
+publish the matching private GitHub Package. Canonical validation packs once,
+records the tarball SHA-256 and SRI, tests that exact file in an isolated
+consumer, and the release workflow publishes the same file.
 
-The default text result contains identity, status counts, a categorized skip
-summary, and actionable findings only. Pass and skip detail is available
-explicitly with `--show-all` or `--verbose`. The JSON result always retains the
-complete finding set and is written to the selected path. Use `--json-output -`
-to write JSON to standard output and text to standard error. CI callers can
-additionally select `--github-summary-output "$GITHUB_STEP_SUMMARY"` and
-`--github-annotations`; both human surfaces are bounded, while JSON remains the
-complete record. File outputs must resolve outside the checked repository,
-including through symbolic-link parents.
+## Historical release line
 
-The `1.x` compatibility contract is stable. Conformance remains report-only:
-the CLI preserves exit codes and evidence, while the reusable workflow does not
-establish or claim a merge policy. A later enforcement decision is independent
-of implementation stability.
-
-The generated conformance caller invokes the immutable
-`golden-path-quality.yml` reusable workflow with only its runner, working
-directory, and expected profiles. The reusable workflow derives its release
-identity from the called workflow SHA, verifies the matching release archive,
-runs the structural checker, and uploads the complete JSON result only for a
-non-passing result. Passing runs keep the bounded summary without duplicate
-artifact storage. It does not install the consumer toolchain, run `just init`,
-or run `just ci`; the consumer
-repository's ordinary quality CI owns that execution exactly once.
-
-## Golden Path materialization
-
-`generate` and `upgrade` use the template bundle embedded in the exact CLI
-release. Both commands are preview-only unless `--write` and an empty staging
-directory are provided together.
-
-```sh
-golden-path generate \
-  --request golden-path-request.yaml \
-  --release-manifest release-manifest.json
-
-golden-path upgrade \
-  --root /path/to/existing-repository \
-  --request /path/to/existing-repository/.github/golden-path-request.json \
-  --release-manifest release-manifest.json \
-  --write \
-  --output /tmp/golden-path-candidate
-```
-
-New repositories use an explicit `materializationMode: bootstrap` request.
-Existing repositories use `materializationMode: adoption` for their first
-Golden Path baseline. Bootstrap creates a complete starter, root onboarding,
-and a repository-owned quality workflow that prepares the pinned environment
-and runs `just ci` once. Adoption emits only the canonical request, truthful
-metadata, generated-asset inventory, immutable bootstrap script, and thin
-caller workflow. It does not generate or replace source entry points, native
-manifests or locks, Mise and Just configuration, dependency automation, or
-repository-specific build, smoke, release, and deployment behavior. Generate
-the adoption candidate into an empty directory, integrate its fixed asset set
-through the consumer repository's normal review, retain
-the plan emitted on standard output as external staging evidence rather than
-repository configuration, and use `upgrade` only after that baseline inventory
-is committed. A written candidate never contains `golden-path-plan.json`.
-
-New requests state their materialization mode explicitly. Bootstrap targets
-remain optional when a documentation, source-only, or otherwise pre-release
-starter has no truthful production or release representative. Adoption of an
-existing repository still requires its actual production or release
-representative targets. When targets are declared, at least one uses the
-`primary` or `secondary` tier;
-evaluation-only targets cannot satisfy that boundary. Each target records OS,
-architecture, support tier, and optional runtime, target triple, and
-semantic-execution claim. The generator preserves these declarations exactly
-and never infers support from a profile, runner label, or compilation result.
-Legacy requests that omit the mode retain their canonical request shape and
-implicit bootstrap behavior.
-
-Generation records the standard, asset bundle, release source commit, request
-digest, canonical request, and the digest and mode of the long-lived managed
-integration set. That set is the request, metadata, inventory itself,
-conformance caller, and `scripts/golden-path`; the inventory is tracked
-implicitly because it cannot hash itself. Source, README, native manifests and
-locks, Mise/Just files, dependency policy, Dependabot configuration, and
-repository quality CI are one-time scaffold and become repository-owned
-immediately. Upgrade reads only the managed set, including the bounded handoff
-from older inventories that listed scaffold. A deleted managed file, local
-managed-file customization, or changed managed executable mode is a conflict.
-Repository-owned edits are not.
-An unresolved conflict returns exit `1` and never materializes a candidate. A
-conflict-free upgrade writes only managed files to a separate candidate; it
-never writes to the source repository or a default branch.
-
-Each request component may declare `capabilities` from the published request
-schema when the repository really provides behavior such as `package`,
-`publish`, or `released-artifact`. Bootstrap mode merges those declarations
-with the deterministic behavior materialized by the full starter. Adoption
-mode requires the declaration and records exactly those capabilities because
-the generator does not own the existing repository's implementation.
-An adoption component uses an explicit empty array when it implements none of
-the capability catalog entries; omission remains invalid because it would make
-the repository claim ambiguous.
-Capabilities are declarative: selecting `artifactTypes: [package]` does not
-infer publication, and declaring `publish` does not create a release workflow.
-The consumer repository still owns the corresponding implementation and
-evidence.
-
-Adoption records the existing artifact composition rather than constraining it
-to starter templates. One component may therefore declare multiple language or
-IaC profiles when the existing artifact actually spans them. Bootstrap keeps
-the narrower profile combinations that its source templates can materialize.
-Artifact components remain distinct from native dependency roots: shared
-workspaces, cross-language roots, and independent same-profile graphs belong in
-the repository-owned `.github/golden-path-native-roots.yaml` declaration rather
-than the generated component inventory.
-
-The generated caller owns events, permissions, concurrency, runner, working
-directory, selected profiles, and the immutable automation source. Release
-checksums and provenance identity stay inside the shared release boundary. The
-reusable workflow installs only its exact GitHub CLI verifier through an
-isolated Mise configuration, blocks the runner-bundled `gh`, verifies the
-checker archive against its checksum and GitHub artifact attestation, and then
-runs the structural checker. It does not install Just or the consumer
-toolchain, and it does not invoke repository quality commands. Repository-local
-bootstrap remains separate and uses the exact GitHub CLI pinned by the
-repository's `mise.toml` and `mise.lock` when installing the checker outside the
-reusable workflow. Neither path requires GitHub Environments, protected
-branches, paid rulesets, deployment credentials, or consumer secrets, so
-private consumers on GitHub Free retain the baseline outcome.
-
-Executable artifact types receive native entry points and post-build runtime
-smoke checks for Go, Node.js, Python, Rust, and Zig. Zig and `zig cc` profiles
-map each supported Darwin or Linux AMD64/ARM64 host to an exact target and keep
-their global cache repository-local. CI materializes the full profile matrix,
-runs generated setup and quality commands, validates both automation entry
-points against a released attested artifact, and repeats the Zig contract on
-all four native runners.
-
-Every catalog rule is represented in output. Fully evaluated structural rules
-can pass or fail; non-applicable, hybrid, manual, or only partially evaluated
-rules are explicit `skip` findings. The checker never converts missing evidence
-into a pass.
-
-The compatibility manifest maps the selected standard's runtime lines to exact Node.js,
-Python, Go, Rust, and Zig patch releases. Mise selectors may use an exact
-release or a major/minor selector that a committed `mise.lock` resolves to one
-exact release. The resolved patch must still appear in the immutable runtime
-mapping; the checker never infers runtime support from a broad selector.
-
-The same versioned manifest defines the checker release's 30-day
-exception-expiry warning window. Golden Path `1.x` intentionally does not
-admit Zig's previous-tagged-stable compatibility-only tier: the normative
-standard requires a bounded reason, owner, and review date, while the v1
-repository metadata contract does not yet define that evidence. Until a future
-contract represents it, the previous Zig stable fails as unsupported rather
-than passing without the required evidence.
-
-## Dependency operations
-
-The dependency compiler consumes repository-owned facts and produces a
-deterministic review candidate. It never edits the repository, runs `just ci`,
-creates release units, infers impact from component paths, or owns native
-manifests and locks.
-
-```sh
-golden-path dependency check --root /path/to/repository
-
-golden-path dependency preview \
-  --root /path/to/repository \
-  --observation /path/to/sealed-observation.json \
-  --write \
-  --output /tmp/dependency-candidate
-```
-
-`compile` is an alias for `preview`. Both write only to an explicitly selected
-separate empty staging directory. Exit `0` is semantically aligned, `1` is a
-reviewable policy/adapter difference, `2` is a repository declaration error,
-and `3` is a tooling failure. An unknown routine surface remains
-`pending-classification` at budget zero; classified roots default to three
-open routine PRs unless a dated, owned override says otherwise.
-
-Typed gate references bind repository `just ci` and workflow/job evidence
-without executing the gate. A security canonical gate must reference the
-repository-owned conditional closure job; the compiler validates that linkage
-but does not interpret native locks or run the job. Dependabot security routing
-remains conditional and independent from routine budgets. Existing guarded
-routers are preserved, and no candidate removes or delays a security PR because
-routine regrouping is pending.
-
-Live reports require a sealed observation v2 whose identity covers observation
-time, collection query and scope, repository/default-branch identities, PR
-refs/checks, source-bound security closure runs, alert relationship and advisory
-identity, native-manager sources, and SHA-256. Relationship remains
-`direct`, `transitive`, or `unknown`; tooling never guesses an unknown source
-value. Report v2 groups open alert instances by repository, advisory,
-ecosystem, and dependency, carries exact-head closure evidence from linked
-security pull requests, and names partial-link counters by that association-only
-meaning. Its `none`, `partial`, and `all-linked` values describe PR association
-only; repository-owned native graph proof controls closure, and an unrelated
-advisory is never coupled to that decision. Synthetic fixtures exercise compiler
-behavior only and are never represented as live organization evidence.
-
-## Repository layout
-
-- `checker/`: checker library and stable result contract
-- `dependency/`: repository-fact compiler, semantic checker, and evidence reports
-- `generator/`: deterministic materialization and conflict-aware upgrade logic
-- `templates/`: versioned common, profile, lock, and thin-caller assets
-- `actions/`: reusable checksum- and provenance-verifying setup action
-- `compatibility/`: supported standard and schema compatibility
-- `standards/snapshots/`: immutable normative source snapshots
-- `testdata/`: positive, negative, exception, and malformed fixtures
-- `release/`: release manifest and packaging contracts
-
-Every public Darwin and Linux AMD64/ARM64 target is built and executed on a
-matching native GitHub-hosted runner. Each archive has a deterministic
-CycloneDX 1.6 SBOM whose root component is bound to the archive SHA-256 digest.
-The stable release also publishes the exact normative source, external-tool
-cutoff, compatibility and schema evidence, checker, generator, asset-bundle and
-automation tree digests, migration notes, release lifecycle, and report-only
-enforcement state.
-
-## Security and disclosure boundary
-
-This is a public, generic tooling repository. Do not add secrets, customer
-data, private endpoints, proprietary product logic, non-public dependencies,
-or sensitive workflow inputs and outputs.
-
-See [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+Repository tags and public releases `v0.1.0` through `v1.6.1`, including their
+checksums and attestations, are immutable audit history for the retired Go
+executable. They are not versions of this npm package and are not an active
+compatibility or support boundary.

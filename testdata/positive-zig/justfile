@@ -1,7 +1,0 @@
-init:
-    zig build --fetch
-
-check:
-    zig build test
-
-ci: check
