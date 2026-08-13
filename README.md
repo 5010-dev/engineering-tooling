@@ -68,11 +68,13 @@ the exact bounded Git file query, repository applicability, native roots, and
 authority file digests. A pnpm workspace is one native dependency root when its
 reviewed workspace file, selected package manifests, root lock, and default
 shared-lock setting make that boundary unambiguous. Exclusions remain effective
-for members and descendants regardless of pattern order. Other descendant fixture
-manifests inherit that dependency boundary, while excluded roots, member-level competing locks, complete nested
-workspaces, and `sharedWorkspaceLockfile: false` roots remain visible. Repeated
-same-profile roots remain `pending-classification` unless the repository owns an
-explicit
+regardless of pattern order wherever the negative glob itself matches. Wildcards
+do not implicitly select dot-directories, and a trailing globstar also matches its
+base directory, following pnpm. Other descendant fixture manifests inherit that
+dependency boundary, while excluded roots, member-level competing locks,
+complete nested workspaces, and `sharedWorkspaceLockfile: false` roots remain
+visible. Repeated same-profile roots remain `pending-classification` unless the
+repository owns an explicit
 `.github/golden-path-native-roots.yaml` declaration.
 
 `plan` binds its observation interval, exact package content digest, selected
@@ -124,7 +126,9 @@ Publication is separate from quality validation. Only an immutable
 `golden-path-agent-vX.Y.Z` tag pointing at the validated `main` commit may
 publish the matching private GitHub Package. Canonical validation packs once,
 records the tarball SHA-256 and SRI, tests that exact file in an isolated
-consumer, and the release workflow publishes the same file.
+consumer, and the release workflow publishes the same file. Candidate evidence
+labels the repository-build content digest separately from the digest reported by
+that packed installation; the tarball identity binds the two materializations.
 
 ## Historical release line
 
