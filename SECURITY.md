@@ -4,8 +4,9 @@
 
 The `5010-dev/engineering-tooling` maintainers own support for
 `@5010-dev/golden-path-agent`. General installation, behavior, and documentation
-questions belong in this repository's GitHub Issues. Do not put credentials,
-vulnerability details, or other sensitive material in a public issue.
+questions belong in the Engineering team's
+[Linear intake](https://linear.new?team=ENG). Do not put credentials,
+vulnerability details, or other sensitive material in a general support issue.
 
 Supported developer hosts are Codex and Claude Code. Host support means the
 package's documented user-level Skill installation and explicit invocation
@@ -38,10 +39,9 @@ versions or compatibility targets.
 
 ## Operational review
 
-The first operational review is due 90 calendar days after
-`@5010-dev/golden-path-agent@1.0.0` is published. Until publication, the review
-date is intentionally recorded as the rule `1.0.0 publication timestamp + 90
-days`; publication evidence must replace this rule with the resulting date.
+`@5010-dev/golden-path-agent@1.0.0` was published at
+`2026-08-13T19:38:20Z`. Its first operational review is due on `2026-11-11`,
+90 calendar days after publication.
 
 After that review, a reviewed issue reassesses the package only after a material
 Developer Tooling Standard change, a supported-host contract change, a security

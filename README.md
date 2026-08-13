@@ -109,10 +109,14 @@ The plan file must be outside the target repository. A copied example becomes
 repository-owned immediately; this package does not record managed ownership,
 upgrade it, or open consumer pull requests.
 
-General support uses this repository's GitHub Issues. Sensitive security reports
-must follow [SECURITY.md](./SECURITY.md). That document is also the repository
-source of truth for supported-version windows, the first operational review,
-and retirement/removal conditions.
+For general support, [create an Engineering issue in
+Linear](https://linear.new?team=ENG) for triage by the `engineering-tooling`
+maintainers. Sensitive security reports must follow
+[SECURITY.md](./SECURITY.md). Linear is the support intake and work-tracking
+system; reviewed source at `5010-dev/.github@main` remains the policy and Golden
+Path authority. `SECURITY.md` is also the repository source of truth for
+supported-version windows, the first operational review, and retirement/removal
+conditions.
 
 ## Development
 
