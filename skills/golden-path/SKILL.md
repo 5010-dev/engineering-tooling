@@ -26,7 +26,7 @@ Treat this Skill as procedure and local assistance only. Keep the current reposi
 
 1. Read [copy-once-workflow.md](references/copy-once-workflow.md).
 2. Select only named examples applicable to the repository. Write the request and generated plan outside the repository.
-3. Inspect the complete plan, source hashes, replacements, destinations, and repository-state binding before asking for write approval.
+3. Inspect the complete plan, selected normative/profile and copy-once source hashes, replacements, destination content and modes, and repository-state binding before asking for write approval.
 4. Record the exact plan digest printed by `golden-path-agent plan`. Invoke `golden-path-agent apply --approved-plan-sha256 <digest>` only after the user explicitly approves that digest and the complete plan. Never treat a copied file as managed by this package.
 5. Replace example choices and complete repository-specific behavior through normal repository review.
 

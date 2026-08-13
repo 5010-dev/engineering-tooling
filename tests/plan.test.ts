@@ -1,11 +1,18 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { copyOnceSources } from "../src/constants.js";
+import { allowedAuthorityPaths, copyOnceSources } from "../src/constants.js";
 import { sha256 } from "../src/hashing.js";
 import { applyPlan, createPlan } from "../src/plan.js";
 import { ExecFileProcessRunner } from "../src/process.js";
@@ -33,11 +40,13 @@ async function fixture(): Promise<{
   const root = await createGitRepository();
   const external = await temporaryDirectory("golden-path-agent-external-");
   temporaryDirectories.push(root, external);
+  const authorityFiles = Object.fromEntries(
+    [...allowedAuthorityPaths].map((path) => [path, `# ${path}\n`]),
+  );
+  authorityFiles[copyOnceSources["node-toolchain"]] =
+    `min_version = "<EXACT_SUPPORTED_MISE_VERSION>"\n\n[tools]\nnode = "<EXACT_SUPPORTED_NODE_PATCH>"\njust = "<EXACT_JUST_VERSION>"\n`;
   return {
-    authorityClient: new FakeAuthorityClient(commit, {
-      [copyOnceSources["node-toolchain"]]:
-        `min_version = "<EXACT_SUPPORTED_MISE_VERSION>"\n\n[tools]\nnode = "<EXACT_SUPPORTED_NODE_PATCH>"\njust = "<EXACT_JUST_VERSION>"\n`,
-    }),
+    authorityClient: new FakeAuthorityClient(commit, authorityFiles),
     external,
     root,
     runner: new ExecFileProcessRunner(),
@@ -47,6 +56,7 @@ async function fixture(): Promise<{
 async function writeRequest(
   external: string,
   destination = "mise.toml",
+  overwrite = false,
 ): Promise<string> {
   const request = join(external, "request.json");
   await writeFile(
@@ -56,7 +66,7 @@ async function writeRequest(
         copies: [
           {
             destination,
-            overwrite: false,
+            overwrite,
             replacements: [
               {
                 expectedOccurrences: 1,
@@ -135,6 +145,16 @@ describe("copy-once plan and apply", () => {
 
     const plan = await createPlan({ ...context, output, request });
     expect(plan.source.commit).toBe(commit);
+    expect(plan.source.normativeFiles.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        "CONTRIBUTING.md",
+        "docs/golden-path/stack-defaults.md",
+        "docs/standards/developer-tooling/profiles/node-typescript.md",
+        "docs/standards/developer-tooling/runtime-support.md",
+        "docs/standards/developer-tooling/toolchain-management.md",
+      ]),
+    );
+    expect(plan.operations[0]?.expectedDestinationMode).toBeNull();
     expect(plan.package.contentSha256).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(plan.observation.startedAt).toMatch(/Z$/);
     await expect(
@@ -150,6 +170,7 @@ describe("copy-once plan and apply", () => {
     });
     expect(result.written).toEqual(["mise.toml"]);
     expect(result.approvedPlanSha256).toBe(sha256(await readFile(output)));
+    expect(result.source).toEqual(plan.source);
     expect(result.sourceFiles).toEqual([
       {
         path: copyOnceSources["node-toolchain"],
@@ -160,6 +181,101 @@ describe("copy-once plan and apply", () => {
     expect(await readFile(join(context.root, "mise.toml"), "utf8")).toContain(
       'node = "24.18.1"',
     );
+    expect(formatMode((await stat(join(context.root, "mise.toml"))).mode)).toBe(
+      "0644",
+    );
+  });
+
+  it("binds and revalidates applicable profile authority files", async () => {
+    const context = await fixture();
+    await writeFile(
+      join(context.root, "go.mod"),
+      "module example.invalid/tool\n",
+    );
+    const request = await writeRequest(context.external);
+    const output = join(context.external, "plan.json");
+    const plan = await createPlan({ ...context, output, request });
+    const goProfile = "docs/standards/developer-tooling/profiles/go.md";
+    expect(plan.source.normativeFiles.map((file) => file.path)).toContain(
+      goProfile,
+    );
+
+    const changedAuthority = new FakeAuthorityClient(commit, {
+      ...context.authorityClient.files,
+      [goProfile]: "changed normative content\n",
+    });
+    await expect(
+      applyPlan({
+        ...context,
+        approvedPlanSha256: sha256(await readFile(output)),
+        authorityClient: changedAuthority,
+        plan: output,
+      }),
+    ).rejects.toThrow("Normative authority file changed");
+
+    plan.source.normativeFiles = plan.source.normativeFiles.filter(
+      (file) => file.path !== goProfile,
+    );
+    await writeFile(output, `${JSON.stringify(plan, null, 2)}\n`);
+    await expect(
+      applyPlan({
+        ...context,
+        approvedPlanSha256: sha256(await readFile(output)),
+        plan: output,
+      }),
+    ).rejects.toThrow("manifest no longer matches");
+  });
+
+  it("preserves an approved executable mode when overwriting", async () => {
+    const context = await fixture();
+    const target = join(context.root, "mise.toml");
+    await writeFile(target, "#!/bin/sh\necho original\n");
+    await chmod(target, 0o755);
+    const request = await writeRequest(context.external, "mise.toml", true);
+    const output = join(context.external, "plan.json");
+    const plan = await createPlan({ ...context, output, request });
+    expect(plan.operations[0]?.expectedDestinationMode).toBe("0755");
+
+    await applyPlan({
+      ...context,
+      approvedPlanSha256: sha256(await readFile(output)),
+      plan: output,
+    });
+    expect(formatMode((await stat(target)).mode)).toBe("0755");
+  });
+
+  it("restores original content and mode when a later write fails", async () => {
+    const context = await fixture();
+    const target = join(context.root, "mise.toml");
+    const original = "#!/bin/sh\necho original\n";
+    await writeFile(target, original);
+    await chmod(target, 0o755);
+    const request = await writeRequest(context.external, "mise.toml", true);
+    const document = JSON.parse(await readFile(request, "utf8")) as {
+      copies: Array<Record<string, unknown>>;
+    };
+    const first = document.copies[0];
+    if (!first) {
+      throw new Error("Expected a copy request.");
+    }
+    document.copies.push({
+      ...first,
+      destination: "x".repeat(240),
+      overwrite: false,
+    });
+    await writeFile(request, `${JSON.stringify(document, null, 2)}\n`);
+    const output = join(context.external, "plan.json");
+    await createPlan({ ...context, output, request });
+
+    await expect(
+      applyPlan({
+        ...context,
+        approvedPlanSha256: sha256(await readFile(output)),
+        plan: output,
+      }),
+    ).rejects.toThrow();
+    expect(await readFile(target, "utf8")).toBe(original);
+    expect(formatMode((await stat(target)).mode)).toBe("0755");
   });
 
   it("rejects repository drift after planning", async () => {
@@ -349,3 +465,7 @@ describe("copy-once plan and apply", () => {
     ).rejects.toThrow("explicitly approved digest");
   });
 });
+
+function formatMode(mode: number): string {
+  return (mode & 0o7777).toString(8).padStart(4, "0");
+}

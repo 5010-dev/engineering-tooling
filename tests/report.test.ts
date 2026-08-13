@@ -79,27 +79,55 @@ describe("report-only inventory", () => {
     expect(report.disclaimer).toContain("does not run repository CI");
   });
 
-  it("never returns credentials from the configured origin", async () => {
+  it("never returns credentials from configured origin components", async () => {
     const root = await createGitRepository();
     temporaryDirectories.push(root);
-    await execFileAsync("git", [
-      "-C",
-      root,
-      "remote",
-      "add",
-      "origin",
-      "https://developer:secret-token@github.com/5010-dev/example.git",
-    ]);
+    const origins = [
+      {
+        expected: "https://github.com/5010-dev/example.git",
+        secrets: ["ghp-query-secret", "oauth-fragment"],
+        value:
+          "https://github.com/5010-dev/example.git?access_token=ghp-query-secret#oauth-fragment",
+      },
+      {
+        expected: "https://github.com/5010-dev/example.git",
+        secrets: ["oauth2", "gho-oauth-secret"],
+        value:
+          "https://oauth2:gho-oauth-secret@github.com/5010-dev/example.git",
+      },
+      {
+        expected: "https://github.com/5010-dev/example.git",
+        secrets: ["developer%40example.com", "ghp%5Fencoded%2Fsecret"],
+        value:
+          "https://developer%40example.com:ghp%5Fencoded%2Fsecret@github.com/5010-dev/example.git",
+      },
+      {
+        expected: "github.com:5010-dev/example.git",
+        secrets: ["git@", "ghp-scp-secret", "credential-fragment"],
+        value:
+          "git@github.com:5010-dev/example.git?token=ghp-scp-secret#credential-fragment",
+      },
+    ];
 
-    const inventory = await inspectRepository(
-      new ExecFileProcessRunner(),
-      root,
-    );
-    expect(inventory.snapshot.origin).toBe(
-      "https://github.com/5010-dev/example.git",
-    );
-    expect(inventory.snapshot.origin).not.toContain("secret-token");
-    expect(inventory.snapshot.originSha256).toMatch(/^sha256:[a-f0-9]{64}$/);
+    for (const [index, origin] of origins.entries()) {
+      await execFileAsync("git", [
+        "-C",
+        root,
+        "remote",
+        index === 0 ? "add" : "set-url",
+        "origin",
+        origin.value,
+      ]);
+      const inventory = await inspectRepository(
+        new ExecFileProcessRunner(),
+        root,
+      );
+      expect(inventory.snapshot.origin).toBe(origin.expected);
+      for (const secret of origin.secrets) {
+        expect(inventory.snapshot.origin).not.toContain(secret);
+      }
+      expect(inventory.snapshot.originSha256).toMatch(/^sha256:[a-f0-9]{64}$/);
+    }
   });
 
   it("discovers unambiguous nested Node, Go, and Python native roots", async () => {

@@ -27,6 +27,20 @@ export interface AuthorityClient {
   resolveCommit(): Promise<string>;
 }
 
+export async function readAuthorityFileManifest(
+  client: AuthorityClient,
+  commit: string,
+  paths: readonly string[],
+): Promise<AuthorityFile[]> {
+  const selectedPaths = [...new Set(paths)].sort();
+  return Promise.all(
+    selectedPaths.map(async (path) => ({
+      path,
+      sha256: sha256(await client.readText(path, commit)),
+    })),
+  );
+}
+
 function matchRequired(source: string, pattern: RegExp, label: string): string {
   const match = source.match(pattern);
   const value = match?.[1]?.trim();
