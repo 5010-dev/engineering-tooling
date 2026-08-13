@@ -307,11 +307,13 @@ function redactOrigin(origin: string | null): string | null {
     const parsed = new URL(origin);
     parsed.username = "";
     parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
     return parsed.toString();
   } catch {
     const scp = origin.match(/^(?:[^@/:]+@)?([^:]+):(.+)$/);
     if (scp?.[1] && scp[2]) {
-      return `${scp[1]}:${scp[2]}`;
+      return `${scp[1]}:${scp[2].split(/[?#]/, 1)[0]}`;
     }
     if (origin.startsWith("/") || origin.startsWith("./")) {
       return origin;

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  chmod,
   lstat,
   readFile,
   realpath,
@@ -20,12 +21,16 @@ import {
 
 import { z } from "zod";
 
-import type { AuthorityClient } from "./authority.js";
+import {
+  readAuthorityFileManifest,
+  type AuthorityClient,
+} from "./authority.js";
 import {
   authorityRef,
   authorityRepository,
   copyOnceSources,
   packageName,
+  selectPlanAuthorityPaths,
 } from "./constants.js";
 import { sha256 } from "./hashing.js";
 import { getPackageMetadata } from "./metadata.js";
@@ -33,11 +38,13 @@ import type { ProcessRunner } from "./process.js";
 import {
   readRepositorySnapshot,
   resolveRepositoryRoot,
+  inspectRepository,
   type RepositorySnapshot,
 } from "./repository.js";
 
 const digestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const commitSchema = z.string().regex(/^[a-f0-9]{40}$/);
+const fileModeSchema = z.string().regex(/^[0-7]{4}$/);
 const sourceNameSchema = z.enum([
   "canonical-ci",
   "dependabot",
@@ -88,6 +95,7 @@ const operationSchema = z
   .object({
     contentSha256: digestSchema,
     destination: z.string().min(1).max(240),
+    expectedDestinationMode: fileModeSchema.nullable(),
     expectedDestinationSha256: digestSchema.nullable(),
     overwrite: z.boolean(),
     replacements: z.array(replacementSchema).max(32),
@@ -101,6 +109,13 @@ const observationSchema = z
   .object({
     endedAt: z.string().datetime(),
     startedAt: z.string().datetime(),
+  })
+  .strict();
+
+const authorityFileSchema = z
+  .object({
+    path: z.string().min(1),
+    sha256: digestSchema,
   })
   .strict();
 
@@ -121,6 +136,7 @@ const planSchema = z
     source: z
       .object({
         commit: commitSchema,
+        normativeFiles: z.array(authorityFileSchema).min(1).max(32),
         ref: z.literal(authorityRef),
         repository: z.literal(authorityRepository),
       })
@@ -143,7 +159,7 @@ export interface ApplyResult {
     version: string;
   };
   repository: GoldenPathPlan["repository"];
-  sourceCommit: string;
+  source: GoldenPathPlan["source"];
   sourceFiles: {
     path: string;
     sha256: string;
@@ -313,9 +329,31 @@ function renderSource(
   return rendered;
 }
 
-async function readDestinationDigest(target: string): Promise<string | null> {
+interface DestinationState {
+  mode: string;
+  sha256: string;
+}
+
+function formatFileMode(mode: number): string {
+  return (mode & 0o7777).toString(8).padStart(4, "0");
+}
+
+function parseFileMode(mode: string): number {
+  return Number.parseInt(mode, 8);
+}
+
+async function readDestinationState(
+  target: string,
+): Promise<DestinationState | null> {
   try {
-    return sha256(await readFile(target));
+    const [content, fileStats] = await Promise.all([
+      readFile(target),
+      lstat(target),
+    ]);
+    return {
+      mode: formatFileMode(fileStats.mode),
+      sha256: sha256(content),
+    };
   } catch (error) {
     if (
       error instanceof Error &&
@@ -385,16 +423,25 @@ export async function createPlan(options: {
     destinations.add(destinationKey);
   }
 
-  const before = await readRepositorySnapshot(options.runner, root);
+  const inventory = await inspectRepository(options.runner, root);
+  const before = inventory.snapshot;
   const commit = await options.authorityClient.resolveCommit();
+  const sourceNames = parsedRequest.data.copies.map((copy) => copy.source);
+  const profiles = inventory.nativeSurfaces.map((surface) => surface.profile);
+  const normativePaths = selectPlanAuthorityPaths(sourceNames, profiles);
+  const normativeFiles = await readAuthorityFileManifest(
+    options.authorityClient,
+    commit,
+    normativePaths,
+  );
   const operations: GoldenPathPlan["operations"] = [];
   for (const copy of parsedRequest.data.copies) {
     const sourcePath = copyOnceSources[copy.source];
     const source = await options.authorityClient.readText(sourcePath, commit);
     const rendered = renderSource(source, copy.replacements);
     const target = await assertSafeDestination(root, copy.destination);
-    const existingDigest = await readDestinationDigest(target);
-    if (existingDigest && !copy.overwrite) {
+    const existingState = await readDestinationState(target);
+    if (existingState && !copy.overwrite) {
       throw new Error(
         `Destination exists but overwrite was not approved in the request: ${copy.destination}`,
       );
@@ -402,7 +449,8 @@ export async function createPlan(options: {
     operations.push({
       contentSha256: sha256(rendered),
       destination: copy.destination,
-      expectedDestinationSha256: existingDigest,
+      expectedDestinationMode: existingState?.mode ?? null,
+      expectedDestinationSha256: existingState?.sha256 ?? null,
       overwrite: copy.overwrite,
       replacements: copy.replacements,
       source: copy.source,
@@ -426,6 +474,7 @@ export async function createPlan(options: {
     schemaVersion: 1,
     source: {
       commit,
+      normativeFiles,
       ref: authorityRef,
       repository: authorityRepository,
     },
@@ -441,8 +490,31 @@ export async function createPlan(options: {
 interface PreparedWrite {
   content: string;
   destination: string;
+  mode: string;
   original: Buffer | null;
+  originalMode: string | null;
   target: string;
+}
+
+async function replaceFileAtomically(
+  target: string,
+  content: string | Buffer,
+  mode: string,
+): Promise<void> {
+  const temporary = join(
+    dirname(target),
+    `.${basename(target)}.golden-path-agent-${randomUUID()}`,
+  );
+  try {
+    await writeFile(temporary, content, {
+      flag: "wx",
+      mode: parseFileMode(mode),
+    });
+    await chmod(temporary, parseFileMode(mode));
+    await rename(temporary, target);
+  } finally {
+    await rm(temporary, { force: true });
+  }
 }
 
 async function applyPreparedWrites(
@@ -461,16 +533,18 @@ async function applyPreparedWrites(
           `Destination resolution changed before write: ${entry.destination}`,
         );
       }
-      const temporary = join(
-        dirname(entry.target),
-        `.${basename(entry.target)}.golden-path-agent-${randomUUID()}`,
-      );
-      try {
-        await writeFile(temporary, entry.content, { flag: "wx", mode: 0o644 });
-        await rename(temporary, entry.target);
-      } finally {
-        await rm(temporary, { force: true });
+      const currentState = await readDestinationState(entry.target);
+      const expectedSha256 =
+        entry.original === null ? null : sha256(entry.original);
+      if (
+        (currentState?.sha256 ?? null) !== expectedSha256 ||
+        (currentState?.mode ?? null) !== entry.originalMode
+      ) {
+        throw new Error(
+          `Destination content or mode changed immediately before write: ${entry.destination}`,
+        );
       }
+      await replaceFileAtomically(entry.target, entry.content, entry.mode);
       completed.push(entry);
     }
   } catch (error) {
@@ -480,7 +554,12 @@ async function applyPreparedWrites(
         await rm(target, { force: true });
       } else {
         const target = await assertSafeDestination(root, entry.destination);
-        await writeFile(target, entry.original);
+        if (entry.originalMode === null) {
+          throw new Error(`Missing rollback mode: ${entry.destination}`, {
+            cause: error,
+          });
+        }
+        await replaceFileAtomically(target, entry.original, entry.originalMode);
       }
     }
     throw error;
@@ -530,8 +609,38 @@ export async function applyPlan(options: {
       `Current ${plan.source.repository}/${plan.source.ref} changed after planning: expected ${plan.source.commit}, observed ${currentAuthorityCommit}; create and approve a fresh plan.`,
     );
   }
-  const snapshot = await readRepositorySnapshot(options.runner, root);
-  assertSameSnapshot(plan.repository, snapshot);
+  const inventory = await inspectRepository(options.runner, root);
+  assertSameSnapshot(plan.repository, inventory.snapshot);
+  const expectedNormativePaths = selectPlanAuthorityPaths(
+    plan.operations.map((operation) => operation.source),
+    inventory.nativeSurfaces.map((surface) => surface.profile),
+  );
+  const plannedNormativePaths = plan.source.normativeFiles.map(
+    (file) => file.path,
+  );
+  if (
+    expectedNormativePaths.length !== plannedNormativePaths.length ||
+    expectedNormativePaths.some(
+      (path, index) => path !== plannedNormativePaths[index],
+    )
+  ) {
+    throw new Error(
+      "Selected normative authority manifest no longer matches the plan inputs and repository profiles; create and approve a fresh plan.",
+    );
+  }
+  const currentNormativeFiles = await readAuthorityFileManifest(
+    options.authorityClient,
+    plan.source.commit,
+    expectedNormativePaths,
+  );
+  for (const [index, current] of currentNormativeFiles.entries()) {
+    const planned = plan.source.normativeFiles[index];
+    if (planned?.path !== current.path || planned.sha256 !== current.sha256) {
+      throw new Error(
+        `Normative authority file changed or was not resolved: ${current.path}`,
+      );
+    }
+  }
 
   const destinations = new Set<string>();
   const prepared: PreparedWrite[] = [];
@@ -549,13 +658,24 @@ export async function applyPlan(options: {
       );
     }
     const target = await assertSafeDestination(root, operation.destination);
-    const existingDigest = await readDestinationDigest(target);
-    if (existingDigest !== operation.expectedDestinationSha256) {
+    const existingState = await readDestinationState(target);
+    if (
+      (operation.expectedDestinationSha256 === null) !==
+      (operation.expectedDestinationMode === null)
+    ) {
       throw new Error(
-        `Destination changed after planning: ${operation.destination}`,
+        `Plan destination content and mode identity is incomplete: ${operation.destination}`,
       );
     }
-    if (existingDigest && !operation.overwrite) {
+    if (
+      (existingState?.sha256 ?? null) !== operation.expectedDestinationSha256 ||
+      (existingState?.mode ?? null) !== operation.expectedDestinationMode
+    ) {
+      throw new Error(
+        `Destination content or mode changed after planning: ${operation.destination}`,
+      );
+    }
+    if (existingState && !operation.overwrite) {
       throw new Error(
         `Plan does not authorize overwrite: ${operation.destination}`,
       );
@@ -579,7 +699,9 @@ export async function applyPlan(options: {
     prepared.push({
       content: rendered,
       destination: operation.destination,
-      original: existingDigest ? await readFile(target) : null,
+      mode: existingState?.mode ?? "0644",
+      original: existingState ? await readFile(target) : null,
+      originalMode: existingState?.mode ?? null,
       target,
     });
   }
@@ -600,7 +722,7 @@ export async function applyPlan(options: {
     observation: { endedAt: new Date().toISOString(), startedAt },
     package: plan.package,
     repository: plan.repository,
-    sourceCommit: plan.source.commit,
+    source: plan.source,
     sourceFiles,
     written: prepared.map((entry) => entry.destination),
   };

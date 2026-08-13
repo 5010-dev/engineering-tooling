@@ -246,7 +246,9 @@ export async function runCli(
         for (const destination of result.written) {
           console.log(`written ${destination}`);
         }
-        console.log(`source ${result.sourceCommit}`);
+        console.log(
+          `source ${result.source.repository}@${result.source.commit}`,
+        );
         console.log(`approved plan ${result.approvedPlanSha256}`);
         console.log(
           `observation ${result.observation.startedAt} .. ${result.observation.endedAt}`,

@@ -69,14 +69,17 @@ authority file digests. Repeated same-profile roots remain
 `pending-classification` unless the repository owns an explicit
 `.github/golden-path-native-roots.yaml` declaration.
 
-`plan` binds its observation interval and exact package content digest and
-prints the digest of the exact external plan bytes for review. `apply` is the
-only repository-writing command. It accepts only the current Golden Path's
-named copy-once examples, resolves current `.github/main` again, requires it to
-remain the exact planned commit, and verifies the explicitly approved plan
-digest plus package, source, repository, and destination hashes before writing.
-Use `apply --json` to retain the apply interval, approved digest, source file
-digests, and written destinations as evidence.
+`plan` binds its observation interval, exact package content digest, selected
+normative and applicable profile document digests, copy-once source digests,
+repository state, and existing destination content and mode. It prints the
+digest of the exact external plan bytes for review. `apply` is the only
+repository-writing command. It accepts only the current Golden Path's named
+copy-once examples, resolves current `.github/main` again, requires it to remain
+the exact planned commit, and re-reads every selected authority file before
+verifying the approved plan, package, repository, destination content, and mode.
+Existing file modes are preserved; new files use `0644`. Use `apply --json` to
+retain the apply interval, approved digest, authority repository/ref/commit,
+normative and copy-once file digests, and written destinations as evidence.
 
 Example request:
 
@@ -97,6 +100,11 @@ Example request:
 The plan file must be outside the target repository. A copied example becomes
 repository-owned immediately; this package does not record managed ownership,
 upgrade it, or open consumer pull requests.
+
+General support uses this repository's GitHub Issues. Sensitive security reports
+must follow [SECURITY.md](./SECURITY.md). That document is also the repository
+source of truth for supported-version windows, the first operational review,
+and retirement/removal conditions.
 
 ## Development
 
