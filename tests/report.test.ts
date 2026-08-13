@@ -258,6 +258,111 @@ describe("report-only inventory", () => {
     ]);
   });
 
+  it("keeps the base directory of a trailing-globstar exclusion outside the workspace", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "package.json"), "{}\n");
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - '!packages/legacy/**'\n  - 'packages/**'\n",
+    );
+    for (const member of ["app", "legacy"]) {
+      await mkdir(join(root, "packages", member), { recursive: true });
+      await writeFile(join(root, "packages", member, "package.json"), "{}\n");
+    }
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe(
+      "pending-classification",
+    );
+    expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+      ".",
+      "packages/legacy",
+    ]);
+  });
+
+  it("does not select a dot-directory through a wildcard", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "package.json"), "{}\n");
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n",
+    );
+    for (const member of ["a", ".hidden"]) {
+      await mkdir(join(root, "packages", member), { recursive: true });
+      await writeFile(join(root, "packages", member, "package.json"), "{}\n");
+    }
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe(
+      "pending-classification",
+    );
+    expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+      ".",
+      "packages/.hidden",
+    ]);
+  });
+
+  it("selects the base directory when a positive globstar matches zero segments", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "package.json"), "{}\n");
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/**'\n",
+    );
+    await mkdir(join(root, "packages"), { recursive: true });
+    await writeFile(join(root, "packages", "package.json"), "{}\n");
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe("applicable");
+    expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+      ".",
+    ]);
+  });
+
+  it("does not infer a shared workspace boundary from malformed configuration", async () => {
+    for (const workspace of [
+      "packages: 'packages/*'\n",
+      "packages:\n  - [unterminated\n",
+      "packages:\n  - 'packages/*'\nsharedWorkspaceLockfile: 'yes'\n",
+      "packages: []\n",
+    ]) {
+      const root = await createGitRepository();
+      temporaryDirectories.push(root);
+      await writeFile(join(root, "package.json"), "{}\n");
+      await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+      await writeFile(join(root, "pnpm-workspace.yaml"), workspace);
+      await mkdir(join(root, "packages", "member"), { recursive: true });
+      await writeFile(join(root, "packages", "member", "package.json"), "{}\n");
+
+      const inventory = await inspectRepository(
+        new ExecFileProcessRunner(),
+        root,
+      );
+      expect(inventory.applicability.classification).toBe(
+        "pending-classification",
+      );
+      expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+        ".",
+        "packages/member",
+      ]);
+    }
+  });
+
   it("surfaces a workspace member with a competing lock as another dependency root", async () => {
     const root = await createGitRepository();
     temporaryDirectories.push(root);

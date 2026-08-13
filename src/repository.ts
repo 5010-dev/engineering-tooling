@@ -321,10 +321,16 @@ function matchesPnpmWorkspace(
 ): boolean {
   const included = patterns
     .filter((pattern) => !pattern.startsWith("!"))
-    .some((pattern) =>
-      minimatch(member, pattern, { dot: true, nonegate: true }),
-    );
+    .some((pattern) => matchesPnpmPattern(member, pattern));
   return included && !isExcludedFromPnpmWorkspace(member, patterns);
+}
+
+function matchesPnpmPattern(member: string, pattern: string): boolean {
+  return (
+    minimatch(member, pattern, { nonegate: true }) ||
+    (pattern.endsWith("/**") &&
+      minimatch(member, pattern.slice(0, -3), { nonegate: true }))
+  );
 }
 
 function isExcludedFromPnpmWorkspace(
@@ -333,9 +339,7 @@ function isExcludedFromPnpmWorkspace(
 ): boolean {
   return patterns
     .filter((pattern) => pattern.startsWith("!") && pattern.length > 1)
-    .some((pattern) =>
-      minimatch(member, pattern.slice(1), { dot: true, nonegate: true }),
-    );
+    .some((pattern) => matchesPnpmPattern(member, pattern.slice(1)));
 }
 
 async function inspectPnpmWorkspaces(
