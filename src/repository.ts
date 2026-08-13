@@ -270,7 +270,24 @@ function isInsideRepositoryPath(parent: string, candidate: string): boolean {
   );
 }
 
-function parsePnpmWorkspacePatterns(source: string): string[] | null {
+interface PnpmWorkspaceConfiguration {
+  patterns: string[];
+  sharedWorkspaceLockfile: boolean;
+}
+
+interface PnpmManifestOwnership {
+  manifest: string;
+  root: string;
+}
+
+interface PnpmWorkspaceAnalysis {
+  dependencyRoots: Map<string, string>;
+  manifestOwnership: Map<string, PnpmManifestOwnership>;
+}
+
+function parsePnpmWorkspaceConfiguration(
+  source: string,
+): PnpmWorkspaceConfiguration | null {
   let value: unknown;
   try {
     value = parseYaml(source);
@@ -284,30 +301,47 @@ function parsePnpmWorkspacePatterns(source: string): string[] | null {
     (pattern): pattern is string =>
       typeof pattern === "string" && pattern.length > 0,
   );
-  return patterns.length === value.packages.length && patterns.length > 0
-    ? patterns
-    : null;
+  if (
+    patterns.length !== value.packages.length ||
+    patterns.length === 0 ||
+    (value.sharedWorkspaceLockfile !== undefined &&
+      typeof value.sharedWorkspaceLockfile !== "boolean")
+  ) {
+    return null;
+  }
+  return {
+    patterns,
+    sharedWorkspaceLockfile: value.sharedWorkspaceLockfile !== false,
+  };
 }
 
 function matchesPnpmWorkspace(
   member: string,
   patterns: readonly string[],
 ): boolean {
-  let included = false;
-  for (const pattern of patterns) {
-    const excluded = pattern.startsWith("!");
-    const candidate = excluded ? pattern.slice(1) : pattern;
-    if (candidate.length > 0 && minimatch(member, candidate, { dot: true })) {
-      included = !excluded;
-    }
-  }
-  return included;
+  const included = patterns
+    .filter((pattern) => !pattern.startsWith("!"))
+    .some((pattern) =>
+      minimatch(member, pattern, { dot: true, nonegate: true }),
+    );
+  return included && !isExcludedFromPnpmWorkspace(member, patterns);
 }
 
-async function pnpmWorkspaceManifestRoots(
+function isExcludedFromPnpmWorkspace(
+  member: string,
+  patterns: readonly string[],
+): boolean {
+  return patterns
+    .filter((pattern) => pattern.startsWith("!") && pattern.length > 1)
+    .some((pattern) =>
+      minimatch(member, pattern.slice(1), { dot: true, nonegate: true }),
+    );
+}
+
+async function inspectPnpmWorkspaces(
   repositoryRoot: string,
   files: readonly string[],
-): Promise<Map<string, string>> {
+): Promise<PnpmWorkspaceAnalysis> {
   const packageManifests = files.filter(
     (file) => file === "package.json" || file.endsWith("/package.json"),
   );
@@ -325,17 +359,18 @@ async function pnpmWorkspaceManifestRoots(
       workspace,
     }))
     .sort((left, right) => right.root.length - left.root.length);
-  const result = new Map<string, string>();
+  const dependencyRoots = new Map<string, string>();
+  const manifestOwnership = new Map<string, PnpmManifestOwnership>();
   for (const workspace of workspaces) {
     const rootManifest = inRoot(workspace.root, "package.json");
     const rootLock = inRoot(workspace.root, "pnpm-lock.yaml");
-    if (!files.includes(rootManifest) || !files.includes(rootLock)) {
+    if (!files.includes(rootLock)) {
       continue;
     }
-    const patterns = parsePnpmWorkspacePatterns(
+    const configuration = parsePnpmWorkspaceConfiguration(
       await readFile(join(repositoryRoot, workspace.workspace), "utf8"),
     );
-    if (!patterns) {
+    if (!configuration || !configuration.sharedWorkspaceLockfile) {
       continue;
     }
     const members = manifestRoots
@@ -349,22 +384,52 @@ async function pnpmWorkspaceManifestRoots(
           workspace.root === "."
             ? entry.root
             : entry.root.slice(workspace.root.length + 1);
-        return matchesPnpmWorkspace(member, patterns);
+        return matchesPnpmWorkspace(member, configuration.patterns);
       })
-      .map((entry) => entry.root);
-    if (!result.has(rootManifest)) {
-      result.set(rootManifest, workspace.root);
+      .sort((left, right) => right.root.length - left.root.length);
+    const workspaceManifest = files.includes(rootManifest)
+      ? rootManifest
+      : [...members].sort((left, right) =>
+          left.manifest.localeCompare(right.manifest),
+        )[0]?.manifest;
+    if (!workspaceManifest) {
+      continue;
     }
-    for (const entry of manifestRoots) {
-      if (
-        !result.has(entry.manifest) &&
-        members.some((member) => isInsideRepositoryPath(member, entry.root))
-      ) {
-        result.set(entry.manifest, workspace.root);
+    if (!dependencyRoots.has(workspace.root)) {
+      dependencyRoots.set(workspace.root, workspaceManifest);
+    }
+    if (files.includes(rootManifest) && !manifestOwnership.has(rootManifest)) {
+      manifestOwnership.set(rootManifest, {
+        manifest: workspaceManifest,
+        root: workspace.root,
+      });
+    }
+    for (const member of members) {
+      const hasMemberLock = files.includes(
+        inRoot(member.root, "pnpm-lock.yaml"),
+      );
+      const ownership: PnpmManifestOwnership = hasMemberLock
+        ? { manifest: member.manifest, root: member.root }
+        : { manifest: workspaceManifest, root: workspace.root };
+      if (hasMemberLock && !dependencyRoots.has(member.root)) {
+        dependencyRoots.set(member.root, member.manifest);
+      }
+      for (const entry of manifestRoots) {
+        const relativeEntry =
+          workspace.root === "."
+            ? entry.root
+            : entry.root.slice(workspace.root.length + 1);
+        if (
+          !manifestOwnership.has(entry.manifest) &&
+          isInsideRepositoryPath(member.root, entry.root) &&
+          !isExcludedFromPnpmWorkspace(relativeEntry, configuration.patterns)
+        ) {
+          manifestOwnership.set(entry.manifest, ownership);
+        }
       }
     }
   }
-  return result;
+  return { dependencyRoots, manifestOwnership };
 }
 
 async function discoverNativeSurfaces(
@@ -373,10 +438,7 @@ async function discoverNativeSurfaces(
 ): Promise<NativeSurface[]> {
   const allFiles = new Set(files);
   const surfaces: NativeSurface[] = [];
-  const pnpmWorkspaceRoots = await pnpmWorkspaceManifestRoots(
-    repositoryRoot,
-    files,
-  );
+  const pnpmWorkspaces = await inspectPnpmWorkspaces(repositoryRoot, files);
   const emittedPnpmWorkspaces = new Set<string>();
   for (const definition of surfaceDefinitions) {
     for (const manifest of files.filter(
@@ -384,29 +446,48 @@ async function discoverNativeSurfaces(
         file === definition.manifest ||
         file.endsWith(`/${definition.manifest}`),
     )) {
-      const workspaceRoot =
+      const workspaceOwnership =
         definition.profile === "node-typescript"
-          ? pnpmWorkspaceRoots.get(manifest)
+          ? pnpmWorkspaces.manifestOwnership.get(manifest)
           : undefined;
-      if (workspaceRoot && emittedPnpmWorkspaces.has(workspaceRoot)) {
+      if (
+        workspaceOwnership &&
+        emittedPnpmWorkspaces.has(workspaceOwnership.root)
+      ) {
         continue;
       }
       const root =
-        workspaceRoot ?? (dirname(manifest) === "." ? "." : dirname(manifest));
-      if (workspaceRoot) {
-        emittedPnpmWorkspaces.add(workspaceRoot);
+        workspaceOwnership?.root ??
+        (dirname(manifest) === "." ? "." : dirname(manifest));
+      if (workspaceOwnership) {
+        emittedPnpmWorkspaces.add(workspaceOwnership.root);
       }
       const lock = definition.lock ? inRoot(root, definition.lock) : null;
       surfaces.push({
         id: null,
         lock,
         lockPresent: lock === null || allFiles.has(lock),
-        manifest: workspaceRoot ? inRoot(root, definition.manifest) : manifest,
+        manifest: workspaceOwnership?.manifest ?? manifest,
         profile: definition.profile,
         root,
         source: "observed",
       });
     }
+  }
+  for (const [root, manifest] of pnpmWorkspaces.dependencyRoots) {
+    if (emittedPnpmWorkspaces.has(root)) {
+      continue;
+    }
+    const lock = inRoot(root, "pnpm-lock.yaml");
+    surfaces.push({
+      id: null,
+      lock,
+      lockPresent: allFiles.has(lock),
+      manifest,
+      profile: "node-typescript",
+      root,
+      source: "observed",
+    });
   }
   return surfaces.sort((left, right) =>
     `${left.root}:${left.profile}`.localeCompare(

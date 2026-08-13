@@ -66,10 +66,13 @@ golden-path-agent apply --root . --plan /tmp/plan.json \
 observation interval, package content identity, both installed Skill states,
 the exact bounded Git file query, repository applicability, native roots, and
 authority file digests. A pnpm workspace is one native dependency root when its
-reviewed workspace patterns, root manifest, and root lock make that boundary
-unambiguous; package and fixture manifests inside its members do not become
-independent roots. Repeated same-profile roots outside a native workspace remain
-`pending-classification` unless the repository owns an explicit
+reviewed workspace file, selected package manifests, root lock, and default
+shared-lock setting make that boundary unambiguous. Exclusions remain effective
+for members and descendants regardless of pattern order. Other descendant fixture
+manifests inherit that dependency boundary, while excluded roots, member-level competing locks, complete nested
+workspaces, and `sharedWorkspaceLockfile: false` roots remain visible. Repeated
+same-profile roots remain `pending-classification` unless the repository owns an
+explicit
 `.github/golden-path-native-roots.yaml` declaration.
 
 `plan` binds its observation interval, exact package content digest, selected
