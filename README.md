@@ -65,7 +65,10 @@ golden-path-agent apply --root . --plan /tmp/plan.json \
 `info`, `doctor`, `check`, and `plan` are read-only. JSON inventory records the
 observation interval, package content identity, both installed Skill states,
 the exact bounded Git file query, repository applicability, native roots, and
-authority file digests. Repeated same-profile roots remain
+authority file digests. A pnpm workspace is one native dependency root when its
+reviewed workspace patterns, root manifest, and root lock make that boundary
+unambiguous; package and fixture manifests inside its members do not become
+independent roots. Repeated same-profile roots outside a native workspace remain
 `pending-classification` unless the repository owns an explicit
 `.github/golden-path-native-roots.yaml` declaration.
 

@@ -130,6 +130,91 @@ describe("report-only inventory", () => {
     }
   });
 
+  it("treats a pnpm workspace as one native dependency root", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(
+      join(root, "package.json"),
+      '{"name":"workspace","private":true,"packageManager":"pnpm@11.18.0"}\n',
+    );
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n  - '!packages/excluded'\n",
+    );
+    for (const path of ["packages/one", "packages/two"]) {
+      await mkdir(join(root, path), { recursive: true });
+      await writeFile(join(root, path, "package.json"), "{}\n");
+    }
+    await mkdir(join(root, "packages", "one", "tests", "fixtures", "app"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(root, "packages", "one", "tests", "fixtures", "app", "package.json"),
+      "{}\n",
+    );
+    await writeFile(
+      join(
+        root,
+        "packages",
+        "one",
+        "tests",
+        "fixtures",
+        "app",
+        "pnpm-lock.yaml",
+      ),
+      "lockfileVersion: '9.0'\n",
+    );
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe("applicable");
+    expect(inventory.nativeSurfaces).toEqual([
+      {
+        id: null,
+        lock: "pnpm-lock.yaml",
+        lockPresent: true,
+        manifest: "package.json",
+        profile: "node-typescript",
+        root: ".",
+        source: "observed",
+      },
+    ]);
+  });
+
+  it("keeps an excluded independent Node root outside pnpm workspace members", async () => {
+    const root = await createGitRepository();
+    temporaryDirectories.push(root);
+    await writeFile(join(root, "package.json"), "{}\n");
+    await writeFile(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    await writeFile(
+      join(root, "pnpm-workspace.yaml"),
+      "packages:\n  - 'packages/*'\n  - '!packages/excluded'\n",
+    );
+    await mkdir(join(root, "packages", "member"), { recursive: true });
+    await writeFile(join(root, "packages", "member", "package.json"), "{}\n");
+    await mkdir(join(root, "packages", "excluded"), { recursive: true });
+    await writeFile(join(root, "packages", "excluded", "package.json"), "{}\n");
+    await writeFile(
+      join(root, "packages", "excluded", "pnpm-lock.yaml"),
+      "lockfileVersion: '9.0'\n",
+    );
+
+    const inventory = await inspectRepository(
+      new ExecFileProcessRunner(),
+      root,
+    );
+    expect(inventory.applicability.classification).toBe(
+      "pending-classification",
+    );
+    expect(inventory.nativeSurfaces.map((surface) => surface.root)).toEqual([
+      ".",
+      "packages/excluded",
+    ]);
+  });
+
   it("discovers unambiguous nested Node, Go, and Python native roots", async () => {
     const root = await createGitRepository();
     temporaryDirectories.push(root);

@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { lstat, readFile, readlink, realpath } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
+import { minimatch } from "minimatch";
 import { parse as parseYaml } from "yaml";
 
 import { sha256 } from "./hashing.js";
@@ -263,22 +264,144 @@ function declaredManifest(
   return null;
 }
 
-function discoverNativeSurfaces(files: readonly string[]): NativeSurface[] {
+function isInsideRepositoryPath(parent: string, candidate: string): boolean {
+  return (
+    parent === "." || candidate === parent || candidate.startsWith(`${parent}/`)
+  );
+}
+
+function parsePnpmWorkspacePatterns(source: string): string[] | null {
+  let value: unknown;
+  try {
+    value = parseYaml(source);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || !Array.isArray(value.packages)) {
+    return null;
+  }
+  const patterns = value.packages.filter(
+    (pattern): pattern is string =>
+      typeof pattern === "string" && pattern.length > 0,
+  );
+  return patterns.length === value.packages.length && patterns.length > 0
+    ? patterns
+    : null;
+}
+
+function matchesPnpmWorkspace(
+  member: string,
+  patterns: readonly string[],
+): boolean {
+  let included = false;
+  for (const pattern of patterns) {
+    const excluded = pattern.startsWith("!");
+    const candidate = excluded ? pattern.slice(1) : pattern;
+    if (candidate.length > 0 && minimatch(member, candidate, { dot: true })) {
+      included = !excluded;
+    }
+  }
+  return included;
+}
+
+async function pnpmWorkspaceManifestRoots(
+  repositoryRoot: string,
+  files: readonly string[],
+): Promise<Map<string, string>> {
+  const packageManifests = files.filter(
+    (file) => file === "package.json" || file.endsWith("/package.json"),
+  );
+  const manifestRoots = packageManifests.map((manifest) => ({
+    manifest,
+    root: dirname(manifest) === "." ? "." : dirname(manifest),
+  }));
+  const workspaces = files
+    .filter(
+      (file) =>
+        file === "pnpm-workspace.yaml" || file.endsWith("/pnpm-workspace.yaml"),
+    )
+    .map((workspace) => ({
+      root: dirname(workspace) === "." ? "." : dirname(workspace),
+      workspace,
+    }))
+    .sort((left, right) => right.root.length - left.root.length);
+  const result = new Map<string, string>();
+  for (const workspace of workspaces) {
+    const rootManifest = inRoot(workspace.root, "package.json");
+    const rootLock = inRoot(workspace.root, "pnpm-lock.yaml");
+    if (!files.includes(rootManifest) || !files.includes(rootLock)) {
+      continue;
+    }
+    const patterns = parsePnpmWorkspacePatterns(
+      await readFile(join(repositoryRoot, workspace.workspace), "utf8"),
+    );
+    if (!patterns) {
+      continue;
+    }
+    const members = manifestRoots
+      .filter(
+        (entry) =>
+          entry.root !== workspace.root &&
+          isInsideRepositoryPath(workspace.root, entry.root),
+      )
+      .filter((entry) => {
+        const member =
+          workspace.root === "."
+            ? entry.root
+            : entry.root.slice(workspace.root.length + 1);
+        return matchesPnpmWorkspace(member, patterns);
+      })
+      .map((entry) => entry.root);
+    if (!result.has(rootManifest)) {
+      result.set(rootManifest, workspace.root);
+    }
+    for (const entry of manifestRoots) {
+      if (
+        !result.has(entry.manifest) &&
+        members.some((member) => isInsideRepositoryPath(member, entry.root))
+      ) {
+        result.set(entry.manifest, workspace.root);
+      }
+    }
+  }
+  return result;
+}
+
+async function discoverNativeSurfaces(
+  repositoryRoot: string,
+  files: readonly string[],
+): Promise<NativeSurface[]> {
   const allFiles = new Set(files);
   const surfaces: NativeSurface[] = [];
+  const pnpmWorkspaceRoots = await pnpmWorkspaceManifestRoots(
+    repositoryRoot,
+    files,
+  );
+  const emittedPnpmWorkspaces = new Set<string>();
   for (const definition of surfaceDefinitions) {
     for (const manifest of files.filter(
       (file) =>
         file === definition.manifest ||
         file.endsWith(`/${definition.manifest}`),
     )) {
-      const root = dirname(manifest) === "." ? "." : dirname(manifest);
+      const workspaceRoot =
+        definition.profile === "node-typescript"
+          ? pnpmWorkspaceRoots.get(manifest)
+          : undefined;
+      if (workspaceRoot && emittedPnpmWorkspaces.has(workspaceRoot)) {
+        continue;
+      }
+      const root =
+        workspaceRoot ?? (dirname(manifest) === "." ? "." : dirname(manifest));
+      if (workspaceRoot) {
+        emittedPnpmWorkspaces.add(workspaceRoot);
+      }
       const lock = definition.lock ? inRoot(root, definition.lock) : null;
       surfaces.push({
         id: null,
         lock,
         lockPresent: lock === null || allFiles.has(lock),
-        manifest,
+        manifest: workspaceRoot ? inRoot(root, definition.manifest) : manifest,
         profile: definition.profile,
         root,
         source: "observed",
@@ -517,7 +640,7 @@ export async function inspectRepository(
   )
     ? ".github/golden-path-native-roots.yaml"
     : null;
-  let nativeSurfaces = discoverNativeSurfaces(repositoryFiles);
+  let nativeSurfaces = await discoverNativeSurfaces(root, repositoryFiles);
   let applicability: RepositoryInventory["applicability"];
   if (nativeRootsDeclaration) {
     try {
