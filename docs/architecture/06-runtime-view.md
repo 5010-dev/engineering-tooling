@@ -2,7 +2,7 @@
 
 State: **As-built**
 
-For inspection, the CLI resolves repository identity, enumerates visible repository files with Git, and attempts to resolve current governance source. Explicit repository-owned native roots take precedence; otherwise distinct observed profiles are classified directly and repeated same-profile roots remain pending. `doctor` and `check` retain an authority-unavailable error in their time-bounded package, Skill, repository, and authority evidence; `info` fails because it promises exact authority identity.
+For inspection, the CLI resolves repository identity, enumerates visible repository files with Git, and attempts to resolve current governance source. Explicit repository-owned native roots take precedence. Otherwise a pnpm workspace with a root manifest and lock is treated as one native dependency root using its off-the-shelf YAML and glob contract, so member and nested fixture manifests do not become competing dependency authorities; distinct observed profiles are classified directly and repeated same-profile roots outside a native workspace remain pending. `doctor` and `check` retain an authority-unavailable error in their time-bounded package, Skill, repository, and authority evidence; `info` fails because it promises exact authority identity.
 
 For planning, the CLI verifies an external request, inventories the repository profiles and complete Git state, resolves one governance commit, selects and hashes the core, applicable profile, operation-specific normative, and named example sources, applies bounded exact-count replacements, checks destination content and mode, rechecks Git state, and atomically creates an external plan bound to its observation interval and exact package content.
 

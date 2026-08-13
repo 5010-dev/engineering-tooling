@@ -92,6 +92,7 @@
   },
   "dependencies": {
     "commander": "15.0.0",
+    "minimatch": "10.2.6",
     "yaml": "2.9.0",
     "zod": "4.4.3"
   },
