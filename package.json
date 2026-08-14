@@ -1,6 +1,6 @@
 {
   "name": "@5010-dev/golden-path-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Developer-installed Skill and bounded local support for the repository-owned FiftyTen Developer Tooling Golden Path.",
   "license": "UNLICENSED",
   "repository": {

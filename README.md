@@ -10,13 +10,58 @@ The active policy and guidance remain reviewed source in
 continue to own their manifests, locks, toolchain selectors, Just graph,
 canonical CI, security routing, and release or deployment workflows.
 
-## Install the package
+## Package access and authentication
 
-Authenticate npm for the `5010-dev` GitHub Packages scope, then install the
-exact package version:
+`@5010-dev/golden-path-agent` is a private GitHub Package. Each developer needs
+`5010-dev` organization membership, package `Read` through an authorized team
+or user permission, and a personal access token (classic) with the
+`read:packages` scope. If the organization uses SAML SSO, authorize that token
+for `5010-dev` before using it.
+
+Configure the `5010-dev` scope in the user-level `~/.npmrc`; do not add a package
+token to a repository-owned `.npmrc`:
+
+```ini
+@5010-dev:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+Export `NODE_AUTH_TOKEN` from an approved local secret store for the install
+session. Do not paste the token into a tracked file, command argument, shell
+history, issue, pull request, or support transcript. The token authenticates
+package downloads only; `gh` authentication is a separate requirement for
+reading the current Golden Path authority.
+
+Verify package access before installation:
 
 ```sh
-pnpm add --global @5010-dev/golden-path-agent@1.0.0
+pnpm view @5010-dev/golden-path-agent@1.0.1 version \
+  --registry=https://npm.pkg.github.com
+gh auth status --hostname github.com
+```
+
+Interpret common registry failures as follows:
+
+| Result             | Check                                                                                                                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `401 Unauthorized` | `NODE_AUTH_TOKEN` is present, current, and referenced by the user-level npm configuration                                                                                    |
+| `403 Forbidden`    | The token has `read:packages`, any required SSO authorization is active, and the user has package read access                                                                |
+| `404 Not Found`    | The exact package coordinate and registry are correct, then verify organization membership and package read access because private-package denial may be masked as not found |
+
+For missing package access or general installation support, [create an
+Engineering issue in Linear](https://linear.new?team=ENG). Never include the
+token or other sensitive material in that issue.
+
+## Install the package and Skill
+
+After authentication, install the exact package version globally so the
+`golden-path-agent` executable remains available when Codex or Claude Code later
+invokes the installed Skill:
+
+```sh
+pnpm add --global @5010-dev/golden-path-agent@1.0.1
+golden-path-agent skill install --host all
+golden-path-agent skill check --host all
 ```
 
 Package updates and rollback are exact reinstalls of a reviewed version. There
@@ -25,19 +70,11 @@ is no locator, update channel, or compatibility bridge to the retired
 
 Runtime authority reads require GitHub CLI `gh` authenticated to `github.com`
 with read access to `5010-dev/.github`. The package does not capture, persist,
-or print the authentication token:
+or print the authentication token.
 
-```sh
-gh auth status --hostname github.com
-```
-
-## Install the explicit-invocation Skill
-
-```sh
-golden-path-agent skill install --host codex
-golden-path-agent skill install --host claude-code
-golden-path-agent skill check --host all
-```
+The one-shot `pnpm dlx` form may inspect package metadata or run a bounded
+command, but using it only for `skill install` does not install the executable
+persistently and is therefore not the supported host-install procedure.
 
 The installer writes only the official user-level Skill directories:
 
