@@ -100,6 +100,7 @@ for (const requiredFragment of [
   "read:packages",
   "${NODE_AUTH_TOKEN}",
   "https://linear.new?team=ENG",
+  "pnpm setup",
   "pnpm add --global",
 ]) {
   if (!packagedReadme.includes(requiredFragment)) {
