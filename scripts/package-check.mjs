@@ -35,7 +35,7 @@ const packed = await runPnpm(["pack", "--json", "--pack-destination", output]);
 const manifest = JSON.parse(packed.stdout);
 if (
   manifest.name !== "@5010-dev/golden-path-agent" ||
-  manifest.version !== "1.0.0" ||
+  manifest.version !== "1.0.1" ||
   typeof manifest.filename !== "string" ||
   !Array.isArray(manifest.files)
 ) {
@@ -87,6 +87,34 @@ const unexpectedPaths = [...packagedPaths].filter(
 if (missingPaths.length > 0 || unexpectedPaths.length > 0) {
   throw new Error(
     `Package tarball allowlist mismatch; missing=${JSON.stringify(missingPaths)}, unexpected=${JSON.stringify(unexpectedPaths)}.`,
+  );
+}
+
+const { stdout: packagedReadme } = await execFileAsync("tar", [
+  "-xOf",
+  manifest.filename,
+  "package/README.md",
+]);
+for (const requiredFragment of [
+  "@5010-dev/golden-path-agent@1.0.1",
+  "read:packages",
+  "${NODE_AUTH_TOKEN}",
+  "https://linear.new?team=ENG",
+  "pnpm add --global",
+]) {
+  if (!packagedReadme.includes(requiredFragment)) {
+    throw new Error(
+      `Packed README is missing required onboarding content: ${requiredFragment}`,
+    );
+  }
+}
+if (
+  packagedReadme.includes(
+    "General support uses this repository's GitHub Issues",
+  )
+) {
+  throw new Error(
+    "Packed README retains the retired GitHub Issues support route.",
   );
 }
 
