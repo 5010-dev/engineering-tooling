@@ -54,6 +54,16 @@ token or other sensitive material in that issue.
 
 ## Install the package and Skill
 
+Confirm that pnpm's global executable directory is configured and on `PATH`:
+
+```sh
+pnpm bin --global
+```
+
+If pnpm reports that no global bin directory is configured, run `pnpm setup`,
+start a new shell, and repeat the check. This is a one-time developer-machine
+prerequisite, not a consumer-repository change.
+
 After authentication, install the exact package version globally so the
 `golden-path-agent` executable remains available when Codex or Claude Code later
 invokes the installed Skill:
